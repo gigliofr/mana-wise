@@ -40,34 +40,44 @@ func NewAISuggester(mode string, primary, secondary *llm.Connector, internalEnab
 	}
 }
 
-// Suggest returns AI suggestions, source label, and a non-fatal error if all strategies fail.
+// Suggest returns AI suggestions, source, external-provider warning, and a hard error.
+// externalErr is non-nil when an LLM call was attempted but failed and internal rules were used as fallback.
 // cards is the resolved card slice (may be nil; used for card-name-specific suggestions).
-func (s *AISuggester) Suggest(ctx context.Context, decklist, format, locale string, analysis *domain.AnalysisResult, cards []*domain.Card) (string, string, error) {
+func (s *AISuggester) Suggest(ctx context.Context, decklist, format, locale string, analysis *domain.AnalysisResult, cards []*domain.Card) (text, source string, externalErr, err error) {
 	hash := llm.HashDecklist(decklist, format)
 
 	switch s.mode {
 	case AIModeInternalOnly:
-		return s.tryInternal(format, locale, analysis, cards)
+		text, source, err = s.tryInternal(format, locale, analysis, cards)
+		return
 	case AIModeHybridPreferInternal:
-		if text, source, err := s.tryInternal(format, locale, analysis, cards); err == nil {
-			return text, source, nil
+		if text, source, err = s.tryInternal(format, locale, analysis, cards); err == nil {
+			return
 		}
-		return s.tryExternalChain(ctx, hash, decklist, format, locale, analysis, cards)
+		text, source, err = s.tryExternalChain(ctx, hash, decklist, format, locale, analysis, cards)
+		return
 	case AIModeExternalOnly:
-		return s.tryExternalChain(ctx, hash, decklist, format, locale, analysis, cards)
+		text, source, err = s.tryExternalChain(ctx, hash, decklist, format, locale, analysis, cards)
+		return
 	default: // hybrid_prefer_external
-		text, source, err := s.tryExternalChain(ctx, hash, decklist, format, locale, analysis, cards)
-		if err == nil {
-			return text, source, nil
+		var extErr error
+		text, source, extErr = s.tryExternalChain(ctx, hash, decklist, format, locale, analysis, cards)
+		if extErr == nil {
+			return
 		}
 		if !s.internalEnable {
-			return "", "", err
+			err = extErr
+			return
 		}
-		internalText, internalSource, internalErr := s.tryInternal(format, locale, analysis, cards)
+		var internalErr error
+		text, source, internalErr = s.tryInternal(format, locale, analysis, cards)
 		if internalErr != nil {
-			return "", "", err
+			err = extErr
+			return
 		}
-		return internalText, internalSource, nil
+		// Internal fallback succeeded; surface the LLM error as a warning.
+		externalErr = extErr
+		return
 	}
 }
 

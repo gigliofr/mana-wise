@@ -84,10 +84,12 @@ func (h *AnalyzeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var aiSource string
 	var aiError string
 	if h.ai != nil {
-		var suggestErr error
-		aiSuggestions, aiSource, suggestErr = h.ai.Suggest(r.Context(), req.Decklist, req.Format, req.Locale, &result.Result, result.RawCards)
+		extErr, suggestErr := error(nil), error(nil)
+		aiSuggestions, aiSource, extErr, suggestErr = h.ai.Suggest(r.Context(), req.Decklist, req.Format, req.Locale, &result.Result, result.RawCards)
 		if suggestErr != nil {
 			aiError = suggestErr.Error()
+		} else if extErr != nil {
+			aiError = "LLM unavailable (falling back to internal rules): " + extErr.Error()
 		}
 	}
 
