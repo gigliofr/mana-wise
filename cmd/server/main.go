@@ -33,7 +33,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	mongoClient, err := mongodb.NewClient(ctx, cfg.MongoDB.URI, cfg.MongoDB.Database)
+	mongoClient, err := mongodb.NewClient(ctx, cfg.MongoDB)
 	if err != nil {
 		log.Fatalf("MongoDB connection failed: %v", err)
 	}
@@ -56,6 +56,10 @@ func main() {
 	userRepo, err := mongodb.NewUserRepository(setupCtx, mongoClient)
 	if err != nil {
 		log.Fatalf("user repo: %v", err)
+	}
+	deckRepo, err := mongodb.NewDeckRepository(setupCtx, mongoClient)
+	if err != nil {
+		log.Fatalf("deck repo: %v", err)
 	}
 	log.Println("✅ Repositories ready")
 
@@ -141,6 +145,7 @@ func main() {
 	router := api.NewRouter(api.RouterDeps{
 		CardRepo:      cardRepo,
 		UserRepo:      userRepo,
+		DeckRepo:      deckRepo,
 		AnalyzeUC:     analyzeUC,
 		AISuggester:   aiSuggester,
 		EmbedBatchUC:  embedBatchUC,

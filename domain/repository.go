@@ -22,7 +22,12 @@ type UserRepository interface {
 	FindByEmail(ctx context.Context, email string) (*User, error)
 	Create(ctx context.Context, user *User) error
 	Update(ctx context.Context, user *User) error
-	IncrementDailyAnalyses(ctx context.Context, userID, today string) error
+	// CheckAndIncrementDailyAnalyses atomically verifies the daily quota and
+	// increments the counter in a single findOneAndUpdate operation.
+	// Returns (true, nil) when the increment succeeded (quota was available),
+	// (false, nil) when the user has exhausted their daily limit, or
+	// (false, err) on a database error.
+	CheckAndIncrementDailyAnalyses(ctx context.Context, userID, today string, limit int) (bool, error)
 }
 
 // DeckRepository defines persistence operations for decks.

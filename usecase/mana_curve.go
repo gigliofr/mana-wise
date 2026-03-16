@@ -41,6 +41,7 @@ func AnalyzeManaCurve(cards []*domain.Card, quantities map[string]int, format st
 	result := domain.ManaAnalysis{
 		Format:            format,
 		ColorDistribution: make(map[string]int),
+		PipDistribution:   make(map[string]int),
 	}
 
 	// Build CMC buckets (0-6+) and count lands.
@@ -72,6 +73,13 @@ func AnalyzeManaCurve(cards []*domain.Card, quantities map[string]int, format st
 		// Colour distribution
 		for _, c := range card.Colors {
 			result.ColorDistribution[c] += qty
+		}
+
+		// Pip distribution — count coloured pips in mana cost (excluding lands).
+		if !isLand {
+			for pip, count := range countPips(card.ManaCost) {
+				result.PipDistribution[pip] += count * qty
+			}
 		}
 	}
 
@@ -149,14 +157,14 @@ func generateManaSuggestions(analysis domain.ManaAnalysis, params formatParams, 
 	}
 	if analysis.AverageCMC > avgThresholdHigh {
 		sug = append(sug, domain.ManaCurveSuggestion{
-			Type:   "remove",
-			Reason: fmt.Sprintf("Average CMC %.2f is high for %s. Swap some expensive spells for cheaper interaction.", analysis.AverageCMC, analysis.Format),
+			Type:    "remove",
+			Reason:  fmt.Sprintf("Average CMC %.2f is high for %s. Swap some expensive spells for cheaper interaction.", analysis.AverageCMC, analysis.Format),
 			Urgency: "moderate",
 		})
 	} else if analysis.AverageCMC < avgThresholdLow && analysis.TotalCards > 10 {
 		sug = append(sug, domain.ManaCurveSuggestion{
-			Type:   "add",
-			Reason: "Average CMC is very low — consider adding a few mid-game threats.",
+			Type:    "add",
+			Reason:  "Average CMC is very low — consider adding a few mid-game threats.",
 			Urgency: "minor",
 		})
 	}
@@ -172,4 +180,51 @@ func urgency(value, moderate, critical int) string {
 		return "moderate"
 	}
 	return "minor"
+}
+
+// countPips parses a Scryfall mana cost string like "{2}{W}{W}{U}" and returns
+// the count of each coloured pip (W, U, B, R, G, C).
+// Generic and Phyrexian mana symbols are not counted since they don't restrict colour.
+func countPips(manaCost string) map[string]int {
+	pips := make(map[string]int)
+	// Walk through each {X} symbol in the mana cost string.
+	i := 0
+	for i < len(manaCost) {
+		if manaCost[i] != '{' {
+			i++
+			continue
+		}
+		j := i + 1
+		for j < len(manaCost) && manaCost[j] != '}' {
+			j++
+		}
+		if j >= len(manaCost) {
+			break
+		}
+		sym := strings.ToUpper(manaCost[i+1 : j])
+		switch sym {
+		case "W", "U", "B", "R", "G", "C":
+			pips[sym]++
+		case "W/P", "U/P", "B/P", "R/P", "G/P":
+			// Phyrexian mana: count the colour component.
+			pips[string(sym[0])]++
+		default:
+			// Hybrid symbols like {W/U}: count both colours.
+			if len(sym) == 3 && sym[1] == '/' {
+				c1, c2 := string(sym[0]), string(sym[2])
+				if isColour(c1) {
+					pips[c1]++
+				}
+				if isColour(c2) {
+					pips[c2]++
+				}
+			}
+		}
+		i = j + 1
+	}
+	return pips
+}
+
+func isColour(s string) bool {
+	return s == "W" || s == "U" || s == "B" || s == "R" || s == "G" || s == "C"
 }

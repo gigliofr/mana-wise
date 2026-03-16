@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
@@ -15,6 +16,7 @@ import (
 type RouterDeps struct {
 	CardRepo      domain.CardRepository
 	UserRepo      domain.UserRepository
+	DeckRepo      domain.DeckRepository
 	AnalyzeUC     *usecase.AnalyzeDeckUseCase
 	AISuggester   *usecase.AISuggester
 	EmbedBatchUC  *usecase.EmbedBatchUseCase
@@ -43,18 +45,24 @@ func NewRouter(deps RouterDeps) http.Handler {
 	embedH := handlers.NewEmbedBatchHandler(deps.EmbedBatchUC)
 	otaH := handlers.NewOTAHandler(deps.OTAUC)
 	analyticsH := handlers.NewAnalyticsHandler(deps.Analytics)
+	var deckH *handlers.DeckHandler
+	if deps.DeckRepo != nil {
+		deckH = handlers.NewDeckHandler(deps.DeckRepo)
+	}
 
 	jwtMW := middleware.JWTAuth(deps.JWTSecret)
 	freemiumMW := middleware.FreemiumGate(deps.UserRepo, deps.Analytics)
+	// 10 requests per minute per IP on auth endpoints (brute-force protection).
+	authRateMW := middleware.AuthRateLimit(time.Minute, 10)
 
 	r.Route("/api/v1", func(r chi.Router) {
 		// Public endpoints.
 		r.Get("/health", handlers.Health)
 
-		// Auth endpoints.
+		// Auth endpoints — rate-limited per IP.
 		r.Route("/auth", func(r chi.Router) {
-			r.Post("/register", authH.Register)
-			r.Post("/login", authH.Login)
+			r.With(authRateMW).Post("/register", authH.Register)
+			r.With(authRateMW).Post("/login", authH.Login)
 			r.With(jwtMW).Get("/me", authH.Me)
 		})
 
@@ -72,6 +80,15 @@ func NewRouter(deps RouterDeps) http.Handler {
 			r.Get("/cards/{id}", cardsH.GetCard)
 			r.Get("/cards/{id}/price-trend", cardsH.PriceTrend)
 			r.Get("/cards/{id}/synergies", cardsH.GetSynergies)
+
+			// Saved decks — only registered when DeckRepo is wired.
+			if deckH != nil {
+				r.Get("/decks", deckH.List)
+				r.Post("/decks", deckH.Create)
+				r.Get("/decks/{id}", deckH.Get)
+				r.Put("/decks/{id}", deckH.Update)
+				r.Delete("/decks/{id}", deckH.Delete)
+			}
 
 			// Embeddings pipeline.
 			r.Post("/embed/batch", embedH.ServeHTTP)

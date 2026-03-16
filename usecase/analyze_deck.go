@@ -26,8 +26,23 @@ type AnalyzeDeckRequest struct {
 // AnalyzeDeckResponse is the output of the AnalyzeDeck use case.
 type AnalyzeDeckResponse struct {
 	Result     domain.AnalysisResult
-	RawCards   []*domain.Card   // resolved domain cards
-	Quantities map[string]int   // cardID -> total quantity in decklist
+	RawCards   []*domain.Card // resolved domain cards
+	Quantities map[string]int // cardID -> total quantity in decklist
+	Commander  *CommanderInfo // populated for "commander" format decks
+	Sideboard  *SideboardInfo // populated when decklist contains a Sideboard section
+}
+
+// SideboardInfo is populated when a Sideboard / SB: section is detected in the decklist.
+// SideboardInfo is included in AnalyzeDeckResponse when a sideboard is present.
+type SideboardInfo struct {
+	Quantities map[string]int `json:"quantities"` // cardID -> quantity
+	TotalCards int            `json:"total_cards"`
+}
+
+// CommanderCards holds the resolved commander cards (up to 2 for Partner pairs).
+// Only populated for "commander" format.
+type CommanderInfo struct {
+	Cards []*domain.Card `json:"cards"`
 }
 
 // AnalyzeDeckUseCase orchestrates card resolution + deterministic analysis.
@@ -70,6 +85,29 @@ func (uc *AnalyzeDeckUseCase) Execute(ctx context.Context, req AnalyzeDeckReques
 			names = append(names, e.name)
 			nameSet[e.name] = true
 		}
+	}
+
+	// Separate entries by zone.
+	var mainEntries, commanderEntries, sideboardEntries []deckEntry
+	for _, e := range entries {
+		switch {
+		case e.isCommander:
+			commanderEntries = append(commanderEntries, e)
+		case e.isSideboard:
+			sideboardEntries = append(sideboardEntries, e)
+		default:
+			mainEntries = append(mainEntries, e)
+		}
+	}
+
+	// Validate sideboard size for non-commander formats.
+	const maxSideboardSize = 15
+	sideboardTotal := 0
+	for _, e := range sideboardEntries {
+		sideboardTotal += e.qty
+	}
+	if sideboardTotal > maxSideboardSize {
+		return nil, fmt.Errorf("sideboard exceeds maximum of %d cards (found %d)", maxSideboardSize, sideboardTotal)
 	}
 
 	// Step 1: Try to resolve from local DB first (batch).
@@ -121,20 +159,57 @@ func (uc *AnalyzeDeckUseCase) Execute(ctx context.Context, req AnalyzeDeckReques
 	}
 
 	// Build ordered card slice + quantity map for analysis.
-	allCards := make([]*domain.Card, 0, len(names))
-	quantities := make(map[string]int, len(entries))
-	for _, e := range entries {
+	// Build mainboard + commander card slice and quantity map for analysis.
+	mainCards := make([]*domain.Card, 0, len(mainEntries)+len(commanderEntries))
+	quantities := make(map[string]int)
+	seenMain := make(map[string]bool)
+	for _, e := range append(mainEntries, commanderEntries...) {
 		card, ok := dbIndex[e.name]
 		if !ok {
 			return nil, fmt.Errorf("card not found: %q", e.name)
 		}
-		allCards = append(allCards, card)
+		if !seenMain[card.ID] {
+			mainCards = append(mainCards, card)
+			seenMain[card.ID] = true
+		}
 		quantities[card.ID] += e.qty
 	}
 
+	// Build sideboard quantities (cards resolved independently above).
+	var sideboardInfo *SideboardInfo
+	if len(sideboardEntries) > 0 {
+		sbQty := make(map[string]int, len(sideboardEntries))
+		for _, e := range sideboardEntries {
+			card, ok := dbIndex[e.name]
+			if !ok {
+				return nil, fmt.Errorf("sideboard card not found: %q", e.name)
+			}
+			sbQty[card.ID] += e.qty
+		}
+		sideboardInfo = &SideboardInfo{Quantities: sbQty, TotalCards: sideboardTotal}
+	}
+
+	// Build commander info.
+	var commanderInfo *CommanderInfo
+	if len(commanderEntries) > 0 {
+		cmdCards := make([]*domain.Card, 0, len(commanderEntries))
+		seen := make(map[string]bool)
+		for _, e := range commanderEntries {
+			card, ok := dbIndex[e.name]
+			if !ok {
+				return nil, fmt.Errorf("commander card not found: %q", e.name)
+			}
+			if !seen[card.ID] {
+				cmdCards = append(cmdCards, card)
+				seen[card.ID] = true
+			}
+		}
+		commanderInfo = &CommanderInfo{Cards: cmdCards}
+	}
+
 	// Step 3: Deterministic analyses.
-	manaResult := AnalyzeManaCurve(allCards, quantities, req.Format)
-	interactionResult := AnalyzeInteraction(allCards, quantities, req.Format)
+	manaResult := AnalyzeManaCurve(mainCards, quantities, req.Format)
+	interactionResult := AnalyzeInteraction(mainCards, quantities, req.Format)
 
 	resp := &AnalyzeDeckResponse{
 		Result: domain.AnalysisResult{
@@ -143,29 +218,59 @@ func (uc *AnalyzeDeckUseCase) Execute(ctx context.Context, req AnalyzeDeckReques
 			Interaction: interactionResult,
 			LatencyMs:   time.Since(start).Milliseconds(),
 		},
-		RawCards:   allCards,
+		RawCards:   mainCards,
 		Quantities: quantities,
+		Commander:  commanderInfo,
+		Sideboard:  sideboardInfo,
 	}
 	return resp, nil
 }
 
 // deckEntry is one parsed line from a decklist.
 type deckEntry struct {
-	qty  int
-	name string
+	qty         int
+	name        string
+	isCommander bool
+	isSideboard bool
 }
 
 // parseDecklist converts a raw decklist string into entries.
-// Supported formats:
+// Supports section headers: "Deck" / "Mazzo", "Commander", "Sideboard" / "SB:".
+// Arena export format example:
 //
-//	"4 Lightning Bolt"
-//	"1x Birds of Paradise"
-//	"Sideboard:" headers and blank lines are silently ignored.
+//	Commander
+//	1 Atraxa, Praetors' Voice
+//
+//	Deck
+//	4 Lightning Bolt
+//
+//	Sideboard
+//	2 Surgical Extraction
 func parseDecklist(raw string) ([]deckEntry, error) {
 	var entries []deckEntry
+	section := "deck" // default section
 	for _, line := range strings.Split(raw, "\n") {
 		line = strings.TrimSpace(line)
-		if line == "" || strings.HasSuffix(strings.ToLower(line), ":") || isDeckHeader(line) {
+		if line == "" {
+			continue
+		}
+		lower := strings.ToLower(line)
+
+		// Detect section headers (with or without trailing colon).
+		if lower == "deck" || lower == "mazzo" || lower == "deck:" || lower == "mazzo:" {
+			section = "deck"
+			continue
+		}
+		if lower == "commander" || lower == "commander:" {
+			section = "commander"
+			continue
+		}
+		if lower == "sideboard" || lower == "sideboard:" || lower == "sb:" {
+			section = "sideboard"
+			continue
+		}
+		// Skip any other header-style lines (e.g. "About", "Land:")
+		if strings.HasSuffix(lower, ":") {
 			continue
 		}
 
@@ -176,14 +281,17 @@ func parseDecklist(raw string) ([]deckEntry, error) {
 
 		parts := strings.Fields(line)
 		if len(parts) < 2 {
-			continue // not enough tokens — skip (could be a tag)
+			continue // not enough tokens — skip (could be a tag or annotation)
 		}
+
+		isCmd := section == "commander"
+		isSB := section == "sideboard"
 
 		qtyStr := strings.TrimSuffix(parts[0], "x")
 		qty, err := strconv.Atoi(qtyStr)
 		if err != nil || qty <= 0 {
 			// First token is not a number; treat whole line as name with qty=1.
-			entries = append(entries, deckEntry{qty: 1, name: strings.Join(parts, " ")})
+			entries = append(entries, deckEntry{qty: 1, name: strings.Join(parts, " "), isCommander: isCmd, isSideboard: isSB})
 			continue
 		}
 
@@ -191,14 +299,9 @@ func parseDecklist(raw string) ([]deckEntry, error) {
 		if name == "" {
 			continue
 		}
-		entries = append(entries, deckEntry{qty: qty, name: name})
+		entries = append(entries, deckEntry{qty: qty, name: name, isCommander: isCmd, isSideboard: isSB})
 	}
 	return entries, nil
-}
-
-func isDeckHeader(line string) bool {
-	header := strings.ToLower(strings.TrimSpace(line))
-	return header == "deck" || header == "mazzo"
 }
 
 // sanitizeCardName strips MTG Arena trailing metadata like "(SET) 123".

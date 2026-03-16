@@ -58,16 +58,36 @@ func TestDetermineDeckLegalityForFormat_CommanderSingleton(t *testing.T) {
 	}
 }
 
-func TestDetermineDeckLegalityForFormat_PauperNeedsCommon(t *testing.T) {
+func TestDetermineDeckLegalityForFormat_PauperIllegalCard(t *testing.T) {
+	// Pauper legality is determined by Scryfall's legalities["pauper"] field,
+	// not by the card's rarity field. A card with pauper="not_legal" is illegal
+	// regardless of its rarity; a card with pauper="legal" is legal even if rare
+	// (because it was printed as common in some set).
 	cards := []*domain.Card{
 		makeLegalityCard("common", "Good Common", "Instant", "common", map[string]string{"pauper": "legal"}),
-		makeLegalityCard("rare", "Rare Bomb", "Creature", "rare", map[string]string{"pauper": "legal"}),
+		makeLegalityCard("notlegal", "Snapcaster Mage", "Creature", "rare", map[string]string{"pauper": "not_legal"}),
 	}
-	quantities := map[string]int{"common": 56, "rare": 4}
+	quantities := map[string]int{"common": 56, "notlegal": 4}
 
 	res := usecase.DetermineDeckLegalityForFormat(cards, quantities, "pauper")
 	if res.IsLegal {
-		t.Fatalf("expected pauper deck with rare card to be illegal")
+		t.Fatalf("expected pauper deck with not_legal card to be illegal")
+	}
+}
+
+func TestDetermineDeckLegalityForFormat_PauperLegalRarePrint(t *testing.T) {
+	// A card printed at rare in its latest set but also printed as common
+	// in another set is legal in Pauper — Scryfall marks it pauper="legal".
+	// Use 4 copies to stay within the copy limit.
+	cards := []*domain.Card{
+		makeLegalityCard("counterspell", "Counterspell", "Instant", "uncommon", map[string]string{"pauper": "legal"}),
+		makeLegalityCard("island", "Island", "Basic Land - Island", "common", map[string]string{"pauper": "legal"}),
+	}
+	quantities := map[string]int{"counterspell": 4, "island": 56}
+
+	res := usecase.DetermineDeckLegalityForFormat(cards, quantities, "pauper")
+	if !res.IsLegal {
+		t.Fatalf("expected Counterspell (pauper=legal) to be legal in pauper; got illegal: %+v", res.IllegalCards)
 	}
 }
 

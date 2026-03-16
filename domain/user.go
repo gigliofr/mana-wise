@@ -12,17 +12,17 @@ const (
 
 // User represents an application user.
 type User struct {
-	ID             string    `bson:"_id"              json:"id"`
-	Email          string    `bson:"email"            json:"email"`
-	PasswordHash   string    `bson:"password_hash"    json:"-"`
-	Name           string    `bson:"name"             json:"name"`
-	Plan           Plan      `bson:"plan"             json:"plan"`
-	Remaining      int       `bson:"-"                json:"remaining,omitempty"`
-	DiscordID      string    `bson:"discord_id,omitempty" json:"discord_id,omitempty"`
-	DailyAnalyses  int       `bson:"daily_analyses"   json:"daily_analyses"`
-	LastAnalysisDay string   `bson:"last_analysis_day" json:"-"` // format: "2006-01-02"
-	CreatedAt      time.Time `bson:"created_at"       json:"created_at"`
-	UpdatedAt      time.Time `bson:"updated_at"       json:"updated_at"`
+	ID              string    `bson:"_id"              json:"id"`
+	Email           string    `bson:"email"            json:"email"`
+	PasswordHash    string    `bson:"password_hash"    json:"-"`
+	Name            string    `bson:"name"             json:"name"`
+	Plan            Plan      `bson:"plan"             json:"plan"`
+	Remaining       int       `bson:"-"                json:"remaining,omitempty"`
+	DiscordID       string    `bson:"discord_id,omitempty" json:"discord_id,omitempty"`
+	DailyAnalyses   int       `bson:"daily_analyses"   json:"daily_analyses"`
+	LastAnalysisDay string    `bson:"last_analysis_day" json:"-"` // format: "2006-01-02"
+	CreatedAt       time.Time `bson:"created_at"       json:"created_at"`
+	UpdatedAt       time.Time `bson:"updated_at"       json:"updated_at"`
 }
 
 // FreeDailyLimit is the number of analyses allowed per day for free users.

@@ -20,12 +20,18 @@ type AnalyzeRequest struct {
 
 // AnalyzeResponse is the JSON response for POST /analyze.
 type AnalyzeResponse struct {
-	Deterministic domain.AnalysisResult              `json:"deterministic"`
-	AISuggestions string                             `json:"ai_suggestions"`
-	AISource      string                             `json:"ai_source,omitempty"`
-	AIError       string                             `json:"ai_error,omitempty"`
-	LatencyMs     int64                              `json:"latency_ms"`
+	Deterministic domain.AnalysisResult                 `json:"deterministic"`
+	AISuggestions string                                `json:"ai_suggestions"`
+	AISource      string                                `json:"ai_source,omitempty"`
+	AIError       string                                `json:"ai_error,omitempty"`
+	LatencyMs     int64                                 `json:"latency_ms"`
 	Legality      map[string]usecase.DeckLegalityResult `json:"legality"`
+	Sideboard     *sideboardResponseInfo                `json:"sideboard,omitempty"`
+}
+
+// sideboardResponseInfo is the sideboard portion included in the analyze response.
+type sideboardResponseInfo struct {
+	TotalCards int `json:"total_cards"`
 }
 
 // AnalyzeHandler handles POST /analyze requests.
@@ -75,11 +81,6 @@ func (h *AnalyzeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Increment user quota.
-	userID := middleware.UserIDFromContext(r.Context())
-	today := domain.CurrentBusinessDay()
-	_ = h.userRepo.IncrementDailyAnalyses(r.Context(), userID, today)
-
 	// LLM suggestions (best-effort — do not fail the request if LLM is unavailable).
 	var aiSuggestions string
 	var aiSource string
@@ -95,6 +96,7 @@ func (h *AnalyzeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result.Result.LatencyMs = time.Since(start).Milliseconds()
+	userID := middleware.UserIDFromContext(r.Context())
 	plan := middleware.PlanFromContext(r.Context())
 	_ = h.tracker.Track(r.Context(), userID, "analysis_completed", map[string]interface{}{
 		"format":     req.Format,
@@ -103,6 +105,24 @@ func (h *AnalyzeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	})
 
 	legality := usecase.DetermineDeckLegalityAllFormats(result.RawCards, result.Quantities)
+
+	// Augment Commander legality with color identity check when commander is known.
+	if result.Commander != nil && len(result.Commander.Cards) > 0 {
+		if cmdResult, ok := legality["commander"]; ok {
+			violations := usecase.CheckCommanderColorIdentity(result.Commander.Cards, result.RawCards, result.Quantities)
+			if len(violations) > 0 {
+				cmdResult.IllegalCards = append(cmdResult.IllegalCards, violations...)
+				cmdResult.IsLegal = false
+				legality["commander"] = cmdResult
+			}
+		}
+	}
+
+	var sb *sideboardResponseInfo
+	if result.Sideboard != nil {
+		sb = &sideboardResponseInfo{TotalCards: result.Sideboard.TotalCards}
+	}
+
 	jsonOK(w, AnalyzeResponse{
 		Deterministic: result.Result,
 		AISuggestions: aiSuggestions,
@@ -110,6 +130,7 @@ func (h *AnalyzeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		AIError:       aiError,
 		LatencyMs:     result.Result.LatencyMs,
 		Legality:      legality,
+		Sideboard:     sb,
 	})
 }
 

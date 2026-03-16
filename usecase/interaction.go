@@ -10,12 +10,68 @@ import (
 
 // interactionKeywords maps category to oracle-text/type keywords that identify the card.
 var interactionKeywords = map[domain.InteractionCategory][]string{
-	domain.InteractionRemoval:    {"destroy target", "exile target", "damage to", "-x/-x", "sacrifice a creature"},
-	domain.InteractionCounter:    {"counter target", "counter spell", "counterspell"},
-	domain.InteractionDraw:       {"draw a card", "draw two", "draw three", "draw cards", "scry", "mill"},
-	domain.InteractionRamp:       {"search your library for a basic land", "add {", "treasure token", "sol ring", "mana rock"},
-	domain.InteractionProtection: {"hexproof", "indestructible", "protection from", "regenerate"},
-	domain.InteractionDiscard:    {"discard a card", "discard two", "each player discards"},
+	domain.InteractionRemoval: {
+		// Hard removal
+		"destroy target", "exile target",
+		// Bounce / temporary removal
+		"return target creature to its owner's hand",
+		"return target nonland permanent to its owner's hand",
+		// Damage-based removal: "deals 3 damage to any target" (Bolt/Shock), fixed damage to creature
+		"damage to any target", "damage to target creature", "damage to each creature",
+		"deals damage equal to",
+		// Board wipes
+		"destroy all creatures", "exile all creatures",
+		"destroy all nonland permanents", "each creature gets -",
+		// Fight
+		"fights target", "fights another target", "target creature fights",
+		// -N/-N that usually kills
+		"-1/-1 counter", "-2/-2", "-3/-3", "-4/-4", "-x/-x",
+		// Tap-locking (pseudo-removal)
+		"doesn't untap", "tap all",
+	},
+	domain.InteractionCounter: {
+		"counter target spell", "counter any target spell",
+		"counter target activated", "counter target triggered",
+		"counter target creature spell", "counter target noncreature",
+		"counter target instant", "counter target sorcery",
+	},
+	domain.InteractionDraw: {
+		// Actual card draw
+		"draw a card", "draw two cards", "draw three cards",
+		"draw x cards", "draw that many cards",
+		// Cantrip patterns
+		"draw cards equal", "draw cards for each",
+		// Investigate / Clue tokens give card draw
+		"investigate",
+		// Looter / replace effects
+		"draw a card, then discard", "draw, then discard",
+	},
+	domain.InteractionRamp: {
+		// Land fetch
+		"search your library for a basic land",
+		"search your library for a land",
+		"land card onto the battlefield",
+		"put a land card",
+		// Mana acceleration
+		"add {w}", "add {u}", "add {b}", "add {r}", "add {g}",
+		"add mana of any color", "add one mana of any",
+		"add two mana of any", "add {c}",
+		// Mana artifacts / dorks (+1 mana per use)
+		"{t}: add {",
+		// Treasure/food create more colored mana
+		"create a treasure token", "create two treasure",
+	},
+	domain.InteractionProtection: {
+		"hexproof", "indestructible", "protection from",
+		"regenerate", "shroud",
+		"can't be countered", "can't be the target",
+		"phase out",
+	},
+	domain.InteractionDiscard: {
+		"discard a card", "discard two cards", "discard three cards",
+		"each player discards", "discard their hand",
+		"discard x cards",
+	},
 }
 
 // formatInteractionIdeals defines ideal card counts per category per format.

@@ -10,12 +10,12 @@ import (
 
 // IllegalCardIssue describes why a specific card entry violates format legality.
 type IllegalCardIssue struct {
-	CardName  string `json:"card_name"`
-	Quantity  int    `json:"quantity"`
-	Reason    string `json:"reason"`
-	Legality  string `json:"legality"`
-	Format    string `json:"format"`
-	CardID    string `json:"card_id,omitempty"`
+	CardName string `json:"card_name"`
+	Quantity int    `json:"quantity"`
+	Reason   string `json:"reason"`
+	Legality string `json:"legality"`
+	Format   string `json:"format"`
+	CardID   string `json:"card_id,omitempty"`
 }
 
 // DeckLegalityResult is the legality report for one format.
@@ -75,17 +75,6 @@ func DetermineDeckLegalityForFormat(cards []*domain.Card, quantities map[string]
 				Legality: status,
 				Format:   normalized,
 				Reason:   fmt.Sprintf("too many copies: %d > %d", qty, copyLimit),
-			})
-		}
-
-		if normalized == "pauper" && strings.ToLower(strings.TrimSpace(card.Rarity)) != "common" {
-			result.IllegalCards = append(result.IllegalCards, IllegalCardIssue{
-				CardName: card.Name,
-				CardID:   card.ID,
-				Quantity: qty,
-				Legality: status,
-				Format:   normalized,
-				Reason:   "card rarity is not common (pauper requirement)",
 			})
 		}
 	}
@@ -183,4 +172,49 @@ func isBasicLand(card *domain.Card) bool {
 func allowsAnyNumberCopies(card *domain.Card) bool {
 	text := strings.ToLower(card.OracleText)
 	return strings.Contains(text, "a deck can have any number of cards named")
+}
+
+// CheckCommanderColorIdentity validates that every card in a Commander deck
+// has a color identity that is a subset of the combined commander's color identity.
+// commanderCards should only contain the commander(s) (1 or 2 for Partner).
+// Returns a slice of violations that can be merged into a DeckLegalityResult.
+func CheckCommanderColorIdentity(commanderCards, deckCards []*domain.Card, quantities map[string]int) []IllegalCardIssue {
+	if len(commanderCards) == 0 {
+		return nil
+	}
+
+	// Build combined commander color identity set.
+	allowed := make(map[string]bool)
+	for _, cmd := range commanderCards {
+		for _, ci := range cmd.ColorIdentity {
+			allowed[strings.ToUpper(ci)] = true
+		}
+	}
+
+	unique := uniqueCardsByID(deckCards)
+	var violations []IllegalCardIssue
+	for _, card := range unique {
+		qty := quantities[card.ID]
+		if qty == 0 {
+			continue
+		}
+		// Basic lands are always allowed regardless of color identity.
+		if isBasicLand(card) {
+			continue
+		}
+		for _, ci := range card.ColorIdentity {
+			if !allowed[strings.ToUpper(ci)] {
+				violations = append(violations, IllegalCardIssue{
+					CardName: card.Name,
+					CardID:   card.ID,
+					Quantity: qty,
+					Legality: "color_identity_violation",
+					Format:   "commander",
+					Reason:   fmt.Sprintf("color identity {%s} is outside the commander's color identity", strings.ToUpper(ci)),
+				})
+				break // report once per card
+			}
+		}
+	}
+	return violations
 }

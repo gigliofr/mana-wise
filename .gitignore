@@ -9,6 +9,11 @@ manawise.exe
 .env.local
 .env.*.local
 
+# TLS certificates / private keys — never commit these
+*.pem
+*.key
+*.crt
+
 # Build output
 web/dist/
 web/node_modules/

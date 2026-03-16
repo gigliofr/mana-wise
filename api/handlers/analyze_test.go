@@ -75,9 +75,10 @@ func (f *analyzeMockFetcher) GetCardByFuzzyName(ctx context.Context, name string
 }
 
 type analyzeMockUserRepo struct {
-	incrementCalls int
-	lastUserID     string
-	lastDay        string
+	checkAndIncrementCalls int
+	lastUserID             string
+	lastDay                string
+	allowIncrement         bool // controls what CheckAndIncrementDailyAnalyses returns
 }
 
 func (r *analyzeMockUserRepo) FindByID(ctx context.Context, id string) (*domain.User, error) {
@@ -96,11 +97,11 @@ func (r *analyzeMockUserRepo) Update(ctx context.Context, user *domain.User) err
 	return nil
 }
 
-func (r *analyzeMockUserRepo) IncrementDailyAnalyses(ctx context.Context, userID, today string) error {
-	r.incrementCalls++
+func (r *analyzeMockUserRepo) CheckAndIncrementDailyAnalyses(ctx context.Context, userID, today string, limit int) (bool, error) {
+	r.checkAndIncrementCalls++
 	r.lastUserID = userID
 	r.lastDay = today
-	return nil
+	return true, nil // always allow in tests
 }
 
 func TestAnalyzeHandler_ArenaDeckPayload_Success(t *testing.T) {
@@ -151,30 +152,32 @@ func TestAnalyzeHandler_ArenaDeckPayload_Success(t *testing.T) {
 	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	       if resp.Deterministic.Format != "standard" {
-		       t.Fatalf("expected normalized format standard, got %q", resp.Deterministic.Format)
-	       }
-	       if resp.Deterministic.Mana.TotalCards != 16 {
-		       t.Fatalf("expected total cards 16 from quantities, got %d", resp.Deterministic.Mana.TotalCards)
-	       }
-	       if users.incrementCalls != 1 || users.lastUserID != "u-42" {
-		       t.Fatalf("expected quota increment for u-42, got calls=%d user=%q", users.incrementCalls, users.lastUserID)
-	       }
-	       if tracker.calls != 1 || tracker.event != "analysis_completed" {
-		       t.Fatalf("expected one analysis_completed tracking event, got calls=%d event=%q", tracker.calls, tracker.event)
-	       }
-	       // Verifica legalità multi-formato
-	       if resp.Legality == nil {
-		       t.Fatalf("expected legality field in response")
-	       }
-		if l, ok := resp.Legality["standard"]; !ok {
-			t.Fatalf("expected legality for standard format")
-		} else {
-			if l.IsLegal {
-				t.Fatalf("expected deck to be illegal in standard with 16 cards")
-			}
-			if l.DeckSize != 16 {
-				t.Fatalf("expected standard legality deck size 16, got %d", l.DeckSize)
-			}
+	if resp.Deterministic.Format != "standard" {
+		t.Fatalf("expected normalized format standard, got %q", resp.Deterministic.Format)
+	}
+	if resp.Deterministic.Mana.TotalCards != 16 {
+		t.Fatalf("expected total cards 16 from quantities, got %d", resp.Deterministic.Mana.TotalCards)
+	}
+	// Quota increment now happens atomically in FreemiumGate middleware,
+	// not in the handler itself. Calling the handler directly skips it.
+	if users.checkAndIncrementCalls != 0 {
+		t.Fatalf("handler must not call CheckAndIncrementDailyAnalyses; got %d call(s)", users.checkAndIncrementCalls)
+	}
+	if tracker.calls != 1 || tracker.event != "analysis_completed" {
+		t.Fatalf("expected one analysis_completed tracking event, got calls=%d event=%q", tracker.calls, tracker.event)
+	}
+	// Verifica legalità multi-formato
+	if resp.Legality == nil {
+		t.Fatalf("expected legality field in response")
+	}
+	if l, ok := resp.Legality["standard"]; !ok {
+		t.Fatalf("expected legality for standard format")
+	} else {
+		if l.IsLegal {
+			t.Fatalf("expected deck to be illegal in standard with 16 cards")
 		}
+		if l.DeckSize != 16 {
+			t.Fatalf("expected standard legality deck size 16, got %d", l.DeckSize)
+		}
+	}
 }

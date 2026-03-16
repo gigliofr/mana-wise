@@ -91,35 +91,53 @@ func (r *UserRepository) Update(ctx context.Context, user *domain.User) error {
 	return nil
 }
 
-// IncrementDailyAnalyses atomically increments the daily analysis counter.
-// If the day has changed it resets the counter to 1.
-func (r *UserRepository) IncrementDailyAnalyses(ctx context.Context, userID, today string) error {
-	// Fetch current document to decide whether to reset or increment.
-	user, err := r.FindByID(ctx, userID)
-	if err != nil {
-		return err
-	}
-	if user == nil {
-		return fmt.Errorf("user %s not found", userID)
-	}
-
-	var update bson.M
-	if user.LastAnalysisDay != today {
-		update = bson.M{"$set": bson.M{
-			"daily_analyses":    1,
-			"last_analysis_day": today,
-			"updated_at":        time.Now().UTC(),
-		}}
-	} else {
-		update = bson.M{
-			"$inc": bson.M{"daily_analyses": 1},
-			"$set": bson.M{"updated_at": time.Now().UTC()},
-		}
+// CheckAndIncrementDailyAnalyses atomically verifies that the user has quota
+// remaining today and increments the counter in one findOneAndUpdate call,
+// eliminating any TOCTOU race between concurrent requests.
+//
+// The filter matches only when quota is available:
+//   - the stored day differs from today (new day → reset to 1 and allow), OR
+//   - the stored day equals today and daily_analyses < limit (still has quota).
+//
+// Returns (true, nil) when the increment succeeded, (false, nil) when the
+// daily limit is exhausted, or (false, err) on a database error.
+func (r *UserRepository) CheckAndIncrementDailyAnalyses(ctx context.Context, userID, today string, limit int) (bool, error) {
+	filter := bson.D{
+		{Key: "_id", Value: userID},
+		{Key: "$or", Value: bson.A{
+			// New day: last_analysis_day is different, so the counter will reset.
+			bson.D{{Key: "last_analysis_day", Value: bson.D{{Key: "$ne", Value: today}}}},
+			// Same day but under the limit.
+			bson.D{{Key: "daily_analyses", Value: bson.D{{Key: "$lt", Value: limit}}}},
+		}},
 	}
 
-	_, err = r.col.UpdateOne(ctx, bson.M{"_id": userID}, update)
-	if err != nil {
-		return fmt.Errorf("UserRepo.IncrementDailyAnalyses: %w", err)
+	// Aggregation pipeline update: evaluated against the current document values.
+	//   • If last_analysis_day == today → increment daily_analyses by 1.
+	//   • Otherwise (new day)           → reset daily_analyses to 1.
+	pipeline := bson.A{
+		bson.D{{Key: "$set", Value: bson.D{
+			{Key: "daily_analyses", Value: bson.D{
+				{Key: "$cond", Value: bson.A{
+					bson.D{{Key: "$eq", Value: bson.A{"$last_analysis_day", today}}},
+					bson.D{{Key: "$add", Value: bson.A{"$daily_analyses", 1}}},
+					1,
+				}},
+			}},
+			{Key: "last_analysis_day", Value: today},
+			{Key: "updated_at", Value: time.Now().UTC()},
+		}}},
 	}
-	return nil
+
+	opts := options.FindOneAndUpdate().SetReturnDocument(options.After)
+	var updated struct{} // we only need to know if a document was matched
+	err := r.col.FindOneAndUpdate(ctx, filter, pipeline, opts).Decode(&updated)
+	if err == mongo.ErrNoDocuments {
+		// No match: either user not found or quota exhausted.
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("UserRepo.CheckAndIncrementDailyAnalyses: %w", err)
+	}
+	return true, nil
 }

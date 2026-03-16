@@ -23,6 +23,10 @@ type ManaAnalysis struct {
 	LandCount         int                   `json:"land_count"`
 	IdealLandCount    int                   `json:"ideal_land_count"`
 	ColorDistribution map[string]int        `json:"color_distribution"`
+	// PipDistribution counts how many coloured pips appear across all non-land mana costs.
+	// Keys are single-letter colour codes: W, U, B, R, G, C.
+	// Example: 16 white pips means the deck demands T white sources early.
+	PipDistribution   map[string]int        `json:"pip_distribution,omitempty"`
 	Suggestions       []ManaCurveSuggestion `json:"suggestions"`
 }
 

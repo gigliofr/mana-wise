@@ -29,8 +29,9 @@ type ServerConfig struct {
 
 // MongoDBConfig contains MongoDB connection settings.
 type MongoDBConfig struct {
-	URI      string
-	Database string
+	URI         string
+	Database    string
+	TLSCertFile string // path to PEM file containing client cert + private key (for X.509 auth)
 }
 
 // JWTConfig contains JWT signing settings.
@@ -96,6 +97,7 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("MONGODB_URI is required")
 	}
 	cfg.MongoDB.Database = getEnv("MONGODB_DB_NAME", "manawise")
+	cfg.MongoDB.TLSCertFile = strings.TrimSpace(os.Getenv("MONGODB_TLS_CERT_FILE"))
 
 	// JWT
 	cfg.JWT.Secret = os.Getenv("JWT_SECRET")

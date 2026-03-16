@@ -8,7 +8,8 @@ import (
 )
 
 // FreemiumGate is an HTTP middleware that enforces daily analysis limits
-// for free users. It calls userRepo to check/update quota atomically.
+// for free users. It atomically checks and increments the quota in a single
+// database operation, preventing TOCTOU races under concurrent requests.
 func FreemiumGate(userRepo domain.UserRepository, tracker domain.AnalyticsTracker) func(http.Handler) http.Handler {
 	if tracker == nil {
 		tracker = domain.NoopAnalyticsTracker{}
@@ -28,23 +29,23 @@ func FreemiumGate(userRepo domain.UserRepository, tracker domain.AnalyticsTracke
 			}
 
 			today := domain.CurrentBusinessDay()
-			user, err := userRepo.FindByID(r.Context(), userID)
-			if err != nil || user == nil {
-				http.Error(w, `{"error":"user not found"}`, http.StatusUnauthorized)
+			// Atomic check-and-increment: quota is reserved only if the DB
+			// update succeeds, preventing concurrent requests from bypassing
+			// the daily limit.
+			allowed, err := userRepo.CheckAndIncrementDailyAnalyses(r.Context(), userID, today, domain.FreeDailyLimit)
+			if err != nil {
+				http.Error(w, `{"error":"quota check failed"}`, http.StatusInternalServerError)
 				return
 			}
-
-			if !user.CanAnalyze(today) {
-				remaining := user.RemainingAnalyses(today)
+			if !allowed {
 				_ = tracker.Track(r.Context(), userID, "daily_limit_reached", map[string]interface{}{
-					"plan":      plan,
-					"remaining": remaining,
-					"limit":     domain.FreeDailyLimit,
+					"plan":  plan,
+					"limit": domain.FreeDailyLimit,
 				})
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusTooManyRequests)
-				fmt.Fprintf(w, `{"error":"daily limit reached","limit":%d,"remaining":%d,"upgrade_url":"/upgrade"}`,
-					domain.FreeDailyLimit, remaining)
+				fmt.Fprintf(w, `{"error":"daily limit reached","limit":%d,"remaining":0,"upgrade_url":"/upgrade"}`,
+					domain.FreeDailyLimit)
 				return
 			}
 
