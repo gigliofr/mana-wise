@@ -77,6 +77,7 @@ func main() {
 	analyzeUC := usecase.NewAnalyzeDeckUseCase(scryfallClient, cardRepo, cfg.Worker.PoolSize)
 	resolveCardUC := usecase.NewResolveCardByNameUseCase(scryfallClient, cardRepo)
 	sideboardUC := usecase.NewSideboardCoachUseCase(cardRepo)
+	mulliganUC := usecase.NewMulliganAssistantUseCase(cardRepo)
 	var embedBatchUC *usecase.EmbedBatchUseCase
 	var otaUC *usecase.OTAUpdateUseCase
 	log.Printf("✅ Worker pool size: %d", cfg.Worker.PoolSize)
@@ -152,6 +153,7 @@ func main() {
 		DeckRepo:      deckRepo,
 		AnalyzeUC:     analyzeUC,
 		SideboardUC:   sideboardUC,
+		MulliganUC:    mulliganUC,
 		AISuggester:   aiSuggester,
 		EmbedBatchUC:  embedBatchUC,
 		ResolveCardUC: resolveCardUC,

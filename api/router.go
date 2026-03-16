@@ -22,6 +22,7 @@ type RouterDeps struct {
 	EmbedBatchUC  *usecase.EmbedBatchUseCase
 	ResolveCardUC *usecase.ResolveCardByNameUseCase
 	SideboardUC   *usecase.SideboardCoachUseCase
+	MulliganUC    *usecase.MulliganAssistantUseCase
 	OTAUC         *usecase.OTAUpdateUseCase
 	Analytics     domain.AnalyticsTracker
 	JWTSecret     string
@@ -44,6 +45,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 	analyzeH := handlers.NewAnalyzeHandler(deps.AnalyzeUC, deps.AISuggester, deps.UserRepo, deps.Analytics)
 	cardsH := handlers.NewCardsHandler(deps.CardRepo, deps.ResolveCardUC)
 	sideboardH := handlers.NewSideboardCoachHandler(deps.SideboardUC)
+	mulliganH := handlers.NewMulliganHandler(deps.MulliganUC)
 	embedH := handlers.NewEmbedBatchHandler(deps.EmbedBatchUC)
 	otaH := handlers.NewOTAHandler(deps.OTAUC)
 	analyticsH := handlers.NewAnalyticsHandler(deps.Analytics)
@@ -75,6 +77,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 			// Analyze — also gate by freemium quota.
 			r.With(freemiumMW).Post("/analyze", analyzeH.ServeHTTP)
 			r.Post("/sideboard/plan", sideboardH.ServeHTTP)
+			r.Post("/mulligan/simulate", mulliganH.ServeHTTP)
 
 			// Cards.
 			r.Get("/cards/search", cardsH.SearchByName)
