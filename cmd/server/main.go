@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -28,12 +30,13 @@ func main() {
 	}
 
 	log.Printf("🔧 Environment: %s | Port: %s", cfg.Server.Environment, cfg.Server.Port)
+	log.Printf("🔎 Mongo target: %s", sanitizeMongoURI(cfg.MongoDB.URI))
 
 	// ── MongoDB ──────────────────────────────────────────────────────────────
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer cancel()
 
-	mongoClient, err := mongodb.NewClient(ctx, cfg.MongoDB)
+	mongoClient, err := connectMongoWithRetry(ctx, cfg.MongoDB, 3, 2*time.Second)
 	if err != nil {
 		log.Fatalf("MongoDB connection failed: %v", err)
 	}
@@ -184,4 +187,49 @@ func main() {
 		log.Fatalf("server shutdown error: %v", err)
 	}
 	log.Println("✅ Server stopped cleanly")
+}
+
+func connectMongoWithRetry(ctx context.Context, cfg config.MongoDBConfig, attempts int, baseBackoff time.Duration) (*mongodb.Client, error) {
+	var lastErr error
+	if attempts < 1 {
+		attempts = 1
+	}
+	for i := 1; i <= attempts; i++ {
+		client, err := mongodb.NewClient(ctx, cfg)
+		if err == nil {
+			return client, nil
+		}
+		lastErr = err
+		if i == attempts {
+			break
+		}
+		backoff := time.Duration(i) * baseBackoff
+		log.Printf("⚠️  MongoDB connect attempt %d/%d failed: %v | retry in %s", i, attempts, err, backoff)
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("mongodb connect aborted by context: %w", ctx.Err())
+		case <-time.After(backoff):
+		}
+	}
+	return nil, fmt.Errorf("mongodb connect failed after %d attempts: %w", attempts, lastErr)
+}
+
+func sanitizeMongoURI(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "<empty>"
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "<invalid-uri>"
+	}
+	host := u.Hostname()
+	if host == "" {
+		return "<unknown-host>"
+	}
+	port := u.Port()
+	if port != "" {
+		return host + ":" + port
+	}
+	return host
 }

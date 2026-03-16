@@ -26,8 +26,8 @@ type Client struct {
 func NewClient(ctx context.Context, cfg config.MongoDBConfig) (*Client, error) {
 	opts := options.Client().
 		ApplyURI(cfg.URI).
-		SetConnectTimeout(10 * time.Second).
-		SetServerSelectionTimeout(10 * time.Second)
+		SetConnectTimeout(15 * time.Second).
+		SetServerSelectionTimeout(20 * time.Second)
 
 	if cfg.TLSCertFile != "" {
 		tlsCfg, err := loadX509TLSConfig(cfg.TLSCertFile)
@@ -42,7 +42,7 @@ func NewClient(ctx context.Context, cfg config.MongoDBConfig) (*Client, error) {
 		return nil, fmt.Errorf("mongodb connect: %w", err)
 	}
 
-	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	pingCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
 
 	if err = client.Ping(pingCtx, readpref.Primary()); err != nil {
