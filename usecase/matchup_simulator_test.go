@@ -2,6 +2,7 @@ package usecase_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/manawise/api/usecase"
@@ -82,6 +83,51 @@ func TestMatchupSimulator_PostBoardAdjustment(t *testing.T) {
 		if len(m.SuggestedOuts) == 0 {
 			t.Fatalf("expected suggested_outs for %s", m.OpponentArchetype)
 		}
+	}
+}
+
+func TestMatchupSimulator_MetaWeightedWinRate(t *testing.T) {
+	uc := usecase.NewMatchupSimulatorUseCase(nil)
+
+	deck := "4 Consider\n4 Opt\n4 Negate\n4 Go for the Throat\n4 Sheoldred, the Apocalypse\n24 Island\n16 Swamp"
+	// default 4 opponents, standard format
+	res, err := uc.Execute(context.Background(), usecase.MatchupSimulationRequest{
+		Decklist: deck,
+		Format:   "standard",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.MetaWeightedWinRate <= 0 || res.MetaWeightedWinRate >= 1 {
+		t.Fatalf("meta_weighted_win_rate out of range: %.4f", res.MetaWeightedWinRate)
+	}
+	// All meta shares must sum to ~1.0
+	total := 0.0
+	for _, m := range res.Matchups {
+		if m.MetaShare <= 0 {
+			t.Fatalf("meta_share must be > 0 for %s, got %.4f", m.OpponentArchetype, m.MetaShare)
+		}
+		total += m.MetaShare
+	}
+	if total < 0.99 || total > 1.01 {
+		t.Fatalf("meta shares should sum to ~1.0, got %.4f", total)
+	}
+	// Custom meta shares override: favor combo-heavy meta
+	resCombo, err := uc.Execute(context.Background(), usecase.MatchupSimulationRequest{
+		Decklist: deck,
+		Format:   "standard",
+		MetaShares: map[string]float64{"aggro": 0.05, "midrange": 0.10, "control": 0.15, "combo": 0.70},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error with custom meta shares: %v", err)
+	}
+	// With 70% combo weight the meta-weighted WR should differ from equal-weight result
+	if res.MetaWeightedWinRate == resCombo.MetaWeightedWinRate {
+		t.Fatalf("expected different meta-weighted WR with custom meta shares")
+	}
+	// Summary must mention meta-weighted percentage
+	if !strings.Contains(resCombo.Summary, "meta-weighted") {
+		t.Fatalf("expected summary to contain 'meta-weighted', got: %s", resCombo.Summary)
 	}
 }
 

@@ -10,12 +10,13 @@ import (
 
 // MatchupSimulationRequest is the API payload for matchup simulation.
 type MatchupSimulationRequest struct {
-	Decklist          string   `json:"decklist"`
-	SideboardDecklist string   `json:"sideboard_decklist,omitempty"`
-	Format            string   `json:"format,omitempty"`
-	PlayerArchetype   string   `json:"player_archetype,omitempty"`
-	Opponents         []string `json:"opponents,omitempty"`
-	OnPlay            bool     `json:"on_play,omitempty"`
+	Decklist          string             `json:"decklist"`
+	SideboardDecklist string             `json:"sideboard_decklist,omitempty"`
+	Format            string             `json:"format,omitempty"`
+	PlayerArchetype   string             `json:"player_archetype,omitempty"`
+	Opponents         []string           `json:"opponents,omitempty"`
+	OnPlay            bool               `json:"on_play,omitempty"`
+	MetaShares        map[string]float64 `json:"meta_shares,omitempty"`
 }
 
 // MatchupHandler serves matchup simulation requests.
@@ -54,6 +55,7 @@ func (h *MatchupHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		PlayerArchetype:   req.PlayerArchetype,
 		Opponents:         req.Opponents,
 		OnPlay:            req.OnPlay,
+		MetaShares:        req.MetaShares,
 	})
 	if err != nil {
 		jsonError(w, err.Error(), http.StatusUnprocessableEntity)

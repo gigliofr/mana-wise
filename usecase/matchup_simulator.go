@@ -22,29 +22,32 @@ type MatchupSimulationRequest struct {
 	Format            string
 	PlayerArchetype   string
 	Opponents         []string
-	OnPlay            bool // true = player goes first; affects win-rate estimates
+	OnPlay            bool               // true = player goes first; affects win-rate estimates
+	MetaShares        map[string]float64 // optional per-archetype prevalence overrides (0-1); missing archetypes use format defaults
 }
 
 // MatchupEstimate represents one opponent matchup estimate.
 type MatchupEstimate struct {
-	OpponentArchetype string   `json:"opponent_archetype"`
-	WinRate           float64  `json:"win_rate"`
-	PostBoardWinRate  float64  `json:"post_board_win_rate,omitempty"`
-	SideboardDelta    float64  `json:"sideboard_delta,omitempty"`
+	OpponentArchetype string          `json:"opponent_archetype"`
+	MetaShare         float64         `json:"meta_share"`
+	WinRate           float64         `json:"win_rate"`
+	PostBoardWinRate  float64         `json:"post_board_win_rate,omitempty"`
+	SideboardDelta    float64         `json:"sideboard_delta,omitempty"`
 	SuggestedIns      []SideboardSwap `json:"suggested_ins,omitempty"`
 	SuggestedOuts     []SideboardSwap `json:"suggested_outs,omitempty"`
-	Confidence        float64  `json:"confidence"`
-	KeyFactors        []string `json:"key_factors,omitempty"`
-	Verdict           string   `json:"verdict"`
+	Confidence        float64         `json:"confidence"`
+	KeyFactors        []string        `json:"key_factors,omitempty"`
+	Verdict           string          `json:"verdict"`
 }
 
 // MatchupSimulationResult is returned by the simulator endpoint.
 type MatchupSimulationResult struct {
-	Format          string            `json:"format"`
-	PlayerArchetype string            `json:"player_archetype"`
-	OnPlay          bool              `json:"on_play"`
-	Matchups        []MatchupEstimate `json:"matchups"`
-	Summary         string            `json:"summary"`
+	Format                string            `json:"format"`
+	PlayerArchetype       string            `json:"player_archetype"`
+	OnPlay                bool              `json:"on_play"`
+	MetaWeightedWinRate   float64           `json:"meta_weighted_win_rate"`
+	Matchups              []MatchupEstimate `json:"matchups"`
+	Summary               string            `json:"summary"`
 }
 
 type matchupFeatures struct {
@@ -99,8 +102,11 @@ func (uc *MatchupSimulatorUseCase) Execute(ctx context.Context, req MatchupSimul
 	}
 
 	opponents := normalizeOpponents(req.Opponents)
+	format := strings.ToLower(strings.TrimSpace(req.Format))
+	metaShares := resolveMetaShares(format, opponents, req.MetaShares)
+
 	result := MatchupSimulationResult{
-		Format:          strings.ToLower(strings.TrimSpace(req.Format)),
+		Format:          format,
 		PlayerArchetype: playerArchetype,
 		OnPlay:          req.OnPlay,
 		Matchups:        make([]MatchupEstimate, 0, len(opponents)),
@@ -113,6 +119,7 @@ func (uc *MatchupSimulatorUseCase) Execute(ctx context.Context, req MatchupSimul
 		sideIns, sideOuts := buildMiniSideboardPlan(entries, sideboard, cardMap, opp)
 		result.Matchups = append(result.Matchups, MatchupEstimate{
 			OpponentArchetype: opp,
+			MetaShare:         round2(metaShares[opp]),
 			WinRate:           round2(clamp(winRate, 0.25, 0.75)),
 			PostBoardWinRate:  round2(clamp(postBoard, 0.25, 0.8)),
 			SideboardDelta:    round2(sideDelta),
@@ -128,6 +135,7 @@ func (uc *MatchupSimulatorUseCase) Execute(ctx context.Context, req MatchupSimul
 		return result.Matchups[i].WinRate > result.Matchups[j].WinRate
 	})
 
+	result.MetaWeightedWinRate = round2(computeMetaWeightedWinRate(result.Matchups))
 	result.Summary = buildMatchupSummary(result)
 	return result, nil
 }
@@ -364,6 +372,65 @@ func verdictFromWinRate(winRate float64) string {
 	return "unfavored"
 }
 
+// defaultMetaShares returns approximate archetype prevalence for the given format.
+func defaultMetaShares(format string) map[string]float64 {
+	switch format {
+	case "standard":
+		return map[string]float64{"aggro": 0.28, "midrange": 0.32, "control": 0.24, "combo": 0.16}
+	case "pioneer":
+		return map[string]float64{"aggro": 0.25, "midrange": 0.30, "control": 0.25, "combo": 0.20}
+	case "modern":
+		return map[string]float64{"aggro": 0.22, "midrange": 0.28, "control": 0.20, "combo": 0.30}
+	case "legacy", "vintage":
+		return map[string]float64{"aggro": 0.18, "midrange": 0.22, "control": 0.25, "combo": 0.35}
+	case "commander", "edh":
+		return map[string]float64{"aggro": 0.10, "midrange": 0.50, "control": 0.25, "combo": 0.15}
+	default:
+		return map[string]float64{"aggro": 0.25, "midrange": 0.25, "control": 0.25, "combo": 0.25}
+	}
+}
+
+// resolveMetaShares merges user overrides with format defaults and normalises to
+// the subset of opponents actually requested, so shares always sum to 1.0.
+func resolveMetaShares(format string, opponents []string, overrides map[string]float64) map[string]float64 {
+	defaults := defaultMetaShares(format)
+	raw := map[string]float64{}
+	for _, opp := range opponents {
+		if v, ok := overrides[opp]; ok && v > 0 {
+			raw[opp] = v
+		} else if v, ok2 := defaults[opp]; ok2 {
+			raw[opp] = v
+		} else {
+			raw[opp] = 0.25 // fallback for unknown archetypes
+		}
+	}
+	// Normalise
+	total := 0.0
+	for _, v := range raw {
+		total += v
+	}
+	if total == 0 {
+		total = 1
+	}
+	out := map[string]float64{}
+	for k, v := range raw {
+		out[k] = v / total
+	}
+	return out
+}
+
+// computeMetaWeightedWinRate returns win rate weighted by each matchup's MetaShare.
+func computeMetaWeightedWinRate(matchups []MatchupEstimate) float64 {
+	if len(matchups) == 0 {
+		return 0
+	}
+	w := 0.0
+	for _, m := range matchups {
+		w += m.WinRate * m.MetaShare
+	}
+	return w
+}
+
 func buildMatchupSummary(res MatchupSimulationResult) string {
 	if len(res.Matchups) == 0 {
 		return "No matchup estimates available"
@@ -378,10 +445,11 @@ func buildMatchupSummary(res MatchupSimulationResult) string {
 	}
 	avgPre = avgPre / float64(len(res.Matchups))
 	avgPost = avgPost / float64(len(res.Matchups))
+	meta := fmt.Sprintf(" (meta-weighted: %.0f%%)", math.Round(res.MetaWeightedWinRate*100))
 	if avgPost > 0 {
-		return fmt.Sprintf("Estimated performance: %.0f%% pre-board and %.0f%% post-board average; best pre-board vs %s (%.0f%%), weakest pre-board vs %s (%.0f%%).", math.Round(avgPre*100), math.Round(avgPost*100), best.OpponentArchetype, math.Round(best.WinRate*100), worst.OpponentArchetype, math.Round(worst.WinRate*100))
+		return fmt.Sprintf("Estimated performance: %.0f%% pre-board and %.0f%% post-board average%s; best pre-board vs %s (%.0f%%), weakest pre-board vs %s (%.0f%%).", math.Round(avgPre*100), math.Round(avgPost*100), meta, best.OpponentArchetype, math.Round(best.WinRate*100), worst.OpponentArchetype, math.Round(worst.WinRate*100))
 	}
-	return fmt.Sprintf("Estimated pre-sideboard performance: %.0f%% average, best vs %s (%.0f%%), weakest vs %s (%.0f%%).", math.Round(avgPre*100), best.OpponentArchetype, math.Round(best.WinRate*100), worst.OpponentArchetype, math.Round(worst.WinRate*100))
+	return fmt.Sprintf("Estimated pre-sideboard performance: %.0f%% average%s, best vs %s (%.0f%%), weakest vs %s (%.0f%%).", math.Round(avgPre*100), meta, best.OpponentArchetype, math.Round(best.WinRate*100), worst.OpponentArchetype, math.Round(worst.WinRate*100))
 }
 
 func applySideboardDelta(opp string, preWinRate float64, sideboard map[string]int, cardMap map[string]*domain.Card) (float64, float64, []string) {
