@@ -167,9 +167,14 @@ func TestAnalyzeHandler_ArenaDeckPayload_Success(t *testing.T) {
 	       if resp.Legality == nil {
 		       t.Fatalf("expected legality field in response")
 	       }
-	       if l, ok := resp.Legality["standard"]; !ok {
-		       t.Fatalf("expected legality for standard format")
-	       } else if !l.IsLegal {
-		       t.Fatalf("expected deck to be legal in standard, got IsLegal=false")
-	       }
+		if l, ok := resp.Legality["standard"]; !ok {
+			t.Fatalf("expected legality for standard format")
+		} else {
+			if l.IsLegal {
+				t.Fatalf("expected deck to be illegal in standard with 16 cards")
+			}
+			if l.DeckSize != 16 {
+				t.Fatalf("expected standard legality deck size 16, got %d", l.DeckSize)
+			}
+		}
 }

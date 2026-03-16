@@ -25,8 +25,9 @@ type AnalyzeDeckRequest struct {
 
 // AnalyzeDeckResponse is the output of the AnalyzeDeck use case.
 type AnalyzeDeckResponse struct {
-	Result   domain.AnalysisResult
-	RawCards []*domain.Card // resolved domain cards
+	Result     domain.AnalysisResult
+	RawCards   []*domain.Card   // resolved domain cards
+	Quantities map[string]int   // cardID -> total quantity in decklist
 }
 
 // AnalyzeDeckUseCase orchestrates card resolution + deterministic analysis.
@@ -142,7 +143,8 @@ func (uc *AnalyzeDeckUseCase) Execute(ctx context.Context, req AnalyzeDeckReques
 			Interaction: interactionResult,
 			LatencyMs:   time.Since(start).Milliseconds(),
 		},
-		RawCards: allCards,
+		RawCards:   allCards,
+		Quantities: quantities,
 	}
 	return resp, nil
 }

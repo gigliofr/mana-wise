@@ -102,24 +102,15 @@ func (h *AnalyzeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"latency_ms": result.Result.LatencyMs,
 	})
 
-	       legality := usecase.DetermineDeckLegalityAllFormats(result.RawCards, quantitiesFromRawCards(result.RawCards))
-	       jsonOK(w, AnalyzeResponse{
-		       Deterministic: result.Result,
-		       AISuggestions: aiSuggestions,
-		       AISource:      aiSource,
-		       AIError:       aiError,
-		       LatencyMs:     result.Result.LatencyMs,
-		       Legality:      legality,
-	       })
-	}
-
-	// quantitiesFromRawCards ricostruisce la mappa quantità da RawCards (per compatibilità con legality)
-	func quantitiesFromRawCards(cards []*domain.Card) map[string]int {
-	       qty := make(map[string]int)
-	       for _, c := range cards {
-		       qty[c.ID]++
-	       }
-	       return qty
+	legality := usecase.DetermineDeckLegalityAllFormats(result.RawCards, result.Quantities)
+	jsonOK(w, AnalyzeResponse{
+		Deterministic: result.Result,
+		AISuggestions: aiSuggestions,
+		AISource:      aiSource,
+		AIError:       aiError,
+		LatencyMs:     result.Result.LatencyMs,
+		Legality:      legality,
+	})
 }
 
 func normalizeLocale(requestLocale, acceptLanguage string) string {
