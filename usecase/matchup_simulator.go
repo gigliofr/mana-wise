@@ -42,12 +42,22 @@ type MatchupEstimate struct {
 
 // MatchupSimulationResult is returned by the simulator endpoint.
 type MatchupSimulationResult struct {
-	Format                string            `json:"format"`
-	PlayerArchetype       string            `json:"player_archetype"`
-	OnPlay                bool              `json:"on_play"`
-	MetaWeightedWinRate   float64           `json:"meta_weighted_win_rate"`
-	Matchups              []MatchupEstimate `json:"matchups"`
-	Summary               string            `json:"summary"`
+	Format              string              `json:"format"`
+	PlayerArchetype     string              `json:"player_archetype"`
+	OnPlay              bool                `json:"on_play"`
+	MetaWeightedWinRate float64             `json:"meta_weighted_win_rate"`
+	Weaknesses          []WeaknessDiagnosis `json:"weaknesses,omitempty"`
+	Matchups            []MatchupEstimate   `json:"matchups"`
+	Summary             string              `json:"summary"`
+}
+
+// WeaknessDiagnosis describes a matchup where the deck is unfavored and suggests concrete remedies.
+type WeaknessDiagnosis struct {
+	Opponent string   `json:"opponent"`
+	WinRate  float64  `json:"win_rate"`
+	Severity string   `json:"severity"` // "slight" (<5pp below 50%) | "moderate" (5-10pp) | "significant" (>10pp)
+	Gaps     []string `json:"gaps"`
+	Remedies []string `json:"remedies"`
 }
 
 type matchupFeatures struct {
@@ -136,8 +146,116 @@ func (uc *MatchupSimulatorUseCase) Execute(ctx context.Context, req MatchupSimul
 	})
 
 	result.MetaWeightedWinRate = round2(computeMetaWeightedWinRate(result.Matchups))
+	result.Weaknesses = diagnoseWeaknesses(result.Matchups, features)
 	result.Summary = buildMatchupSummary(result)
 	return result, nil
+}
+
+// diagnoseWeaknesses returns a diagnosis entry for every matchup where WinRate < 0.50,
+// sorted by severity and annotated with feature-gap analysis and remedy suggestions.
+func diagnoseWeaknesses(matchups []MatchupEstimate, f matchupFeatures) []WeaknessDiagnosis {
+	diags := []WeaknessDiagnosis{}
+	for _, m := range matchups {
+		if m.WinRate >= 0.50 {
+			continue
+		}
+		gap := 0.50 - m.WinRate
+		severity := "slight"
+		if gap >= 0.10 {
+			severity = "significant"
+		} else if gap >= 0.05 {
+			severity = "moderate"
+		}
+		gaps, remedies := weaknessGapsAndRemedies(m.OpponentArchetype, f)
+		diags = append(diags, WeaknessDiagnosis{
+			Opponent: m.OpponentArchetype,
+			WinRate:  m.WinRate,
+			Severity: severity,
+			Gaps:     gaps,
+			Remedies: remedies,
+		})
+	}
+	severityRank := map[string]int{"significant": 0, "moderate": 1, "slight": 2}
+	sort.Slice(diags, func(i, j int) bool {
+		ri := severityRank[diags[i].Severity]
+		rj := severityRank[diags[j].Severity]
+		if ri != rj {
+			return ri < rj
+		}
+		return diags[i].WinRate < diags[j].WinRate
+	})
+	return diags
+}
+
+// weaknessGapsAndRemedies returns human-readable gap descriptions and card-category
+// remedies for a given opponent archetype based on deck feature counts.
+func weaknessGapsAndRemedies(opp string, f matchupFeatures) (gaps, remedies []string) {
+	switch opp {
+	case "aggro":
+		if f.cheapInteraction < 8 {
+			gaps = append(gaps, fmt.Sprintf("Low cheap interaction (%d spells ≤3 mana)", f.cheapInteraction))
+			remedies = append(remedies, "Add early removal (e.g. Lightning Strike, Go for the Throat, Abrade)")
+		}
+		if f.sweepers < 2 {
+			gaps = append(gaps, fmt.Sprintf("Few sweepers (%d)", f.sweepers))
+			remedies = append(remedies, "Include board wipes (e.g. Brotherhood's End, Sunfall, Blast Zone)")
+		}
+		if f.lands < 22 {
+			gaps = append(gaps, "Potential mana inconsistency hurts early interaction")
+			remedies = append(remedies, "Ensure 22-24 lands for consistent turn-2 interaction")
+		}
+		if len(gaps) == 0 {
+			gaps = append(gaps, "Slightly below even on aggro matchup baseline")
+			remedies = append(remedies, "Consider 1-2 lifegain spells or early blockers to buy time")
+		}
+	case "control":
+		if f.threats < 10 {
+			gaps = append(gaps, fmt.Sprintf("Threat density low (%d threats)", f.threats))
+			remedies = append(remedies, "Add resilient threats (e.g. Sheoldred, Wedding Announcement, planeswalkers)")
+		}
+		if f.discard < 4 {
+			gaps = append(gaps, fmt.Sprintf("Low hand disruption (%d discard spells)", f.discard))
+			remedies = append(remedies, "Add Duress / Thoughtseize effects to strip counterspells proactively")
+		}
+		if f.cantrips < 6 {
+			gaps = append(gaps, "Low card selection makes it hard to find threats through permission")
+			remedies = append(remedies, "Add cantrips (Opt, Consider, Impulse) to improve consistency")
+		}
+		if len(gaps) == 0 {
+			gaps = append(gaps, "Control matchup baseline slightly unfavoured")
+			remedies = append(remedies, "Widen threat diversity so control can't answer each type with the same card")
+		}
+	case "combo":
+		if f.counters < 4 {
+			gaps = append(gaps, fmt.Sprintf("Low counterspell count (%d)", f.counters))
+			remedies = append(remedies, "Add stack interaction (Negate, Make Disappear, Disdainful Stroke)")
+		}
+		if f.discard < 4 {
+			gaps = append(gaps, fmt.Sprintf("Limited hand disruption (%d discard spells)", f.discard))
+			remedies = append(remedies, "Proactive disruption (Duress, Thoughtseize) preempts combo turns")
+		}
+		if len(gaps) == 0 {
+			gaps = append(gaps, "Combo matchup baseline slightly unfavoured")
+			remedies = append(remedies, "Consider graveyard hate or clock threats to race the combo")
+		}
+	case "midrange":
+		if f.threats < 10 {
+			gaps = append(gaps, fmt.Sprintf("Threat density low (%d) for a midrange mirror", f.threats))
+			remedies = append(remedies, "Include high-value threats that generate card advantage (e.g. Titan of Industry, Etali)")
+		}
+		if f.cheapInteraction < 6 {
+			gaps = append(gaps, "Insufficient early removal for opposing 3-4 mana threats")
+			remedies = append(remedies, "Add versatile removal (Destroy Evil, Ossification, Invoke Despair)")
+		}
+		if len(gaps) == 0 {
+			gaps = append(gaps, "Midrange matchup slightly below 50/50")
+			remedies = append(remedies, "Improve card quality in the 3-4 mana slot to swing the value battle")
+		}
+	default:
+		gaps = append(gaps, "Matchup is unfavoured on baseline heuristics")
+		remedies = append(remedies, "Review sideboard plan for this archetype")
+	}
+	return
 }
 
 func normalizeOpponents(opponents []string) []string {
@@ -447,9 +565,22 @@ func buildMatchupSummary(res MatchupSimulationResult) string {
 	avgPost = avgPost / float64(len(res.Matchups))
 	meta := fmt.Sprintf(" (meta-weighted: %.0f%%)", math.Round(res.MetaWeightedWinRate*100))
 	if avgPost > 0 {
-		return fmt.Sprintf("Estimated performance: %.0f%% pre-board and %.0f%% post-board average%s; best pre-board vs %s (%.0f%%), weakest pre-board vs %s (%.0f%%).", math.Round(avgPre*100), math.Round(avgPost*100), meta, best.OpponentArchetype, math.Round(best.WinRate*100), worst.OpponentArchetype, math.Round(worst.WinRate*100))
+		weak := weaknessSuffix(res.Weaknesses)
+		return fmt.Sprintf("Estimated performance: %.0f%% pre-board and %.0f%% post-board average%s; best pre-board vs %s (%.0f%%), weakest pre-board vs %s (%.0f%%)%s.", math.Round(avgPre*100), math.Round(avgPost*100), meta, best.OpponentArchetype, math.Round(best.WinRate*100), worst.OpponentArchetype, math.Round(worst.WinRate*100), weak)
 	}
-	return fmt.Sprintf("Estimated pre-sideboard performance: %.0f%% average%s, best vs %s (%.0f%%), weakest vs %s (%.0f%%).", math.Round(avgPre*100), meta, best.OpponentArchetype, math.Round(best.WinRate*100), worst.OpponentArchetype, math.Round(worst.WinRate*100))
+	weak := weaknessSuffix(res.Weaknesses)
+	return fmt.Sprintf("Estimated pre-sideboard performance: %.0f%% average%s, best vs %s (%.0f%%), weakest vs %s (%.0f%%)%s.", math.Round(avgPre*100), meta, best.OpponentArchetype, math.Round(best.WinRate*100), worst.OpponentArchetype, math.Round(worst.WinRate*100), weak)
+}
+
+func weaknessSuffix(weaknesses []WeaknessDiagnosis) string {
+	if len(weaknesses) == 0 {
+		return ""
+	}
+	names := make([]string, 0, len(weaknesses))
+	for _, w := range weaknesses {
+		names = append(names, w.Opponent)
+	}
+	return fmt.Sprintf("; %d unfavored matchup(s): %s", len(weaknesses), strings.Join(names, ", "))
 }
 
 func applySideboardDelta(opp string, preWinRate float64, sideboard map[string]int, cardMap map[string]*domain.Card) (float64, float64, []string) {

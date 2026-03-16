@@ -86,6 +86,53 @@ func TestMatchupSimulator_PostBoardAdjustment(t *testing.T) {
 	}
 }
 
+func TestMatchupSimulator_WeaknessDiagnosis(t *testing.T) {
+	uc := usecase.NewMatchupSimulatorUseCase(nil)
+
+	// Aggro deck: few counters/discard → should be unfavoured vs control/combo
+	deck := "4 Monastery Swiftspear\n4 Lightning Strike\n4 Play with Fire\n4 Kumano Faces Kakkazan\n4 Goblin Guide\n20 Mountain"
+	res, err := uc.Execute(context.Background(), usecase.MatchupSimulationRequest{
+		Decklist:        deck,
+		Format:          "standard",
+		PlayerArchetype: "aggro",
+		Opponents:       []string{"aggro", "control", "combo"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Weaknesses should only include matchups with WR < 0.50
+	for _, w := range res.Weaknesses {
+		var found bool
+		for _, m := range res.Matchups {
+			if m.OpponentArchetype == w.Opponent {
+				if m.WinRate >= 0.50 {
+					t.Errorf("weakness listed for %s but WR=%.2f >= 0.50", w.Opponent, m.WinRate)
+				}
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("weakness opponent %q not found in matchups", w.Opponent)
+		}
+		if w.Severity == "" {
+			t.Errorf("expected non-empty severity for %s", w.Opponent)
+		}
+		if len(w.Gaps) == 0 {
+			t.Errorf("expected at least one gap for %s", w.Opponent)
+		}
+		if len(w.Remedies) == 0 {
+			t.Errorf("expected at least one remedy for %s", w.Opponent)
+		}
+	}
+
+	// Summary should mention unfavored matchup count when weaknesses exist
+	if len(res.Weaknesses) > 0 && !strings.Contains(res.Summary, "unfavored matchup") {
+		t.Errorf("expected summary to mention unfavored matchups, got: %s", res.Summary)
+	}
+}
+
 func TestMatchupSimulator_MetaWeightedWinRate(t *testing.T) {
 	uc := usecase.NewMatchupSimulatorUseCase(nil)
 
