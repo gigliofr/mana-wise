@@ -85,6 +85,49 @@ func TestMatchupSimulator_PostBoardAdjustment(t *testing.T) {
 	}
 }
 
+func TestMatchupSimulator_OnPlay(t *testing.T) {
+	uc := usecase.NewMatchupSimulatorUseCase(nil)
+
+	deck := "4 Monastery Swiftspear\n4 Lightning Strike\n4 Kumano Faces Kakkazan\n20 Mountain\n4 Play with Fire\n4 Goblin Guide"
+	opponents := []string{"control", "combo"}
+
+	resPlay, err := uc.Execute(context.Background(), usecase.MatchupSimulationRequest{
+		Decklist:        deck,
+		Format:          "standard",
+		PlayerArchetype: "aggro",
+		Opponents:       opponents,
+		OnPlay:          true,
+	})
+	if err != nil {
+		t.Fatalf("on_play=true error: %v", err)
+	}
+	resDraw, err := uc.Execute(context.Background(), usecase.MatchupSimulationRequest{
+		Decklist:        deck,
+		Format:          "standard",
+		PlayerArchetype: "aggro",
+		Opponents:       opponents,
+		OnPlay:          false,
+	})
+	if err != nil {
+		t.Fatalf("on_play=false error: %v", err)
+	}
+
+	if !resPlay.OnPlay {
+		t.Fatal("expected OnPlay=true reflected in result")
+	}
+	if resDraw.OnPlay {
+		t.Fatal("expected OnPlay=false reflected in result")
+	}
+
+	// On-play aggro should have higher win rate than on-draw across all matchups
+	for i, mp := range resPlay.Matchups {
+		md := resDraw.Matchups[i]
+		if mp.WinRate <= md.WinRate {
+			t.Errorf("expected on_play WR > on_draw WR for %s: %.3f <= %.3f", mp.OpponentArchetype, mp.WinRate, md.WinRate)
+		}
+	}
+}
+
 func TestMatchupSimulator_EmptyDecklist(t *testing.T) {
 	uc := usecase.NewMatchupSimulatorUseCase(nil)
 

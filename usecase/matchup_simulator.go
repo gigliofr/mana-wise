@@ -17,11 +17,12 @@ type MatchupSimulatorUseCase struct {
 
 // MatchupSimulationRequest contains simulation input.
 type MatchupSimulationRequest struct {
-	Decklist        string
+	Decklist          string
 	SideboardDecklist string
-	Format          string
-	PlayerArchetype string
-	Opponents       []string
+	Format            string
+	PlayerArchetype   string
+	Opponents         []string
+	OnPlay            bool // true = player goes first; affects win-rate estimates
 }
 
 // MatchupEstimate represents one opponent matchup estimate.
@@ -41,6 +42,7 @@ type MatchupEstimate struct {
 type MatchupSimulationResult struct {
 	Format          string            `json:"format"`
 	PlayerArchetype string            `json:"player_archetype"`
+	OnPlay          bool              `json:"on_play"`
 	Matchups        []MatchupEstimate `json:"matchups"`
 	Summary         string            `json:"summary"`
 }
@@ -100,11 +102,12 @@ func (uc *MatchupSimulatorUseCase) Execute(ctx context.Context, req MatchupSimul
 	result := MatchupSimulationResult{
 		Format:          strings.ToLower(strings.TrimSpace(req.Format)),
 		PlayerArchetype: playerArchetype,
+		OnPlay:          req.OnPlay,
 		Matchups:        make([]MatchupEstimate, 0, len(opponents)),
 	}
 
 	for _, opp := range opponents {
-		winRate, factors := estimateWinRate(playerArchetype, opp, features)
+		winRate, factors := estimateWinRate(playerArchetype, opp, features, req.OnPlay)
 		postBoard, sideDelta, sideFactors := applySideboardDelta(opp, winRate, sideboard, cardMap)
 		factors = append(factors, sideFactors...)
 		sideIns, sideOuts := buildMiniSideboardPlan(entries, sideboard, cardMap, opp)
@@ -236,10 +239,14 @@ func inferPlayerArchetype(f matchupFeatures) string {
 	return "midrange"
 }
 
-func estimateWinRate(player, opp string, f matchupFeatures) (float64, []string) {
+func estimateWinRate(player, opp string, f matchupFeatures, onPlay bool) (float64, []string) {
 	base := baseMatchupWinRate(player, opp)
-	adj := 0.0
+	playDelta, playFactor := playDrawAdjustment(player, opp, onPlay)
+	adj := playDelta
 	factors := []string{}
+	if playFactor != "" {
+		factors = append(factors, playFactor)
+	}
 
 	switch opp {
 	case "aggro":
@@ -285,6 +292,39 @@ func estimateWinRate(player, opp string, f matchupFeatures) (float64, []string) 
 	}
 
 	return base + adj, factors
+}
+
+// playDrawAdjustment returns the win-rate delta and a human-readable factor
+// for going first (onPlay=true) or second (onPlay=false).
+func playDrawAdjustment(player, opp string, onPlay bool) (float64, string) {
+	// Positive values = advantage when going first.
+	matrix := map[string]map[string]float64{
+		"aggro":    {"aggro": 0.010, "midrange": 0.025, "control": 0.035, "combo": 0.020},
+		"midrange": {"aggro": 0.015, "midrange": 0.010, "control": 0.020, "combo": 0.010},
+		"control":  {"aggro": -0.025, "midrange": 0.010, "control": 0.015, "combo": 0.020},
+		"combo":    {"aggro": 0.020, "midrange": 0.015, "control": 0.015, "combo": 0.010},
+	}
+	delta := 0.015 // default small on-play edge
+	if row, ok := matrix[player]; ok {
+		if v, ok2 := row[opp]; ok2 {
+			delta = v
+		}
+	}
+	if !onPlay {
+		delta = -delta
+	}
+	if delta == 0 {
+		return 0, ""
+	}
+	position := "on the draw"
+	if onPlay {
+		position = "on the play"
+	}
+	sign := "+"
+	if delta < 0 {
+		sign = "-"
+	}
+	return delta, fmt.Sprintf("Play/draw position (%s): %s%.0fpp", position, sign, math.Abs(delta*100))
 }
 
 func baseMatchupWinRate(player, opp string) float64 {
