@@ -36,7 +36,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer cancel()
 
-	mongoClient, err := connectMongoWithRetry(ctx, cfg.MongoDB, 3, 2*time.Second)
+	mongoClient, connectedAttempt, retryCount, err := connectMongoWithRetry(ctx, cfg.MongoDB, 3, 2*time.Second)
 	if err != nil {
 		log.Fatalf("MongoDB connection failed: %v", err)
 	}
@@ -47,7 +47,7 @@ func main() {
 			log.Printf("MongoDB disconnect error: %v", err)
 		}
 	}()
-	log.Println("✅ MongoDB connected")
+	log.Printf("✅ MongoDB connected (attempt=%d, retries=%d)", connectedAttempt, retryCount)
 
 	// ── Repositories ─────────────────────────────────────────────────────────
 	setupCtx := context.Background()
@@ -189,7 +189,7 @@ func main() {
 	log.Println("✅ Server stopped cleanly")
 }
 
-func connectMongoWithRetry(ctx context.Context, cfg config.MongoDBConfig, attempts int, baseBackoff time.Duration) (*mongodb.Client, error) {
+func connectMongoWithRetry(ctx context.Context, cfg config.MongoDBConfig, attempts int, baseBackoff time.Duration) (*mongodb.Client, int, int, error) {
 	var lastErr error
 	if attempts < 1 {
 		attempts = 1
@@ -197,7 +197,7 @@ func connectMongoWithRetry(ctx context.Context, cfg config.MongoDBConfig, attemp
 	for i := 1; i <= attempts; i++ {
 		client, err := mongodb.NewClient(ctx, cfg)
 		if err == nil {
-			return client, nil
+			return client, i, i - 1, nil
 		}
 		lastErr = err
 		if i == attempts {
@@ -207,11 +207,11 @@ func connectMongoWithRetry(ctx context.Context, cfg config.MongoDBConfig, attemp
 		log.Printf("⚠️  MongoDB connect attempt %d/%d failed: %v | retry in %s", i, attempts, err, backoff)
 		select {
 		case <-ctx.Done():
-			return nil, fmt.Errorf("mongodb connect aborted by context: %w", ctx.Err())
+			return nil, 0, i - 1, fmt.Errorf("mongodb connect aborted by context: %w", ctx.Err())
 		case <-time.After(backoff):
 		}
 	}
-	return nil, fmt.Errorf("mongodb connect failed after %d attempts: %w", attempts, lastErr)
+	return nil, 0, attempts - 1, fmt.Errorf("mongodb connect failed after %d attempts: %w", attempts, lastErr)
 }
 
 func sanitizeMongoURI(raw string) string {
