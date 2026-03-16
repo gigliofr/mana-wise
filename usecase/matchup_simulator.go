@@ -30,6 +30,8 @@ type MatchupEstimate struct {
 	WinRate           float64  `json:"win_rate"`
 	PostBoardWinRate  float64  `json:"post_board_win_rate,omitempty"`
 	SideboardDelta    float64  `json:"sideboard_delta,omitempty"`
+	SuggestedIns      []SideboardSwap `json:"suggested_ins,omitempty"`
+	SuggestedOuts     []SideboardSwap `json:"suggested_outs,omitempty"`
 	Confidence        float64  `json:"confidence"`
 	KeyFactors        []string `json:"key_factors,omitempty"`
 	Verdict           string   `json:"verdict"`
@@ -105,11 +107,14 @@ func (uc *MatchupSimulatorUseCase) Execute(ctx context.Context, req MatchupSimul
 		winRate, factors := estimateWinRate(playerArchetype, opp, features)
 		postBoard, sideDelta, sideFactors := applySideboardDelta(opp, winRate, sideboard, cardMap)
 		factors = append(factors, sideFactors...)
+		sideIns, sideOuts := buildMiniSideboardPlan(entries, sideboard, cardMap, opp)
 		result.Matchups = append(result.Matchups, MatchupEstimate{
 			OpponentArchetype: opp,
 			WinRate:           round2(clamp(winRate, 0.25, 0.75)),
 			PostBoardWinRate:  round2(clamp(postBoard, 0.25, 0.8)),
 			SideboardDelta:    round2(sideDelta),
+			SuggestedIns:      sideIns,
+			SuggestedOuts:     sideOuts,
 			Confidence:        round2(calcConfidence(features)),
 			KeyFactors:        factors,
 			Verdict:           verdictFromWinRate(winRate),
@@ -433,6 +438,88 @@ func sideboardTagWeight(opp string, tags map[string]bool) float64 {
 		w += table[tag]
 	}
 	return w
+}
+
+func buildMiniSideboardPlan(mainDeck, sideboard map[string]int, cardMap map[string]*domain.Card, opponent string) ([]SideboardSwap, []SideboardSwap) {
+	if len(sideboard) == 0 {
+		return nil, nil
+	}
+
+	insScored := scoreSideboardIns(sideboard, cardMap, desiredTagsForMatchup(opponent))
+	if len(insScored) == 0 {
+		fallbackNames := make([]string, 0, len(sideboard))
+		for name := range sideboard {
+			fallbackNames = append(fallbackNames, name)
+		}
+		sort.Strings(fallbackNames)
+		ins := make([]SideboardSwap, 0, 3)
+		totalIn := 0
+		for _, name := range fallbackNames {
+			if len(ins) >= 3 {
+				break
+			}
+			qty := sideboard[name]
+			if qty > 2 {
+				qty = 2
+			}
+			if qty <= 0 {
+				continue
+			}
+			ins = append(ins, SideboardSwap{Card: name, Qty: qty, Reason: "Flexible post-board slot for this matchup"})
+			totalIn += qty
+		}
+		outsScored := scoreMainDeckOuts(mainDeck, cardMap, opponent, totalIn)
+		outs := make([]SideboardSwap, 0, 3)
+		for i := 0; i < len(outsScored) && i < 3; i++ {
+			qty := outsScored[i].qty
+			if qty > 2 {
+				qty = 2
+			}
+			if qty <= 0 {
+				continue
+			}
+			outs = append(outs, SideboardSwap{Card: outsScored[i].name, Qty: qty, Reason: outsScored[i].reason})
+		}
+		return ins, outs
+	}
+	sort.Slice(insScored, func(i, j int) bool { return insScored[i].score > insScored[j].score })
+
+	maxUnique := 3
+	if len(insScored) < maxUnique {
+		maxUnique = len(insScored)
+	}
+	ins := make([]SideboardSwap, 0, maxUnique)
+	totalIn := 0
+	for i := 0; i < maxUnique; i++ {
+		qty := insScored[i].qty
+		if qty > 2 {
+			qty = 2
+		}
+		if qty <= 0 {
+			continue
+		}
+		totalIn += qty
+		ins = append(ins, SideboardSwap{Card: insScored[i].name, Qty: qty, Reason: insScored[i].reason})
+	}
+
+	outsScored := scoreMainDeckOuts(mainDeck, cardMap, opponent, totalIn)
+	maxOutUnique := 3
+	if len(outsScored) < maxOutUnique {
+		maxOutUnique = len(outsScored)
+	}
+	outs := make([]SideboardSwap, 0, maxOutUnique)
+	for i := 0; i < maxOutUnique; i++ {
+		qty := outsScored[i].qty
+		if qty > 2 {
+			qty = 2
+		}
+		if qty <= 0 {
+			continue
+		}
+		outs = append(outs, SideboardSwap{Card: outsScored[i].name, Qty: qty, Reason: outsScored[i].reason})
+	}
+
+	return ins, outs
 }
 
 func clamp(v, min, max float64) float64 {

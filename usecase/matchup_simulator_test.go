@@ -76,6 +76,12 @@ func TestMatchupSimulator_PostBoardAdjustment(t *testing.T) {
 		if m.PostBoardWinRate < m.WinRate {
 			t.Fatalf("expected post-board >= pre-board for %s, got %.2f < %.2f", m.OpponentArchetype, m.PostBoardWinRate, m.WinRate)
 		}
+		if len(m.SuggestedIns) == 0 {
+			t.Fatalf("expected suggested_ins for %s", m.OpponentArchetype)
+		}
+		if len(m.SuggestedOuts) == 0 {
+			t.Fatalf("expected suggested_outs for %s", m.OpponentArchetype)
+		}
 	}
 }
 
