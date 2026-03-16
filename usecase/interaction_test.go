@@ -1,6 +1,7 @@
 package usecase_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/manawise/api/domain"
@@ -9,6 +10,17 @@ import (
 
 func makeInteractionCard(id, oracleText, typeL string) *domain.Card {
 	return &domain.Card{ID: id, Name: id, TypeLine: typeL, OracleText: oracleText}
+}
+
+func makeInteractionCardWithColors(id, oracleText, typeL string, colors ...string) *domain.Card {
+	return &domain.Card{
+		ID:            id,
+		Name:          id,
+		TypeLine:      typeL,
+		OracleText:    oracleText,
+		Colors:        colors,
+		ColorIdentity: colors,
+	}
 }
 
 func TestAnalyzeInteraction_RemovalDetection(t *testing.T) {
@@ -136,5 +148,27 @@ func TestAnalyzeInteraction_AggroDeck_ArchetypeDetected(t *testing.T) {
 	result := usecase.AnalyzeInteraction(cards, qtys, "modern")
 	if result.Archetype != "aggro" {
 		t.Fatalf("expected aggro archetype, got %q", result.Archetype)
+	}
+}
+
+func TestAnalyzeInteraction_MonoGreenDeck_DoesNotExpectCounters(t *testing.T) {
+	cards := []*domain.Card{
+		makeInteractionCardWithColors("elf", "{T}: Add {G}.", "Creature - Elf Druid", "G"),
+		makeInteractionCardWithColors("beast", "Trample", "Creature - Beast", "G"),
+	}
+	qtys := map[string]int{"elf": 8, "beast": 12}
+
+	result := usecase.AnalyzeInteraction(cards, qtys, "standard")
+
+	for _, bd := range result.Breakdowns {
+		if bd.Category == domain.InteractionCounter && bd.Ideal != 0 {
+			t.Fatalf("expected mono-green counter ideal to be 0, got %d", bd.Ideal)
+		}
+	}
+
+	for _, suggestion := range result.Suggestions {
+		if strings.Contains(strings.ToLower(suggestion), "counter") {
+			t.Fatalf("unexpected counter suggestion for mono-green deck: %s", suggestion)
+		}
 	}
 }

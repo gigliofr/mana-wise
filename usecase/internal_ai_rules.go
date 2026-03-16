@@ -32,6 +32,7 @@ func BuildInternalSuggestionsLocalized(a *domain.AnalysisResult, format, locale 
 	}
 
 	it := strings.HasPrefix(strings.ToLower(strings.TrimSpace(locale)), "it")
+	deckColors := detectedDeckColors(cards)
 
 	type scoredSuggestion struct {
 		score int
@@ -156,7 +157,7 @@ func BuildInternalSuggestionsLocalized(a *domain.AnalysisResult, format, locale 
 		if len(cutNames) > 0 {
 			cutDesc = strings.Join(cutNames, " / ")
 		}
-		hint := cardHintForCategory(format, string(b.Category), locale)
+		hint := cardHintForCategory(format, string(b.Category), locale, deckColors)
 		var text string
 		if it {
 			addDesc := fmt.Sprintf("%d carta/e di tipo %s legali in %s", -b.Delta, strings.ToLower(string(b.Category)), format)
@@ -339,33 +340,95 @@ func filterNonInteractiveCards(cards []*domain.Card, n int) []string {
 
 // cardHintForCategory returns a short suggestion string with well-known card names
 // for the given format, interaction category, and locale.
-func cardHintForCategory(format, category, locale string) string {
-	type hint struct{ it, en string }
-	hints := map[string]hint{
-		"commander:draw":       {"es. Rhystic Study / Phyrexian Arena / Necropotence", "e.g. Rhystic Study / Phyrexian Arena / Necropotence"},
-		"commander:removal":    {"es. Swords to Plowshares / Path to Exile / Beast Within", "e.g. Swords to Plowshares / Path to Exile / Beast Within"},
-		"commander:counter":    {"es. Counterspell / Swan Song / Fierce Guardianship", "e.g. Counterspell / Swan Song / Fierce Guardianship"},
-		"commander:ramp":       {"es. Sol Ring / Cultivate / Arcane Signet", "e.g. Sol Ring / Cultivate / Arcane Signet"},
-		"commander:protection": {"es. Swiftfoot Boots / Lightning Greaves / Heroic Intervention", "e.g. Swiftfoot Boots / Lightning Greaves / Heroic Intervention"},
-		"standard:draw":        {"es. Preordain / Memory Deluge / Bitter Reunion", "e.g. Preordain / Memory Deluge / Bitter Reunion"},
-		"standard:removal":     {"es. Cut Down / Sheoldred's Edict / Abrade", "e.g. Cut Down / Sheoldred's Edict / Abrade"},
-		"standard:counter":     {"es. Make Disappear / Negate / Disdainful Stroke", "e.g. Make Disappear / Negate / Disdainful Stroke"},
-		"standard:ramp":        {"es. Elvish Mystic / Topiary Stomper / Explore", "e.g. Elvish Mystic / Topiary Stomper / Explore"},
-		"modern:draw":          {"es. Expressive Iteration / Preordain / Brainstorm", "e.g. Expressive Iteration / Preordain / Brainstorm"},
-		"modern:removal":       {"es. Lightning Bolt / Fatal Push / Path to Exile", "e.g. Lightning Bolt / Fatal Push / Path to Exile"},
-		"modern:counter":       {"es. Counterspell / Force of Negation / Remand", "e.g. Counterspell / Force of Negation / Remand"},
-		"modern:ramp":          {"es. Utopia Sprawl / Birds of Paradise / Arbor Elf", "e.g. Utopia Sprawl / Birds of Paradise / Arbor Elf"},
-		"pioneer:draw":         {"es. Opt / Consider / Curious Obsession", "e.g. Opt / Consider / Curious Obsession"},
-		"pioneer:removal":      {"es. Fatal Push / Eliminate / Chained to the Rocks", "e.g. Fatal Push / Eliminate / Chained to the Rocks"},
-		"pioneer:counter":      {"es. Negate / Make Disappear / Disdainful Stroke", "e.g. Negate / Make Disappear / Disdainful Stroke"},
+func cardHintForCategory(format, category, locale string, deckColors []string) string {
+	_ = format
+	it := strings.HasPrefix(strings.ToLower(strings.TrimSpace(locale)), "it")
+	cat := domain.InteractionCategory(strings.ToLower(category))
+	colorLabel := localizedDeckColors(deckColors, locale)
+
+	if !deckSupportsCategory(deckColors, cat) {
+		switch cat {
+		case domain.InteractionCounter:
+			if it {
+				return fmt.Sprintf("coperture da stack nei colori %s, senza forzare splash blu", colorLabel)
+			}
+			return fmt.Sprintf("stack interaction in %s without forcing a blue splash", colorLabel)
+		case domain.InteractionDraw:
+			if it {
+				return fmt.Sprintf("fonti di vantaggio carte o selezione nei colori %s", colorLabel)
+			}
+			return fmt.Sprintf("card advantage or selection sources in %s", colorLabel)
+		case domain.InteractionRemoval:
+			if it {
+				return fmt.Sprintf("rimozioni o fight spell nei colori %s", colorLabel)
+			}
+			return fmt.Sprintf("removal or fight effects in %s", colorLabel)
+		case domain.InteractionProtection:
+			if it {
+				return fmt.Sprintf("protezioni nei colori %s", colorLabel)
+			}
+			return fmt.Sprintf("protection effects in %s", colorLabel)
+		case domain.InteractionRamp:
+			if it {
+				return fmt.Sprintf("accelerazione di mana nei colori %s", colorLabel)
+			}
+			return fmt.Sprintf("mana acceleration in %s", colorLabel)
+		case domain.InteractionDiscard:
+			if it {
+				return fmt.Sprintf("disruption nei colori %s", colorLabel)
+			}
+			return fmt.Sprintf("disruption in %s", colorLabel)
+		default:
+			return ""
+		}
 	}
 
-	key := fmt.Sprintf("%s:%s", strings.ToLower(format), strings.ToLower(category))
-	if h, ok := hints[key]; ok {
-		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(locale)), "it") {
-			return h.it
-		}
-		return h.en
+	type hint struct{ it, en string }
+	hintsByColor := map[domain.InteractionCategory]map[string]hint{
+		domain.InteractionDraw: {
+			"U": {"es. cantrip o motori di vantaggio carte blu", "e.g. blue cantrips or card-advantage engines"},
+			"B": {"es. motori di pescata neri che convertono risorse in carte", "e.g. black draw engines that trade resources for cards"},
+			"R": {"es. effetti di impulse draw rossi a basso costo", "e.g. low-cost red impulse-draw effects"},
+			"G": {"es. vantaggio carte verde legato a creature o permanenti", "e.g. green card-advantage tied to creatures or permanents"},
+			"W": {"es. cantrip o permanenti bianchi che premiano il board", "e.g. white cantrips or permanents that reward board development"},
+		},
+		domain.InteractionCounter: {
+			"U": {"es. counter blu a basso costo o protection spell che difendono la curva", "e.g. low-cost blue counters or protection spells that defend your curve"},
+		},
+		domain.InteractionRemoval: {
+			"W": {"es. rimozioni bianche efficienti", "e.g. efficient white removal"},
+			"B": {"es. rimozioni nere universali", "e.g. universal black removal"},
+			"R": {"es. burn o removal rossi flessibili", "e.g. flexible red burn or removal"},
+			"G": {"es. fight spell o removal verdi basati su creature", "e.g. green fight spells or creature-based removal"},
+		},
+		domain.InteractionRamp: {
+			"G": {"es. acceleratori verdi a 1-2 mana", "e.g. green 1-2 mana accelerants"},
+			"R": {"es. tesori o rituali rossi che accelerano il turno chiave", "e.g. red treasures or rituals that accelerate a key turn"},
+			"W": {"es. fixers o land tutors bianchi compatibili con la curva", "e.g. white fixers or land tutors that fit your curve"},
+		},
+		domain.InteractionProtection: {
+			"W": {"es. effetti di protezione o phase-out bianchi", "e.g. white protection or phase-out effects"},
+			"G": {"es. protezioni verdi che salvano la board o la minaccia chiave", "e.g. green protection effects that save your board or key threat"},
+			"U": {"es. protezioni blu o bounce difensivi", "e.g. blue protection effects or defensive bounce"},
+		},
+		domain.InteractionDiscard: {
+			"B": {"es. scartini neri mirati o di attrito", "e.g. black targeted discard or attrition pieces"},
+		},
 	}
-	return ""
+
+	for _, color := range deckColors {
+		if categoryHints, ok := hintsByColor[cat]; ok {
+			if h, ok := categoryHints[color]; ok {
+				if it {
+					return h.it
+				}
+				return h.en
+			}
+		}
+	}
+
+	if it {
+		return fmt.Sprintf("carte di tipo %s nei colori %s", strings.ToLower(category), colorLabel)
+	}
+	return fmt.Sprintf("%s cards in %s", strings.ToLower(category), colorLabel)
 }

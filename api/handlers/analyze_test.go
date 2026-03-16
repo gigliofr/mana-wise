@@ -151,16 +151,25 @@ func TestAnalyzeHandler_ArenaDeckPayload_Success(t *testing.T) {
 	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if resp.Deterministic.Format != "standard" {
-		t.Fatalf("expected normalized format standard, got %q", resp.Deterministic.Format)
-	}
-	if resp.Deterministic.Mana.TotalCards != 16 {
-		t.Fatalf("expected total cards 16 from quantities, got %d", resp.Deterministic.Mana.TotalCards)
-	}
-	if users.incrementCalls != 1 || users.lastUserID != "u-42" {
-		t.Fatalf("expected quota increment for u-42, got calls=%d user=%q", users.incrementCalls, users.lastUserID)
-	}
-	if tracker.calls != 1 || tracker.event != "analysis_completed" {
-		t.Fatalf("expected one analysis_completed tracking event, got calls=%d event=%q", tracker.calls, tracker.event)
-	}
+	       if resp.Deterministic.Format != "standard" {
+		       t.Fatalf("expected normalized format standard, got %q", resp.Deterministic.Format)
+	       }
+	       if resp.Deterministic.Mana.TotalCards != 16 {
+		       t.Fatalf("expected total cards 16 from quantities, got %d", resp.Deterministic.Mana.TotalCards)
+	       }
+	       if users.incrementCalls != 1 || users.lastUserID != "u-42" {
+		       t.Fatalf("expected quota increment for u-42, got calls=%d user=%q", users.incrementCalls, users.lastUserID)
+	       }
+	       if tracker.calls != 1 || tracker.event != "analysis_completed" {
+		       t.Fatalf("expected one analysis_completed tracking event, got calls=%d event=%q", tracker.calls, tracker.event)
+	       }
+	       // Verifica legalità multi-formato
+	       if resp.Legality == nil {
+		       t.Fatalf("expected legality field in response")
+	       }
+	       if l, ok := resp.Legality["standard"]; !ok {
+		       t.Fatalf("expected legality for standard format")
+	       } else if !l.IsLegal {
+		       t.Fatalf("expected deck to be legal in standard, got IsLegal=false")
+	       }
 }

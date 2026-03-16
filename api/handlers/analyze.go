@@ -20,11 +20,12 @@ type AnalyzeRequest struct {
 
 // AnalyzeResponse is the JSON response for POST /analyze.
 type AnalyzeResponse struct {
-	Deterministic domain.AnalysisResult `json:"deterministic"`
-	AISuggestions string                `json:"ai_suggestions"`
-	AISource      string                `json:"ai_source,omitempty"`
-	AIError       string                `json:"ai_error,omitempty"`
-	LatencyMs     int64                 `json:"latency_ms"`
+	Deterministic domain.AnalysisResult              `json:"deterministic"`
+	AISuggestions string                             `json:"ai_suggestions"`
+	AISource      string                             `json:"ai_source,omitempty"`
+	AIError       string                             `json:"ai_error,omitempty"`
+	LatencyMs     int64                              `json:"latency_ms"`
+	Legality      map[string]usecase.DeckLegalityResult `json:"legality"`
 }
 
 // AnalyzeHandler handles POST /analyze requests.
@@ -101,13 +102,24 @@ func (h *AnalyzeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"latency_ms": result.Result.LatencyMs,
 	})
 
-	jsonOK(w, AnalyzeResponse{
-		Deterministic: result.Result,
-		AISuggestions: aiSuggestions,
-		AISource:      aiSource,
-		AIError:       aiError,
-		LatencyMs:     result.Result.LatencyMs,
-	})
+	       legality := usecase.DetermineDeckLegalityAllFormats(result.RawCards, quantitiesFromRawCards(result.RawCards))
+	       jsonOK(w, AnalyzeResponse{
+		       Deterministic: result.Result,
+		       AISuggestions: aiSuggestions,
+		       AISource:      aiSource,
+		       AIError:       aiError,
+		       LatencyMs:     result.Result.LatencyMs,
+		       Legality:      legality,
+	       })
+	}
+
+	// quantitiesFromRawCards ricostruisce la mappa quantità da RawCards (per compatibilità con legality)
+	func quantitiesFromRawCards(cards []*domain.Card) map[string]int {
+	       qty := make(map[string]int)
+	       for _, c := range cards {
+		       qty[c.ID]++
+	       }
+	       return qty
 }
 
 func normalizeLocale(requestLocale, acceptLanguage string) string {

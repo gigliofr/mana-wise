@@ -117,3 +117,19 @@ func TestBuildInternalSuggestions_WithManaSuggestion(t *testing.T) {
 		t.Errorf("expected mana suggestion in output, got %q", result)
 	}
 }
+
+func TestBuildInternalSuggestionsLocalized_MonoGreenCounterFallbackStaysInColor(t *testing.T) {
+	a := makeAnalysis(37, 37, 3.0, 75.0, []domain.InteractionBreakdown{
+		{Category: domain.InteractionCounter, Count: 0, Ideal: 1, Delta: -1},
+	})
+	result := BuildInternalSuggestionsLocalized(a, "standard", "it", []*domain.Card{
+		{ID: "elf", Name: "Llanowar Scout", TypeLine: "Creature - Elf Scout", ManaCost: "{G}", Colors: []string{"G"}, ColorIdentity: []string{"G"}},
+		{ID: "beast", Name: "Huge Beast", TypeLine: "Creature - Beast", ManaCost: "{3}{G}", Colors: []string{"G"}, ColorIdentity: []string{"G"}},
+	})
+	if strings.Contains(result, "Negate") || strings.Contains(result, "Make Disappear") || strings.Contains(result, "Disdainful Stroke") {
+		t.Fatalf("expected no blue counter examples for mono-green deck, got %q", result)
+	}
+	if !strings.Contains(result, "senza forzare splash blu") {
+		t.Fatalf("expected in-color fallback wording for mono-green counter gap, got %q", result)
+	}
+}

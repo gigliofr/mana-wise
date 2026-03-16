@@ -173,7 +173,8 @@ func AnalyzeInteraction(cards []*domain.Card, quantities map[string]int, format 
 	}
 
 	archetype := detectArchetype(counts, avgCMC, totalNonLandCards)
-	idealMap := applyArchetypeMultipliers(baseIdeals, archetype)
+	deckColors := detectedDeckColors(cards)
+	idealMap := applyInteractionColorMultipliers(applyArchetypeMultipliers(baseIdeals, archetype), deckColors)
 	mults := archetypeMultipliers[archetype]
 
 	categories := []domain.InteractionCategory{
@@ -216,7 +217,7 @@ func AnalyzeInteraction(cards []*domain.Card, quantities map[string]int, format 
 		})
 		totalScore += score
 
-		// Suggest only for relevant categories (non-zero multiplier) that are under half the adjusted ideal.
+		// Suggest only for relevant categories that the deck can reasonably support.
 		if ideal > 0 && mults[cat] > 0.0 && count < ideal/2 {
 			suggestions = append(suggestions, fmt.Sprintf(
 				"Your %s package (%d cards) is below ideal for a %s deck (%d expected). Consider adding more.",
