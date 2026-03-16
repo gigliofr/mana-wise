@@ -252,6 +252,30 @@ func scoreMainDeckOuts(mainMap map[string]int, cardByName map[string]*domain.Car
 		outs = append(outs, scoredCard{name: c.name, qty: take, score: c.score, reason: c.reason})
 		remaining -= take
 	}
+
+	if remaining > 0 {
+		fallback := []string{}
+		for name := range mainMap {
+			lower := strings.ToLower(strings.TrimSpace(name))
+			if strings.Contains(lower, "plains") || strings.Contains(lower, "island") || strings.Contains(lower, "swamp") || strings.Contains(lower, "mountain") || strings.Contains(lower, "forest") {
+				continue
+			}
+			fallback = append(fallback, name)
+		}
+		sort.Strings(fallback)
+		for _, name := range fallback {
+			if remaining <= 0 {
+				break
+			}
+			qty := mainMap[name]
+			take := qty
+			if take > remaining {
+				take = remaining
+			}
+			outs = append(outs, scoredCard{name: name, qty: take, score: 1, reason: "Trim flexible non-land slots to match sideboard ins"})
+			remaining -= take
+		}
+	}
 	return outs
 }
 
