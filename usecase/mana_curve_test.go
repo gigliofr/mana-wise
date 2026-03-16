@@ -17,6 +17,15 @@ func makeCard(id string, cmc float64, typeL string, colors ...string) *domain.Ca
 	}
 }
 
+func makeLand(id, name string, identity ...string) *domain.Card {
+	return &domain.Card{
+		ID:            id,
+		Name:          name,
+		TypeLine:      "Land",
+		ColorIdentity: identity,
+	}
+}
+
 func TestAnalyzeManaCurve_BasicModern(t *testing.T) {
 	// A typical 60-card modern-ish deck: 24 lands + 36 spells.
 	cards := []*domain.Card{}
@@ -122,5 +131,60 @@ func TestAnalyzeManaCurve_UnknownFormatFallsBack(t *testing.T) {
 	// Should not panic and should return some ideal.
 	if result.IdealLandCount == 0 {
 		t.Error("expected non-zero ideal land count even for unknown format")
+	}
+}
+
+func TestAnalyzeManaCurve_MDFCSpellLandCountedAsLand(t *testing.T) {
+	mdfc := &domain.Card{
+		ID:            "mdfc-1",
+		Name:          "Shatterskull Smashing // Shatterskull, the Hammer Pass",
+		CMC:           3,
+		TypeLine:      "Sorcery",
+		ManaCost:      "{X}{R}{R}",
+		ColorIdentity: []string{"R"},
+		Faces: []domain.CardFace{
+			{Name: "Shatterskull Smashing", TypeLine: "Sorcery", ManaCost: "{X}{R}{R}", Colors: []string{"R"}},
+			{Name: "Shatterskull, the Hammer Pass", TypeLine: "Land"},
+		},
+	}
+	bolt := &domain.Card{ID: "bolt", Name: "Lightning Bolt", CMC: 1, TypeLine: "Instant", ManaCost: "{R}", Colors: []string{"R"}}
+
+	result := usecase.AnalyzeManaCurve([]*domain.Card{mdfc, bolt}, map[string]int{"mdfc-1": 4, "bolt": 4}, "modern")
+
+	if result.LandCount != 4 {
+		t.Fatalf("expected MDFC copies to count as lands, got %d", result.LandCount)
+	}
+	if result.TotalCards != 8 {
+		t.Fatalf("expected total cards 8, got %d", result.TotalCards)
+	}
+	if result.Distribution[3].Count != 0 {
+		t.Fatalf("expected CMC 3 bucket to ignore MDFC land face, got %d", result.Distribution[3].Count)
+	}
+}
+
+func TestAnalyzeManaCurve_SourceRequirementsExposeGap(t *testing.T) {
+	cards := []*domain.Card{
+		makeLand("island-1", "Island", "U"),
+		makeLand("island-2", "Island", "U"),
+		makeLand("island-3", "Island", "U"),
+		makeLand("island-4", "Island", "U"),
+		{ID: "cryptic", Name: "Cryptic Command", CMC: 4, TypeLine: "Instant", ManaCost: "{1}{U}{U}{U}", Colors: []string{"U"}},
+	}
+	qtys := map[string]int{"island-1": 1, "island-2": 1, "island-3": 1, "island-4": 1, "cryptic": 4}
+
+	result := usecase.AnalyzeManaCurve(cards, qtys, "modern")
+
+	var blue *domain.ColorSourceRequirement
+	for i := range result.SourceRequirements {
+		if result.SourceRequirements[i].Color == "U" {
+			blue = &result.SourceRequirements[i]
+			break
+		}
+	}
+	if blue == nil {
+		t.Fatal("expected U source requirement")
+	}
+	if blue.Required <= blue.Current {
+		t.Fatalf("expected blue source gap, got current=%d required=%d", blue.Current, blue.Required)
 	}
 }

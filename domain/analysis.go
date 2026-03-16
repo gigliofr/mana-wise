@@ -14,6 +14,14 @@ type ManaCurveSuggestion struct {
 	Urgency string `json:"urgency"` // "critical" | "moderate" | "minor"
 }
 
+// ColorSourceRequirement compares required coloured sources vs currently estimated ones.
+type ColorSourceRequirement struct {
+	Color    string `json:"color"`
+	Required int    `json:"required"`
+	Current  int    `json:"current"`
+	Gap      int    `json:"gap"`
+}
+
 // ManaAnalysis is the output of the deterministic mana-curve analysis.
 type ManaAnalysis struct {
 	Format            string                `json:"format"`
@@ -27,6 +35,7 @@ type ManaAnalysis struct {
 	// Keys are single-letter colour codes: W, U, B, R, G, C.
 	// Example: 16 white pips means the deck demands T white sources early.
 	PipDistribution   map[string]int        `json:"pip_distribution,omitempty"`
+	SourceRequirements []ColorSourceRequirement `json:"source_requirements,omitempty"`
 	Suggestions       []ManaCurveSuggestion `json:"suggestions"`
 }
 

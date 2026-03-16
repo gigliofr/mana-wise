@@ -6,6 +6,7 @@ const API = '/api/v1'
 export default function Auth({ onLogin, locale, messages, onLocaleChange }) {
   const [mode, setMode] = useState('login') // 'login' | 'register'
   const [form, setForm] = useState({ email: '', password: '', name: '' })
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -78,7 +79,24 @@ export default function Auth({ onLogin, locale, messages, onLocaleChange }) {
               </div>
               <div className="form-row">
                 <label>{messages.password}</label>
-                <input type="password" value={form.password} onChange={set('password')} placeholder="••••••••" required minLength={8} />
+                <div className="password-input-wrap">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={form.password}
+                    onChange={set('password')}
+                    placeholder="••••••••"
+                    required
+                    minLength={8}
+                  />
+                  <button
+                    type="button"
+                    className="btn-ghost password-toggle-btn"
+                    onClick={() => setShowPassword(v => !v)}
+                    aria-label={showPassword ? messages.hidePassword : messages.showPassword}
+                  >
+                    {showPassword ? messages.hidePassword : messages.showPassword}
+                  </button>
+                </div>
               </div>
               <button className="btn-primary" type="submit" disabled={loading} style={{ width: '100%' }}>
                 {loading ? messages.loading : mode === 'login' ? messages.signIn : messages.createAccount}

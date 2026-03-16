@@ -42,6 +42,7 @@ func AnalyzeManaCurve(cards []*domain.Card, quantities map[string]int, format st
 		Format:            format,
 		ColorDistribution: make(map[string]int),
 		PipDistribution:   make(map[string]int),
+		SourceRequirements: []domain.ColorSourceRequirement{},
 	}
 
 	// Build CMC buckets (0-6+) and count lands.
@@ -50,6 +51,10 @@ func AnalyzeManaCurve(cards []*domain.Card, quantities map[string]int, format st
 	totalCMC := 0.0
 	landCount := 0
 
+	// Track mana demand by turn and currently available coloured sources.
+	demandByTurn := map[string]map[int]int{}
+	currentSources := map[string]int{"W": 0, "U": 0, "B": 0, "R": 0, "G": 0, "C": 0}
+
 	for _, card := range cards {
 		qty := quantities[card.ID]
 		if qty == 0 {
@@ -57,9 +62,12 @@ func AnalyzeManaCurve(cards []*domain.Card, quantities map[string]int, format st
 		}
 		cardCMC := int(math.Round(card.CMC))
 
-		isLand := isLandCard(card)
+		isLand := isLandCardForCurve(card)
 		if isLand {
 			landCount += qty
+			for _, c := range landSourceColors(card) {
+				currentSources[c] += qty
+			}
 		} else {
 			bucketKey := cardCMC
 			if bucketKey > 6 {
@@ -77,8 +85,16 @@ func AnalyzeManaCurve(cards []*domain.Card, quantities map[string]int, format st
 
 		// Pip distribution — count coloured pips in mana cost (excluding lands).
 		if !isLand {
-			for pip, count := range countPips(card.ManaCost) {
+			pips := countPips(card.ManaCost)
+			for pip, count := range pips {
 				result.PipDistribution[pip] += count * qty
+			}
+			turn := manaDemandTurn(cardCMC)
+			for pip, count := range pips {
+				if _, ok := demandByTurn[pip]; !ok {
+					demandByTurn[pip] = map[int]int{}
+				}
+				demandByTurn[pip][turn] += count * qty
 			}
 		}
 	}
@@ -97,6 +113,18 @@ func AnalyzeManaCurve(cards []*domain.Card, quantities map[string]int, format st
 		result.Distribution = append(result.Distribution, domain.CMCBucket{CMC: cmc, Count: buckets[cmc]})
 	}
 
+	for _, c := range []string{"W", "U", "B", "R", "G", "C"} {
+		required := requiredSourcesForColor(demandByTurn[c], params.deckSize, result.IdealLandCount)
+		current := currentSources[c]
+		gap := required - current
+		result.SourceRequirements = append(result.SourceRequirements, domain.ColorSourceRequirement{
+			Color:    c,
+			Required: required,
+			Current:  current,
+			Gap:      gap,
+		})
+	}
+
 	// Generate suggestions
 	result.Suggestions = generateManaSuggestions(result, params, landCount)
 
@@ -106,6 +134,133 @@ func AnalyzeManaCurve(cards []*domain.Card, quantities map[string]int, format st
 func isLandCard(card *domain.Card) bool {
 	t := strings.ToLower(card.TypeLine)
 	return strings.Contains(t, "land")
+}
+
+func isLandCardForCurve(card *domain.Card) bool {
+	if isLandCard(card) {
+		return true
+	}
+	for _, face := range card.Faces {
+		if strings.Contains(strings.ToLower(face.TypeLine), "land") {
+			return true
+		}
+	}
+	return false
+}
+
+func landSourceColors(card *domain.Card) []string {
+	if !isLandCardForCurve(card) {
+		return nil
+	}
+	seen := map[string]bool{}
+	for _, c := range card.ColorIdentity {
+		cc := strings.ToUpper(strings.TrimSpace(c))
+		if isColour(cc) {
+			seen[cc] = true
+		}
+	}
+	for _, c := range card.Colors {
+		cc := strings.ToUpper(strings.TrimSpace(c))
+		if isColour(cc) {
+			seen[cc] = true
+		}
+	}
+	text := strings.ToUpper(card.OracleText)
+	if strings.Contains(text, "{W}") {
+		seen["W"] = true
+	}
+	if strings.Contains(text, "{U}") {
+		seen["U"] = true
+	}
+	if strings.Contains(text, "{B}") {
+		seen["B"] = true
+	}
+	if strings.Contains(text, "{R}") {
+		seen["R"] = true
+	}
+	if strings.Contains(text, "{G}") {
+		seen["G"] = true
+	}
+	if len(seen) == 0 {
+		name := strings.ToLower(card.Name)
+		switch {
+		case strings.Contains(name, "plains"):
+			seen["W"] = true
+		case strings.Contains(name, "island"):
+			seen["U"] = true
+		case strings.Contains(name, "swamp"):
+			seen["B"] = true
+		case strings.Contains(name, "mountain"):
+			seen["R"] = true
+		case strings.Contains(name, "forest"):
+			seen["G"] = true
+		}
+	}
+	if len(seen) == 0 {
+		seen["C"] = true
+	}
+	out := make([]string, 0, len(seen))
+	for _, c := range []string{"W", "U", "B", "R", "G", "C"} {
+		if seen[c] {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+func manaDemandTurn(cmc int) int {
+	switch {
+	case cmc <= 1:
+		return 1
+	case cmc == 2:
+		return 2
+	case cmc == 3:
+		return 3
+	default:
+		return 4
+	}
+}
+
+func requiredSourcesForColor(demandByTurn map[int]int, deckSize, idealLandCount int) int {
+	if len(demandByTurn) == 0 {
+		return 0
+	}
+	required := 0
+	for turn, pips := range demandByTurn {
+		need := requiredSourcesForPips(pips, turn, deckSize)
+		if need > required {
+			required = need
+		}
+	}
+	if required > idealLandCount {
+		required = idealLandCount
+	}
+	if required < 0 {
+		required = 0
+	}
+	return required
+}
+
+func requiredSourcesForPips(pips, turn, deckSize int) int {
+	if pips <= 0 {
+		return 0
+	}
+	if turn < 1 {
+		turn = 1
+	}
+	if turn > 4 {
+		turn = 4
+	}
+
+	// Karsten-inspired baseline for one coloured pip in 60-card decks.
+	baseByTurn := map[int]int{1: 14, 2: 12, 3: 10, 4: 9}
+	incByTurn := map[int]int{1: 6, 2: 6, 3: 5, 4: 4}
+	base := baseByTurn[turn]
+	inc := incByTurn[turn]
+
+	required60 := base + (pips-1)*inc
+	scaled := int(math.Round(float64(required60) * (float64(deckSize) / 60.0)))
+	return scaled
 }
 
 func generateManaSuggestions(analysis domain.ManaAnalysis, params formatParams, landCount int) []domain.ManaCurveSuggestion {
@@ -167,6 +322,17 @@ func generateManaSuggestions(analysis domain.ManaAnalysis, params formatParams, 
 			Reason:  "Average CMC is very low — consider adding a few mid-game threats.",
 			Urgency: "minor",
 		})
+	}
+
+	for _, req := range analysis.SourceRequirements {
+		if req.Gap >= 2 && req.Color != "C" {
+			sug = append(sug, domain.ManaCurveSuggestion{
+				Type:    "add",
+				CMC:     0,
+				Reason:  fmt.Sprintf("You are short on %s sources (%d current, %d required). Add duals/basics to improve consistency.", req.Color, req.Current, req.Required),
+				Urgency: urgency(req.Gap, 2, 4),
+			})
+		}
 	}
 
 	return sug

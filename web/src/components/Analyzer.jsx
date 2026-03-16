@@ -199,9 +199,52 @@ function scoreColor(score) {
 
 function ManaCurvePanel({ data, messages }) {
   const maxCount = Math.max(...data.distribution.map(b => b.count), 1)
+  const sourceRows = (data.source_requirements || []).filter(r => (r.required || 0) > 0)
+
+  function sourceStatus(row) {
+    if (row.gap <= 0) return { label: messages.rowGood, color: 'var(--green)' }
+    if (row.gap === 1) return { label: messages.rowPartial, color: 'var(--orange)' }
+    return { label: messages.rowLow, color: 'var(--red)' }
+  }
+
   return (
     <div>
       <ManaCurveChart distribution={data.distribution} maxCount={maxCount} messages={messages} />
+
+      {sourceRows.length > 0 && (
+        <div style={{ marginTop: 16 }}>
+          <p style={{ fontSize: '.85rem', color: 'var(--muted)', marginBottom: 8 }}>{messages.sourceReqTitle}</p>
+          <p style={{ fontSize: '.78rem', color: 'var(--muted)', marginBottom: 10 }}>{messages.sourceReqHint}</p>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.86rem' }}>
+              <thead>
+                <tr>
+                  <th style={thStyle}>{messages.sourceColor}</th>
+                  <th style={thStyle}>{messages.sourceCurrent}</th>
+                  <th style={thStyle}>{messages.sourceRequired}</th>
+                  <th style={thStyle}>{messages.sourceGap}</th>
+                  <th style={thStyle}>{messages.sourceStatus}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sourceRows.map((row, idx) => {
+                  const status = sourceStatus(row)
+                  return (
+                    <tr key={`${row.color}-${idx}`}>
+                      <td style={tdStyle}>{row.color}</td>
+                      <td style={tdStyle}>{row.current}</td>
+                      <td style={tdStyle}>{row.required}</td>
+                      <td style={{ ...tdStyle, color: row.gap > 0 ? 'var(--red)' : 'var(--green)', fontWeight: 600 }}>{row.gap}</td>
+                      <td style={{ ...tdStyle, color: status.color, fontWeight: 600 }}>{status.label}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {data.suggestions?.length > 0 && (
         <>
           <p style={{ fontSize: '.85rem', color: 'var(--muted)', margin: '16px 0 8px' }}>{messages.suggestions}</p>
@@ -214,6 +257,19 @@ function ManaCurvePanel({ data, messages }) {
       )}
     </div>
   )
+}
+
+const thStyle = {
+  textAlign: 'left',
+  borderBottom: '1px solid var(--border)',
+  color: 'var(--muted)',
+  fontWeight: 600,
+  padding: '8px 8px',
+}
+
+const tdStyle = {
+  borderBottom: '1px solid var(--border)',
+  padding: '8px 8px',
 }
 
 function AIPanel({ text, error, source, result, messages }) {

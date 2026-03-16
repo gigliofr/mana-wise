@@ -94,6 +94,19 @@ select option { background: var(--surface); }
 .form-row { margin-bottom: 16px; }
 .form-row-inline { display: flex; gap: 12px; align-items: flex-end; }
 .form-row-inline .form-row { flex: 1; margin-bottom: 0; }
+.password-input-wrap {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+.password-input-wrap input {
+  flex: 1;
+}
+.password-toggle-btn {
+  white-space: nowrap;
+  min-width: 110px;
+  padding: 0 12px;
+}
 
 /* ── Buttons ── */
 button {
