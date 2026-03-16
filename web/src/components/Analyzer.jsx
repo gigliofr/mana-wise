@@ -67,7 +67,7 @@ export default function Analyzer({ token, user, locale, messages }) {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
         },
-        body: JSON.stringify({ decklist, format }),
+        body: JSON.stringify({ decklist, format, locale }),
       })
       const data = await res.json()
       if (!res.ok) {

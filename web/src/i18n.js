@@ -75,6 +75,7 @@ export const translations = {
     overallScore: 'Punteggio complessivo',
     curveTitle: 'Distribuzione curva mana',
     curveSubtitle: 'Solo magie non-terra per valore di mana. Le terre sono conteggiate a parte.',
+    curveReadHint: 'Numero in alto = quante carte in quella fascia di costo. Percentuale in basso = quota sul totale magie non-terra. Asse a sinistra = conteggio assoluto.',
     categoryLabels: {
       removal: 'rimozioni',
       counter: 'counter',
@@ -181,6 +182,7 @@ export const translations = {
     overallScore: 'Overall score',
     curveTitle: 'Mana Curve Distribution',
     curveSubtitle: 'Non-land spells by mana value. Lands are counted separately.',
+    curveReadHint: 'Top number = cards in that mana value bucket. Bottom % = share of non-land spells. Left axis = absolute card count.',
     categoryLabels: {
       removal: 'removal',
       counter: 'counter',

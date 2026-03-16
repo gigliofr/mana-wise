@@ -41,28 +41,28 @@ func NewAISuggester(mode string, primary, secondary *llm.Connector, internalEnab
 }
 
 // Suggest returns AI suggestions, source label, and a non-fatal error if all strategies fail.
-func (s *AISuggester) Suggest(ctx context.Context, decklist, format string, analysis *domain.AnalysisResult) (string, string, error) {
+func (s *AISuggester) Suggest(ctx context.Context, decklist, format, locale string, analysis *domain.AnalysisResult) (string, string, error) {
 	hash := llm.HashDecklist(decklist, format)
 
 	switch s.mode {
 	case AIModeInternalOnly:
-		return s.tryInternal(analysis)
+		return s.tryInternal(format, locale, analysis)
 	case AIModeHybridPreferInternal:
-		if text, source, err := s.tryInternal(analysis); err == nil {
+		if text, source, err := s.tryInternal(format, locale, analysis); err == nil {
 			return text, source, nil
 		}
-		return s.tryExternalChain(ctx, hash, format, analysis)
+		return s.tryExternalChain(ctx, hash, format, locale, analysis)
 	case AIModeExternalOnly:
-		return s.tryExternalChain(ctx, hash, format, analysis)
+		return s.tryExternalChain(ctx, hash, format, locale, analysis)
 	default: // hybrid_prefer_external
-		text, source, err := s.tryExternalChain(ctx, hash, format, analysis)
+		text, source, err := s.tryExternalChain(ctx, hash, format, locale, analysis)
 		if err == nil {
 			return text, source, nil
 		}
 		if !s.internalEnable {
 			return "", "", err
 		}
-		internalText, internalSource, internalErr := s.tryInternal(analysis)
+		internalText, internalSource, internalErr := s.tryInternal(format, locale, analysis)
 		if internalErr != nil {
 			return "", "", err
 		}
@@ -70,9 +70,9 @@ func (s *AISuggester) Suggest(ctx context.Context, decklist, format string, anal
 	}
 }
 
-func (s *AISuggester) tryExternalChain(ctx context.Context, hash, format string, analysis *domain.AnalysisResult) (string, string, error) {
+func (s *AISuggester) tryExternalChain(ctx context.Context, hash, format, locale string, analysis *domain.AnalysisResult) (string, string, error) {
 	if s.primary != nil {
-		text, err := s.primary.Suggestions(ctx, hash, format, analysis)
+		text, err := s.primary.Suggestions(ctx, hash, format, locale, analysis)
 		if err == nil && strings.TrimSpace(text) != "" {
 			return text, sourceLabel(s.primary), nil
 		}
@@ -85,7 +85,7 @@ func (s *AISuggester) tryExternalChain(ctx context.Context, hash, format string,
 	}
 
 	if s.secondary != nil {
-		text, err := s.secondary.Suggestions(ctx, hash, format, analysis)
+		text, err := s.secondary.Suggestions(ctx, hash, format, locale, analysis)
 		if err == nil && strings.TrimSpace(text) != "" {
 			return text, sourceLabel(s.secondary), nil
 		}
@@ -96,16 +96,16 @@ func (s *AISuggester) tryExternalChain(ctx context.Context, hash, format string,
 	}
 
 	if s.internalEnable {
-		return s.tryInternal(analysis)
+		return s.tryInternal(format, locale, analysis)
 	}
 	return "", "", fmt.Errorf("no AI provider configured")
 }
 
-func (s *AISuggester) tryInternal(analysis *domain.AnalysisResult) (string, string, error) {
+func (s *AISuggester) tryInternal(format, locale string, analysis *domain.AnalysisResult) (string, string, error) {
 	if !s.internalEnable {
 		return "", "", fmt.Errorf("internal rules disabled")
 	}
-	text := BuildInternalSuggestions(analysis)
+	text := BuildInternalSuggestionsLocalized(analysis, format, locale)
 	if strings.TrimSpace(text) == "" {
 		return "", "", fmt.Errorf("internal rules returned empty suggestions")
 	}

@@ -51,7 +51,7 @@ func TestBuildInternalSuggestions_TooFewLands(t *testing.T) {
 func TestBuildInternalSuggestions_TooManyLands(t *testing.T) {
 	a := makeAnalysis(42, 37, 3.0, 75.0, nil) // delta = +5 (≥ 3)
 	result := BuildInternalSuggestions(a)
-	if !strings.Contains(result, "above the land benchmark") {
+	if !strings.Contains(result, "above benchmark") {
 		t.Errorf("expected excess land message, got %q", result)
 	}
 }
@@ -59,15 +59,15 @@ func TestBuildInternalSuggestions_TooManyLands(t *testing.T) {
 func TestBuildInternalSuggestions_HighCMC(t *testing.T) {
 	a := makeAnalysis(37, 37, 4.0, 75.0, nil)
 	result := BuildInternalSuggestions(a)
-	if !strings.Contains(result, "CMC") {
-		t.Errorf("expected high CMC message, got %q", result)
+	if !strings.Contains(result, "MV") {
+		t.Errorf("expected high mana value message, got %q", result)
 	}
 }
 
 func TestBuildInternalSuggestions_LowInteraction(t *testing.T) {
 	a := makeAnalysis(37, 37, 3.0, 30.0, nil) // TotalScore < 40
 	result := BuildInternalSuggestions(a)
-	if !strings.Contains(result, "Interaction density is low") {
+	if !strings.Contains(result, "interaction score") {
 		t.Errorf("expected low interaction message, got %q", result)
 	}
 }
@@ -75,8 +75,8 @@ func TestBuildInternalSuggestions_LowInteraction(t *testing.T) {
 func TestBuildInternalSuggestions_MediumInteraction(t *testing.T) {
 	a := makeAnalysis(37, 37, 3.0, 55.0, nil) // 40 <= TotalScore < 70
 	result := BuildInternalSuggestions(a)
-	if !strings.Contains(result, "serviceable") {
-		t.Errorf("expected serviceable interaction message, got %q", result)
+	if !strings.Contains(result, "unstable") {
+		t.Errorf("expected medium interaction message, got %q", result)
 	}
 }
 

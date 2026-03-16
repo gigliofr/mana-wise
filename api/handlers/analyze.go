@@ -15,6 +15,7 @@ import (
 type AnalyzeRequest struct {
 	Decklist string `json:"decklist"`
 	Format   string `json:"format"`
+	Locale   string `json:"locale,omitempty"`
 }
 
 // AnalyzeResponse is the JSON response for POST /analyze.
@@ -53,6 +54,7 @@ func (h *AnalyzeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Format = domain.NormalizeFormat(strings.TrimSpace(req.Format))
 	req.Decklist = strings.TrimSpace(req.Decklist)
+	req.Locale = normalizeLocale(strings.TrimSpace(req.Locale), r.Header.Get("Accept-Language"))
 
 	if req.Decklist == "" {
 		jsonError(w, "decklist is required", http.StatusBadRequest)
@@ -83,7 +85,7 @@ func (h *AnalyzeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var aiError string
 	if h.ai != nil {
 		var suggestErr error
-		aiSuggestions, aiSource, suggestErr = h.ai.Suggest(r.Context(), req.Decklist, req.Format, &result.Result)
+		aiSuggestions, aiSource, suggestErr = h.ai.Suggest(r.Context(), req.Decklist, req.Format, req.Locale, &result.Result)
 		if suggestErr != nil {
 			aiError = suggestErr.Error()
 		}
@@ -104,4 +106,19 @@ func (h *AnalyzeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		AIError:       aiError,
 		LatencyMs:     result.Result.LatencyMs,
 	})
+}
+
+func normalizeLocale(requestLocale, acceptLanguage string) string {
+	locale := strings.ToLower(strings.TrimSpace(requestLocale))
+	if strings.HasPrefix(locale, "it") {
+		return "it"
+	}
+	if strings.HasPrefix(locale, "en") {
+		return "en"
+	}
+	accept := strings.ToLower(strings.TrimSpace(acceptLanguage))
+	if strings.HasPrefix(accept, "it") {
+		return "it"
+	}
+	return "en"
 }

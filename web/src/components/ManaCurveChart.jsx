@@ -11,6 +11,7 @@ export default function ManaCurveChart({ distribution, maxCount, messages }) {
       <div className="curve-chart-head">
         <p className="curve-title">{messages?.curveTitle || 'Mana Curve Distribution'}</p>
         <p className="curve-subtitle">{messages?.curveSubtitle || 'Non-land spells by mana value. Lands are counted separately.'}</p>
+        <p className="curve-subtitle">{messages?.curveReadHint || 'Top number = cards in that mana value bucket. Bottom % = share of non-land spells. Left axis = absolute card count.'}</p>
       </div>
 
       <div className="curve-layout">
