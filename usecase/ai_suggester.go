@@ -41,28 +41,29 @@ func NewAISuggester(mode string, primary, secondary *llm.Connector, internalEnab
 }
 
 // Suggest returns AI suggestions, source label, and a non-fatal error if all strategies fail.
-func (s *AISuggester) Suggest(ctx context.Context, decklist, format, locale string, analysis *domain.AnalysisResult) (string, string, error) {
+// cards is the resolved card slice (may be nil; used for card-name-specific suggestions).
+func (s *AISuggester) Suggest(ctx context.Context, decklist, format, locale string, analysis *domain.AnalysisResult, cards []*domain.Card) (string, string, error) {
 	hash := llm.HashDecklist(decklist, format)
 
 	switch s.mode {
 	case AIModeInternalOnly:
-		return s.tryInternal(format, locale, analysis)
+		return s.tryInternal(format, locale, analysis, cards)
 	case AIModeHybridPreferInternal:
-		if text, source, err := s.tryInternal(format, locale, analysis); err == nil {
+		if text, source, err := s.tryInternal(format, locale, analysis, cards); err == nil {
 			return text, source, nil
 		}
-		return s.tryExternalChain(ctx, hash, format, locale, analysis)
+		return s.tryExternalChain(ctx, hash, decklist, format, locale, analysis, cards)
 	case AIModeExternalOnly:
-		return s.tryExternalChain(ctx, hash, format, locale, analysis)
+		return s.tryExternalChain(ctx, hash, decklist, format, locale, analysis, cards)
 	default: // hybrid_prefer_external
-		text, source, err := s.tryExternalChain(ctx, hash, format, locale, analysis)
+		text, source, err := s.tryExternalChain(ctx, hash, decklist, format, locale, analysis, cards)
 		if err == nil {
 			return text, source, nil
 		}
 		if !s.internalEnable {
 			return "", "", err
 		}
-		internalText, internalSource, internalErr := s.tryInternal(format, locale, analysis)
+		internalText, internalSource, internalErr := s.tryInternal(format, locale, analysis, cards)
 		if internalErr != nil {
 			return "", "", err
 		}
@@ -70,9 +71,9 @@ func (s *AISuggester) Suggest(ctx context.Context, decklist, format, locale stri
 	}
 }
 
-func (s *AISuggester) tryExternalChain(ctx context.Context, hash, format, locale string, analysis *domain.AnalysisResult) (string, string, error) {
+func (s *AISuggester) tryExternalChain(ctx context.Context, hash, decklist, format, locale string, analysis *domain.AnalysisResult, cards []*domain.Card) (string, string, error) {
 	if s.primary != nil {
-		text, err := s.primary.Suggestions(ctx, hash, format, locale, analysis)
+		text, err := s.primary.Suggestions(ctx, hash, decklist, format, locale, analysis)
 		if err == nil && strings.TrimSpace(text) != "" {
 			return text, sourceLabel(s.primary), nil
 		}
@@ -85,7 +86,7 @@ func (s *AISuggester) tryExternalChain(ctx context.Context, hash, format, locale
 	}
 
 	if s.secondary != nil {
-		text, err := s.secondary.Suggestions(ctx, hash, format, locale, analysis)
+		text, err := s.secondary.Suggestions(ctx, hash, decklist, format, locale, analysis)
 		if err == nil && strings.TrimSpace(text) != "" {
 			return text, sourceLabel(s.secondary), nil
 		}
@@ -96,16 +97,16 @@ func (s *AISuggester) tryExternalChain(ctx context.Context, hash, format, locale
 	}
 
 	if s.internalEnable {
-		return s.tryInternal(format, locale, analysis)
+		return s.tryInternal(format, locale, analysis, cards)
 	}
 	return "", "", fmt.Errorf("no AI provider configured")
 }
 
-func (s *AISuggester) tryInternal(format, locale string, analysis *domain.AnalysisResult) (string, string, error) {
+func (s *AISuggester) tryInternal(format, locale string, analysis *domain.AnalysisResult, cards []*domain.Card) (string, string, error) {
 	if !s.internalEnable {
 		return "", "", fmt.Errorf("internal rules disabled")
 	}
-	text := BuildInternalSuggestionsLocalized(analysis, format, locale)
+	text := BuildInternalSuggestionsLocalized(analysis, format, locale, cards)
 	if strings.TrimSpace(text) == "" {
 		return "", "", fmt.Errorf("internal rules returned empty suggestions")
 	}

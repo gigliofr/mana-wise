@@ -56,13 +56,13 @@ func NewConnector(provider, apiKey, baseURL, model string, maxTokens int, timeou
 
 // Suggestions sends a structured analysis to the LLM and returns AI suggestions.
 // Results are cached by (decklistHash, format) for cacheTTL duration.
-func (c *Connector) Suggestions(ctx context.Context, decklistHash, format, locale string, analysis *domain.AnalysisResult) (string, error) {
+func (c *Connector) Suggestions(ctx context.Context, decklistHash, decklist, format, locale string, analysis *domain.AnalysisResult) (string, error) {
 	cacheKey := fmt.Sprintf("%s::%s::%s", decklistHash, format, normalizeLocale(locale))
 	if cached, ok := c.cache.Get(cacheKey); ok {
 		return cached.(string), nil
 	}
 
-	prompt := buildPrompt(format, normalizeLocale(locale), analysis)
+	prompt := buildPrompt(format, normalizeLocale(locale), decklist, analysis)
 
 	llmCtx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
@@ -172,32 +172,46 @@ func extractStatusCode(msg string) int {
 func systemPrompt(locale string) string {
 	if locale == "it" {
 		return `Sei ManaWise AI, un analista professionale di mazzi Magic: The Gathering.
-Ricevi analisi deterministiche del mazzo e devi fornire suggerimenti operativi.
+Ricevi l'analisi deterministica e la lista completa del mazzo e devi fornire suggerimenti operativi.
 Regole:
 - Rispondi esclusivamente in italiano.
 - Fornisci esattamente 3 suggerimenti numerati.
-- Ogni suggerimento deve avere questo formato: "TOGLI: ... METTI: ... PERCHE': ...".
-- In "METTI" suggerisci solo carte/sostituzioni legali nel formato richiesto.
+- Ogni suggerimento deve avere questo formato: "TOGLI: <carta/e esatte dal mazzo> METTI: <carta/e specifiche legali nel formato> PERCHE': <motivo conciso>".
+- In TOGLI nomina carte specifiche presenti nel mazzo fornito.
+- In METTI suggerisci carte reali con il loro nome esatto, legali nel formato richiesto.
+- Non usare placeholder generici come 'una carta' o 'slot'; usa sempre nomi reali.
 - Rimani conciso (1-2 frasi per suggerimento), senza markdown o titoli.`
 	}
 	return `You are ManaWise AI, a professional Magic: The Gathering deck analyst.
-You receive deterministic analysis data for a deck and provide concise, actionable improvement suggestions.
+You receive deterministic analysis data and the full decklist, and provide concise, actionable improvement suggestions.
 Rules:
 - Respond only in English.
 - Provide exactly 3 numbered suggestions.
-- Each suggestion must use this format: "CUT: ... ADD: ... WHY: ...".
-- In "ADD", suggest only options legal in the requested format.
+- Each suggestion must use this format: "CUT: <exact card name(s) from the deck> ADD: <specific real card name(s) legal in the format> WHY: <concise reason>".
+- In CUT, name specific cards present in the provided decklist.
+- In ADD, suggest real Magic cards by their exact name, legal in the requested format.
+- Never use generic placeholders like 'a card' or 'slot'; always use real card names.
 - Keep each suggestion to 1-2 sentences and use plain text (no markdown headers).`
 }
 
-func buildPrompt(format, locale string, a *domain.AnalysisResult) string {
+func buildPrompt(format, locale, decklist string, a *domain.AnalysisResult) string {
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("Format: %s\n", format))
 	sb.WriteString(fmt.Sprintf("Language: %s\n", locale))
 	sb.WriteString(fmt.Sprintf("Total cards: %d, Average CMC: %.2f, Land count: %d (ideal: %d)\n",
 		a.Mana.TotalCards, a.Mana.AverageCMC, a.Mana.LandCount, a.Mana.IdealLandCount))
 
-	sb.WriteString("Mana curve distribution:\n")
+	if strings.TrimSpace(decklist) != "" {
+		sb.WriteString("\nCurrent decklist (use these exact card names in your suggestions):\n")
+		for _, line := range strings.Split(strings.TrimSpace(decklist), "\n") {
+			line = strings.TrimSpace(line)
+			if line != "" {
+				sb.WriteString(fmt.Sprintf("  %s\n", line))
+			}
+		}
+	}
+
+	sb.WriteString("\nMana curve distribution:\n")
 	for _, b := range a.Mana.Distribution {
 		sb.WriteString(fmt.Sprintf("  CMC %d: %d cards\n", b.CMC, b.Count))
 	}
@@ -214,7 +228,7 @@ func buildPrompt(format, locale string, a *domain.AnalysisResult) string {
 		sb.WriteString(fmt.Sprintf("  %s: %d (ideal %d)\n", bd.Category, bd.Count, bd.Ideal))
 	}
 
-	sb.WriteString("\nProvide 3 targeted swap suggestions for this deck. Each item must include what to remove, what to add, and why. Ensure format legality.")
+	sb.WriteString("\nProvide 3 targeted swap suggestions naming specific cards from the decklist above. Each must state exactly which card(s) to remove and which specific card(s) to add as replacements. Ensure format legality for all additions.")
 	return sb.String()
 }
 

@@ -85,7 +85,7 @@ func (h *AnalyzeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var aiError string
 	if h.ai != nil {
 		var suggestErr error
-		aiSuggestions, aiSource, suggestErr = h.ai.Suggest(r.Context(), req.Decklist, req.Format, req.Locale, &result.Result)
+		aiSuggestions, aiSource, suggestErr = h.ai.Suggest(r.Context(), req.Decklist, req.Format, req.Locale, &result.Result, result.RawCards)
 		if suggestErr != nil {
 			aiError = suggestErr.Error()
 		}

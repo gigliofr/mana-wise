@@ -27,7 +27,7 @@ func minimalAnalysis() *domain.AnalysisResult {
 
 func TestAISuggester_InternalOnly_ReturnsInternalSource(t *testing.T) {
 	s := NewAISuggester(AIModeInternalOnly, nil, nil, true)
-	text, source, err := s.Suggest(context.Background(), "4 Lightning Bolt", "standard", "it", minimalAnalysis())
+	text, source, err := s.Suggest(context.Background(), "4 Lightning Bolt", "standard", "it", minimalAnalysis(), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -41,7 +41,7 @@ func TestAISuggester_InternalOnly_ReturnsInternalSource(t *testing.T) {
 
 func TestAISuggester_InternalOnly_DisabledReturnsError(t *testing.T) {
 	s := NewAISuggester(AIModeInternalOnly, nil, nil, false)
-	_, _, err := s.Suggest(context.Background(), "4 Lightning Bolt", "standard", "it", minimalAnalysis())
+	_, _, err := s.Suggest(context.Background(), "4 Lightning Bolt", "standard", "it", minimalAnalysis(), nil)
 	if err == nil {
 		t.Error("expected error when internal rules disabled, got nil")
 	}
@@ -53,7 +53,7 @@ func TestAISuggester_ExternalOnly_NoProviders_InternalEnabled_FallsBack(t *testi
 	// tryExternalChain falls through to tryInternal when internalEnable=true and no external
 	// provider is configured. This is the defined last-resort behaviour.
 	s := NewAISuggester(AIModeExternalOnly, nil, nil, true)
-	_, source, err := s.Suggest(context.Background(), "4 Lightning Bolt", "standard", "it", minimalAnalysis())
+	_, source, err := s.Suggest(context.Background(), "4 Lightning Bolt", "standard", "it", minimalAnalysis(), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestAISuggester_ExternalOnly_NoProviders_InternalEnabled_FallsBack(t *testi
 
 func TestAISuggester_ExternalOnly_NoProviders_InternalDisabled_ReturnsError(t *testing.T) {
 	s := NewAISuggester(AIModeExternalOnly, nil, nil, false)
-	_, _, err := s.Suggest(context.Background(), "4 Lightning Bolt", "standard", "it", minimalAnalysis())
+	_, _, err := s.Suggest(context.Background(), "4 Lightning Bolt", "standard", "it", minimalAnalysis(), nil)
 	if err == nil {
 		t.Error("expected error when no providers and internal rules disabled")
 	}
@@ -76,7 +76,7 @@ func TestAISuggester_ExternalOnly_NoProviders_InternalDisabled_ReturnsError(t *t
 
 func TestAISuggester_HybridPreferExternal_NoProviders_FallsBackToInternal(t *testing.T) {
 	s := NewAISuggester(AIModeHybridPreferExternal, nil, nil, true)
-	text, source, err := s.Suggest(context.Background(), "4 Lightning Bolt", "standard", "it", minimalAnalysis())
+	text, source, err := s.Suggest(context.Background(), "4 Lightning Bolt", "standard", "it", minimalAnalysis(), nil)
 	if err != nil {
 		t.Fatalf("expected fallback to internal, got error: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestAISuggester_HybridPreferExternal_NoProviders_FallsBackToInternal(t *tes
 
 func TestAISuggester_HybridPreferExternal_NoProviders_InternalDisabled_ReturnsError(t *testing.T) {
 	s := NewAISuggester(AIModeHybridPreferExternal, nil, nil, false)
-	_, _, err := s.Suggest(context.Background(), "4 Lightning Bolt", "standard", "it", minimalAnalysis())
+	_, _, err := s.Suggest(context.Background(), "4 Lightning Bolt", "standard", "it", minimalAnalysis(), nil)
 	if err == nil {
 		t.Error("expected error when no providers and internal disabled")
 	}
@@ -100,7 +100,7 @@ func TestAISuggester_HybridPreferExternal_NoProviders_InternalDisabled_ReturnsEr
 
 func TestAISuggester_HybridPreferInternal_UsesInternal(t *testing.T) {
 	s := NewAISuggester(AIModeHybridPreferInternal, nil, nil, true)
-	text, source, err := s.Suggest(context.Background(), "4 Lightning Bolt", "standard", "it", minimalAnalysis())
+	text, source, err := s.Suggest(context.Background(), "4 Lightning Bolt", "standard", "it", minimalAnalysis(), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -117,7 +117,7 @@ func TestAISuggester_HybridPreferInternal_UsesInternal(t *testing.T) {
 func TestAISuggester_UnknownMode_DefaultsToHybridPreferExternal(t *testing.T) {
 	s := NewAISuggester("garbage_mode", nil, nil, true)
 	// No providers → should fall back to internal (hybrid_prefer_external behaviour)
-	_, source, err := s.Suggest(context.Background(), "4 Lightning Bolt", "standard", "it", minimalAnalysis())
+	_, source, err := s.Suggest(context.Background(), "4 Lightning Bolt", "standard", "it", minimalAnalysis(), nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -130,7 +130,7 @@ func TestAISuggester_UnknownMode_DefaultsToHybridPreferExternal(t *testing.T) {
 
 func TestAISuggester_InternalOnly_NilAnalysis_ReturnsError(t *testing.T) {
 	s := NewAISuggester(AIModeInternalOnly, nil, nil, true)
-	_, _, err := s.Suggest(context.Background(), "", "standard", "it", nil)
+	_, _, err := s.Suggest(context.Background(), "", "standard", "it", nil, nil)
 	// BuildInternalSuggestions returns "" for nil → tryInternal returns error
 	if err == nil {
 		t.Error("expected error for nil analysis input")
