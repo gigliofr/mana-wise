@@ -1,0 +1,78 @@
+package domain
+
+// CMCBucket holds the count of cards at a given converted mana cost.
+type CMCBucket struct {
+	CMC   int `json:"cmc"`
+	Count int `json:"count"`
+}
+
+// ManaCurveSuggestion represents a single adjustment suggestion.
+type ManaCurveSuggestion struct {
+	Type    string `json:"type"` // "add" | "remove"
+	CMC     int    `json:"cmc"`
+	Reason  string `json:"reason"`
+	Urgency string `json:"urgency"` // "critical" | "moderate" | "minor"
+}
+
+// ManaAnalysis is the output of the deterministic mana-curve analysis.
+type ManaAnalysis struct {
+	Format            string                `json:"format"`
+	TotalCards        int                   `json:"total_cards"`
+	AverageCMC        float64               `json:"average_cmc"`
+	Distribution      []CMCBucket           `json:"distribution"`
+	LandCount         int                   `json:"land_count"`
+	IdealLandCount    int                   `json:"ideal_land_count"`
+	ColorDistribution map[string]int        `json:"color_distribution"`
+	Suggestions       []ManaCurveSuggestion `json:"suggestions"`
+}
+
+// DeckArchetype represents the detected play style of a deck.
+type DeckArchetype string
+
+const (
+	ArchetypeAggro    DeckArchetype = "aggro"
+	ArchetypeControl  DeckArchetype = "control"
+	ArchetypeRamp     DeckArchetype = "ramp"
+	ArchetypeMidrange DeckArchetype = "midrange"
+	ArchetypeUnknown  DeckArchetype = "unknown"
+)
+
+// InteractionCategory describes a type of interactive spell.
+type InteractionCategory string
+
+const (
+	InteractionRemoval    InteractionCategory = "removal"
+	InteractionCounter    InteractionCategory = "counter"
+	InteractionDraw       InteractionCategory = "draw"
+	InteractionRamp       InteractionCategory = "ramp"
+	InteractionProtection InteractionCategory = "protection"
+	InteractionDiscard    InteractionCategory = "discard"
+)
+
+// InteractionBreakdown holds the count and weighted score for a category.
+type InteractionBreakdown struct {
+	Category InteractionCategory `json:"category"`
+	Count    int                 `json:"count"`
+	Weight   float64             `json:"weight"`
+	Score    float64             `json:"score"`
+	Ideal    int                 `json:"ideal"`
+	Delta    int                 `json:"delta"` // positive = over, negative = under
+}
+
+// InteractionAnalysis is the output of the deterministic interaction-density analysis.
+type InteractionAnalysis struct {
+	Format      string                 `json:"format"`
+	Archetype   string                 `json:"archetype"`
+	TotalScore  float64                `json:"total_score"`
+	Breakdowns  []InteractionBreakdown `json:"breakdowns"`
+	Suggestions []string               `json:"suggestions"`
+}
+
+// AnalysisResult aggregates all deterministic analyses for a deck.
+type AnalysisResult struct {
+	DeckID      string              `json:"deck_id,omitempty"`
+	Format      string              `json:"format"`
+	Mana        ManaAnalysis        `json:"mana"`
+	Interaction InteractionAnalysis `json:"interaction"`
+	LatencyMs   int64               `json:"latency_ms"`
+}

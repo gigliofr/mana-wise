@@ -1,0 +1,58 @@
+package usecase
+
+import "testing"
+
+func TestParseDecklist_MTGAArenaItalianFormat(t *testing.T) {
+	raw := `Mazzo
+4 Elfi di Llanowar (FDN) 227
+12 Foresta (EOE) 276
+4 Chocobo di Sazh (FIN) 200
+2 Sazh Katzroy (FIN) 199`
+
+	entries, err := parseDecklist(raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(entries) != 4 {
+		t.Fatalf("expected 4 entries, got %d", len(entries))
+	}
+
+	if entries[0].qty != 4 || entries[0].name != "Elfi di Llanowar" {
+		t.Fatalf("unexpected first entry: %+v", entries[0])
+	}
+	if entries[1].qty != 12 || entries[1].name != "Foresta" {
+		t.Fatalf("unexpected second entry: %+v", entries[1])
+	}
+}
+
+func TestParseDecklist_EnglishDeckHeaderAndClassicLines(t *testing.T) {
+	raw := `Deck
+4 Lightning Bolt
+2 Monastery Swiftspear`
+
+	entries, err := parseDecklist(raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
+	}
+	if entries[0].name != "Lightning Bolt" || entries[1].name != "Monastery Swiftspear" {
+		t.Fatalf("unexpected names: %+v", entries)
+	}
+}
+
+func TestSanitizeCardName(t *testing.T) {
+	tests := map[string]string{
+		"Elfi di Llanowar (FDN) 227": "Elfi di Llanowar",
+		"Lightning Bolt":             "Lightning Bolt",
+		"":                           "",
+	}
+
+	for in, expected := range tests {
+		got := sanitizeCardName(in)
+		if got != expected {
+			t.Fatalf("sanitizeCardName(%q) = %q, expected %q", in, got, expected)
+		}
+	}
+}

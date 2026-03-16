@@ -1,0 +1,371 @@
+{
+  "info": {
+    "_postman_id": "2d8b4f03-3cb7-4f68-a4ba-c5f601e7c8c6",
+    "name": "ManaWise API",
+    "description": "Complete Postman collection for ManaWise backend APIs.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "token", "value": "" },
+    { "key": "cardId", "value": "" },
+    { "key": "cardName", "value": "Lightning Bolt" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "health"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const json = pm.response.json();",
+                  "  if (json.token) {",
+                  "    pm.collectionVariables.set('token', json.token);",
+                  "    console.log('token saved from Register');",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"test@manawise.local\",\n  \"password\": \"password123\",\n  \"name\": \"Test User\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "register"]
+            }
+          }
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const json = pm.response.json();",
+                  "  if (json.token) {",
+                  "    pm.collectionVariables.set('token', json.token);",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"test@manawise.local\",\n  \"password\": \"password123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "login"]
+            }
+          }
+        },
+        {
+          "name": "Me",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/auth/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "auth", "me"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Analyze",
+      "item": [
+        {
+          "name": "Analyze Deck",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"format\": \"modern\",\n  \"decklist\": \"4 Lightning Bolt\\n4 Rift Bolt\\n4 Lava Spike\\n4 Goblin Guide\\n4 Monastery Swiftspear\\n4 Eidolon of the Great Revel\\n4 Skullcrack\\n4 Boros Charm\\n4 Searing Blaze\\n4 Light Up the Stage\\n4 Inspiring Vantage\\n4 Sacred Foundry\\n8 Mountain\\n4 Sunbaked Canyon\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/analyze",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "analyze"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Cards",
+      "item": [
+        {
+          "name": "Search By Name",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const json = pm.response.json();",
+                  "  if (json.id) {",
+                  "    pm.collectionVariables.set('cardId', json.id);",
+                  "    console.log('cardId saved:', json.id);",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/cards/search?name={{cardName}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "cards", "search"],
+              "query": [
+                { "key": "name", "value": "{{cardName}}" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Card By ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/cards/{{cardId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "cards", "{{cardId}}"]
+            }
+          }
+        },
+        {
+          "name": "Price Trend By ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/cards/{{cardId}}/price-trend",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "cards", "{{cardId}}", "price-trend"]
+            }
+          }
+        },
+        {
+          "name": "Synergies By ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/cards/{{cardId}}/synergies?n=10&min_score=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "cards", "{{cardId}}", "synergies"],
+              "query": [
+                { "key": "n", "value": "10" },
+                { "key": "min_score", "value": "0" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Price Trend By Name",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/cards/by-name/price-trend?name={{cardName}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "cards", "by-name", "price-trend"],
+              "query": [
+                { "key": "name", "value": "{{cardName}}" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Synergies By Name",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/cards/by-name/synergies?name={{cardName}}&n=10&min_score=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "cards", "by-name", "synergies"],
+              "query": [
+                { "key": "name", "value": "{{cardName}}" },
+                { "key": "n", "value": "10" },
+                { "key": "min_score", "value": "0" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Embeddings",
+      "item": [
+        {
+          "name": "Embed Batch",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"limit\": 200,\n  \"force\": false\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/embed/batch",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "embed", "batch"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Analytics",
+      "item": [
+        {
+          "name": "Upgrade Click",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"source\": \"postman_test\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/analytics/upgrade-click",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "analytics", "upgrade-click"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "OTA",
+      "item": [
+        {
+          "name": "Publish Release",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"version\": \"1.2.3\",\n  \"platform\": \"esp32\",\n  \"binary_base64\": \"ZHVtbXktYmluYXJ5\",\n  \"sha256\": \"4a40c8b635196073ec6f8f3f2b8eb4c57d754da21eb7f730e47f6a29294f3b33\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ota/release",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "ota", "release"]
+            }
+          }
+        },
+        {
+          "name": "Report Boot",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"device_id\": \"kiosk-001\",\n  \"version\": \"1.2.3\",\n  \"status\": \"ok\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ota/report-boot",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "ota", "report-boot"]
+            }
+          }
+        },
+        {
+          "name": "Get Manifest",
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/ota/manifest",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "ota", "manifest"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

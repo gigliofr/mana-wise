@@ -1,0 +1,26 @@
+# Binaries
+manawise
+manawise.exe
+*.exe
+*.test
+
+# Env secrets
+.env
+.env.local
+.env.*.local
+
+# Build output
+web/dist/
+web/node_modules/
+
+# Editor
+.vscode/
+.idea/
+
+# Go test cache / coverage
+*.out
+coverage.html
+
+# OS
+.DS_Store
+Thumbs.db
