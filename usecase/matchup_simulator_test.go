@@ -55,6 +55,30 @@ func TestMatchupSimulator_CustomOpponentsAndArchetype(t *testing.T) {
 	}
 }
 
+func TestMatchupSimulator_PostBoardAdjustment(t *testing.T) {
+	uc := usecase.NewMatchupSimulatorUseCase(nil)
+
+	deck := "4 Consider\n4 Opt\n4 Negate\n4 Go for the Throat\n4 Sheoldred, the Apocalypse\n24 Island\n16 Swamp"
+	side := "3 Duress\n2 Negate\n2 Brotherhood's End\n2 Unlicensed Hearse"
+	res, err := uc.Execute(context.Background(), usecase.MatchupSimulationRequest{
+		Decklist:          deck,
+		SideboardDecklist: side,
+		Format:            "standard",
+		Opponents:         []string{"aggro", "combo"},
+	})
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(res.Matchups) != 2 {
+		t.Fatalf("expected 2 matchups, got %d", len(res.Matchups))
+	}
+	for _, m := range res.Matchups {
+		if m.PostBoardWinRate < m.WinRate {
+			t.Fatalf("expected post-board >= pre-board for %s, got %.2f < %.2f", m.OpponentArchetype, m.PostBoardWinRate, m.WinRate)
+		}
+	}
+}
+
 func TestMatchupSimulator_EmptyDecklist(t *testing.T) {
 	uc := usecase.NewMatchupSimulatorUseCase(nil)
 

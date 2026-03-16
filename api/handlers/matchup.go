@@ -11,6 +11,7 @@ import (
 // MatchupSimulationRequest is the API payload for matchup simulation.
 type MatchupSimulationRequest struct {
 	Decklist        string   `json:"decklist"`
+	SideboardDecklist string `json:"sideboard_decklist,omitempty"`
 	Format          string   `json:"format,omitempty"`
 	PlayerArchetype string   `json:"player_archetype,omitempty"`
 	Opponents       []string `json:"opponents,omitempty"`
@@ -47,6 +48,7 @@ func (h *MatchupHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	res, err := h.uc.Execute(r.Context(), usecase.MatchupSimulationRequest{
 		Decklist:        req.Decklist,
+		SideboardDecklist: strings.TrimSpace(req.SideboardDecklist),
 		Format:          req.Format,
 		PlayerArchetype: req.PlayerArchetype,
 		Opponents:       req.Opponents,

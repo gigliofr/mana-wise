@@ -18,6 +18,7 @@ type MatchupSimulatorUseCase struct {
 // MatchupSimulationRequest contains simulation input.
 type MatchupSimulationRequest struct {
 	Decklist        string
+	SideboardDecklist string
 	Format          string
 	PlayerArchetype string
 	Opponents       []string
@@ -27,6 +28,8 @@ type MatchupSimulationRequest struct {
 type MatchupEstimate struct {
 	OpponentArchetype string   `json:"opponent_archetype"`
 	WinRate           float64  `json:"win_rate"`
+	PostBoardWinRate  float64  `json:"post_board_win_rate,omitempty"`
+	SideboardDelta    float64  `json:"sideboard_delta,omitempty"`
 	Confidence        float64  `json:"confidence"`
 	KeyFactors        []string `json:"key_factors,omitempty"`
 	Verdict           string   `json:"verdict"`
@@ -64,9 +67,13 @@ func (uc *MatchupSimulatorUseCase) Execute(ctx context.Context, req MatchupSimul
 	if len(entries) == 0 {
 		return MatchupSimulationResult{}, fmt.Errorf("decklist is empty")
 	}
+	sideboard := parseDecklistQuantities(req.SideboardDecklist)
 
 	names := make([]string, 0, len(entries))
 	for n := range entries {
+		names = append(names, n)
+	}
+	for n := range sideboard {
 		names = append(names, n)
 	}
 
@@ -96,9 +103,13 @@ func (uc *MatchupSimulatorUseCase) Execute(ctx context.Context, req MatchupSimul
 
 	for _, opp := range opponents {
 		winRate, factors := estimateWinRate(playerArchetype, opp, features)
+		postBoard, sideDelta, sideFactors := applySideboardDelta(opp, winRate, sideboard, cardMap)
+		factors = append(factors, sideFactors...)
 		result.Matchups = append(result.Matchups, MatchupEstimate{
 			OpponentArchetype: opp,
 			WinRate:           round2(clamp(winRate, 0.25, 0.75)),
+			PostBoardWinRate:  round2(clamp(postBoard, 0.25, 0.8)),
+			SideboardDelta:    round2(sideDelta),
 			Confidence:        round2(calcConfidence(features)),
 			KeyFactors:        factors,
 			Verdict:           verdictFromWinRate(winRate),
@@ -314,12 +325,114 @@ func buildMatchupSummary(res MatchupSimulationResult) string {
 	}
 	best := res.Matchups[0]
 	worst := res.Matchups[len(res.Matchups)-1]
-	avg := 0.0
+	avgPre := 0.0
+	avgPost := 0.0
 	for _, m := range res.Matchups {
-		avg += m.WinRate
+		avgPre += m.WinRate
+		avgPost += m.PostBoardWinRate
 	}
-	avg = avg / float64(len(res.Matchups))
-	return fmt.Sprintf("Estimated pre-sideboard performance: %.0f%% average, best vs %s (%.0f%%), weakest vs %s (%.0f%%).", math.Round(avg*100), best.OpponentArchetype, math.Round(best.WinRate*100), worst.OpponentArchetype, math.Round(worst.WinRate*100))
+	avgPre = avgPre / float64(len(res.Matchups))
+	avgPost = avgPost / float64(len(res.Matchups))
+	if avgPost > 0 {
+		return fmt.Sprintf("Estimated performance: %.0f%% pre-board and %.0f%% post-board average; best pre-board vs %s (%.0f%%), weakest pre-board vs %s (%.0f%%).", math.Round(avgPre*100), math.Round(avgPost*100), best.OpponentArchetype, math.Round(best.WinRate*100), worst.OpponentArchetype, math.Round(worst.WinRate*100))
+	}
+	return fmt.Sprintf("Estimated pre-sideboard performance: %.0f%% average, best vs %s (%.0f%%), weakest vs %s (%.0f%%).", math.Round(avgPre*100), best.OpponentArchetype, math.Round(best.WinRate*100), worst.OpponentArchetype, math.Round(worst.WinRate*100))
+}
+
+func applySideboardDelta(opp string, preWinRate float64, sideboard map[string]int, cardMap map[string]*domain.Card) (float64, float64, []string) {
+	if len(sideboard) == 0 {
+		return preWinRate, 0, nil
+	}
+	score := 0.0
+	for name, qty := range sideboard {
+		if qty <= 0 {
+			continue
+		}
+		lower := strings.ToLower(strings.TrimSpace(name))
+		card := cardMap[lower]
+		score += float64(qty) * sideboardTagWeight(opp, inferSideboardTags(lower, card))
+	}
+	if score <= 0 {
+		return preWinRate, 0, []string{"Sideboard has low specific overlap for this matchup"}
+	}
+	delta := clamp(score*0.0035, 0, 0.08)
+	return preWinRate + delta, delta, []string{fmt.Sprintf("Post-board tools project +%.0fpp vs %s", math.Round(delta*100), opp)}
+}
+
+func inferSideboardTags(nameLower string, card *domain.Card) map[string]bool {
+	text := nameLower
+	typeLine := ""
+	oracle := ""
+	if card != nil {
+		typeLine = strings.ToLower(card.TypeLine)
+		oracle = strings.ToLower(card.OracleText)
+		text = text + " " + typeLine + " " + oracle
+	}
+	tags := map[string]bool{}
+	if strings.Contains(text, "counter target") || strings.Contains(nameLower, "negate") || strings.Contains(nameLower, "disdainful") {
+		tags["counter"] = true
+		tags["anti_combo"] = true
+		tags["anti_control"] = true
+	}
+	if strings.Contains(text, "discard") || strings.Contains(nameLower, "duress") || strings.Contains(nameLower, "thoughtseize") {
+		tags["discard"] = true
+		tags["anti_combo"] = true
+		tags["anti_control"] = true
+	}
+	if strings.Contains(text, "destroy all") || strings.Contains(text, "each creature") || strings.Contains(nameLower, "sunfall") || strings.Contains(nameLower, "brotherhood") {
+		tags["sweeper"] = true
+		tags["anti_aggro"] = true
+	}
+	if strings.Contains(text, "destroy target creature") || strings.Contains(text, "exile target creature") || strings.Contains(nameLower, "go for the throat") || strings.Contains(nameLower, "bolt") || strings.Contains(nameLower, "strike") {
+		tags["cheap_removal"] = true
+		tags["anti_aggro"] = true
+	}
+	if strings.Contains(text, "graveyard") && (strings.Contains(text, "exile") || strings.Contains(text, "can't")) {
+		tags["graveyard_hate"] = true
+		tags["anti_combo"] = true
+	}
+	if strings.Contains(text, "gain") && strings.Contains(text, "life") {
+		tags["lifegain"] = true
+		tags["anti_aggro"] = true
+	}
+	if strings.Contains(typeLine, "creature") || strings.Contains(typeLine, "planeswalker") {
+		tags["threat"] = true
+	}
+	return tags
+}
+
+func sideboardTagWeight(opp string, tags map[string]bool) float64 {
+	weights := map[string]map[string]float64{
+		"aggro": {
+			"anti_aggro":    2.0,
+			"cheap_removal": 1.8,
+			"sweeper":       2.6,
+			"lifegain":      1.6,
+		},
+		"control": {
+			"anti_control": 1.8,
+			"counter":      1.5,
+			"discard":      1.9,
+			"threat":       1.1,
+		},
+		"combo": {
+			"anti_combo":    2.0,
+			"counter":       1.9,
+			"discard":       1.9,
+			"graveyard_hate": 1.5,
+		},
+		"midrange": {
+			"cheap_removal": 1.2,
+			"threat":        1.2,
+			"counter":       0.8,
+		},
+	}
+	w := 0.0
+	table := weights[opp]
+	for tag := range tags {
+		w += table[tag]
+	}
+	return w
 }
 
 func clamp(v, min, max float64) float64 {
