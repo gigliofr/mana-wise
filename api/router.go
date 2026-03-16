@@ -23,6 +23,7 @@ type RouterDeps struct {
 	ResolveCardUC *usecase.ResolveCardByNameUseCase
 	SideboardUC   *usecase.SideboardCoachUseCase
 	MulliganUC    *usecase.MulliganAssistantUseCase
+	MatchupUC     *usecase.MatchupSimulatorUseCase
 	OTAUC         *usecase.OTAUpdateUseCase
 	Analytics     domain.AnalyticsTracker
 	JWTSecret     string
@@ -46,6 +47,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 	cardsH := handlers.NewCardsHandler(deps.CardRepo, deps.ResolveCardUC)
 	sideboardH := handlers.NewSideboardCoachHandler(deps.SideboardUC)
 	mulliganH := handlers.NewMulliganHandler(deps.MulliganUC)
+	matchupH := handlers.NewMatchupHandler(deps.MatchupUC)
 	embedH := handlers.NewEmbedBatchHandler(deps.EmbedBatchUC)
 	otaH := handlers.NewOTAHandler(deps.OTAUC)
 	analyticsH := handlers.NewAnalyticsHandler(deps.Analytics)
@@ -78,6 +80,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 			r.With(freemiumMW).Post("/analyze", analyzeH.ServeHTTP)
 			r.Post("/sideboard/plan", sideboardH.ServeHTTP)
 			r.Post("/mulligan/simulate", mulliganH.ServeHTTP)
+			r.Post("/matchup/simulate", matchupH.ServeHTTP)
 
 			// Cards.
 			r.Get("/cards/search", cardsH.SearchByName)
