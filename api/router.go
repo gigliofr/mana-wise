@@ -24,6 +24,7 @@ type RouterDeps struct {
 	SideboardUC   *usecase.SideboardCoachUseCase
 	MulliganUC    *usecase.MulliganAssistantUseCase
 	MatchupUC     *usecase.MatchupSimulatorUseCase
+	DeckClassifyUC *usecase.DeckClassifierUseCase
 	OTAUC         *usecase.OTAUpdateUseCase
 	Analytics     domain.AnalyticsTracker
 	JWTSecret     string
@@ -48,6 +49,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 	sideboardH := handlers.NewSideboardCoachHandler(deps.SideboardUC)
 	mulliganH := handlers.NewMulliganHandler(deps.MulliganUC)
 	matchupH := handlers.NewMatchupHandler(deps.MatchupUC)
+	deckClassifyH := handlers.NewDeckClassifyHandler(deps.DeckClassifyUC)
 	embedH := handlers.NewEmbedBatchHandler(deps.EmbedBatchUC)
 	otaH := handlers.NewOTAHandler(deps.OTAUC)
 	analyticsH := handlers.NewAnalyticsHandler(deps.Analytics)
@@ -81,6 +83,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 			r.Post("/sideboard/plan", sideboardH.ServeHTTP)
 			r.Post("/mulligan/simulate", mulliganH.ServeHTTP)
 			r.Post("/matchup/simulate", matchupH.ServeHTTP)
+			r.Post("/deck/classify", deckClassifyH.ServeHTTP)
 
 			// Cards.
 			r.Get("/cards/search", cardsH.SearchByName)

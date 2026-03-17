@@ -79,6 +79,7 @@ func main() {
 	sideboardUC := usecase.NewSideboardCoachUseCase(cardRepo)
 	mulliganUC := usecase.NewMulliganAssistantUseCase(cardRepo)
 	matchupUC := usecase.NewMatchupSimulatorUseCase(cardRepo)
+	deckClassifyUC := usecase.NewDeckClassifierUseCase(cardRepo)
 	var embedBatchUC *usecase.EmbedBatchUseCase
 	var otaUC *usecase.OTAUpdateUseCase
 	log.Printf("✅ Worker pool size: %d", cfg.Worker.PoolSize)
@@ -156,6 +157,7 @@ func main() {
 		SideboardUC:   sideboardUC,
 		MulliganUC:    mulliganUC,
 		MatchupUC:     matchupUC,
+		DeckClassifyUC: deckClassifyUC,
 		AISuggester:   aiSuggester,
 		EmbedBatchUC:  embedBatchUC,
 		ResolveCardUC: resolveCardUC,
