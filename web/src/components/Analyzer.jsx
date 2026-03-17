@@ -23,9 +23,18 @@ const SAMPLE_DECK = `// Sample Modern Burn deck
 4 Sunbaked Canyon
 `
 
-export default function Analyzer({ token, user, locale, messages }) {
+export default function Analyzer({ token, user, locale, messages, onDeckChange, onFormatChange }) {
   const [decklist, setDecklist] = useState('')
   const [format,   setFormat]   = useState('standard')
+
+  function handleDecklistChange(val) {
+    setDecklist(val)
+    onDeckChange?.(val)
+  }
+  function handleFormatChange(val) {
+    setFormat(val)
+    onFormatChange?.(val)
+  }
   const [result,   setResult]   = useState(null)
   const [fingerprint, setFingerprint] = useState(null)
   const [loading,  setLoading]  = useState(false)
@@ -135,7 +144,7 @@ export default function Analyzer({ token, user, locale, messages }) {
             <label>{messages.decklist} <span style={{ color: 'var(--muted)', fontWeight: 400 }}>({messages.decklistHint})</span></label>
             <textarea
               value={decklist}
-              onChange={e => setDecklist(e.target.value)}
+              onChange={e => handleDecklistChange(e.target.value)}
               placeholder={SAMPLE_DECK}
               required
             />
@@ -144,7 +153,7 @@ export default function Analyzer({ token, user, locale, messages }) {
           <div className="form-row-inline" style={{ alignItems: 'flex-end', gap: 12 }}>
             <div className="form-row" style={{ flex: 1, marginBottom: 0 }}>
               <label>{messages.format}</label>
-              <select value={format} onChange={e => setFormat(e.target.value)}>
+              <select value={format} onChange={e => handleFormatChange(e.target.value)}>
                 {FORMATS.map(f => <option key={f} value={f}>{f.charAt(0).toUpperCase() + f.slice(1)}</option>)}
               </select>
             </div>

@@ -40,6 +40,10 @@ web/              → Vite + React SPA
 | POST   | `/api/v1/auth/login` | — | Login |
 | GET    | `/api/v1/auth/me` | JWT | Current user |
 | POST   | `/api/v1/analyze` | JWT + Freemium | Analyze decklist |
+| POST   | `/api/v1/matchup/simulate` | JWT | Simulate matchup matrix (play/draw aware, meta-weighted, weakness diagnosis) |
+| POST   | `/api/v1/sideboard/plan` | JWT | Build matchup-specific sideboard ins/outs |
+| POST   | `/api/v1/mulligan/simulate` | JWT | Monte Carlo keep-rate simulation by hand size |
+| POST   | `/api/v1/deck/classify` | JWT | Classify deck fingerprint (archetype, color identity, curve, confidence) |
 | GET    | `/api/v1/cards/search?name=...` | JWT | Resolve card by name with fuzzy fallback |
 | GET    | `/api/v1/cards/by-name/price-trend?name=...` | JWT | Price trend by card name |
 | GET    | `/api/v1/cards/by-name/synergies?name=...&n=10` | JWT | Synergies by card name |

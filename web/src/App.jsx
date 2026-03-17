@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import Auth from './components/Auth'
 import Analyzer from './components/Analyzer'
+import MatchupSimulator from './components/MatchupSimulator'
+import SideboardCoach from './components/SideboardCoach'
+import MulliganAssistant from './components/MulliganAssistant'
 import { LOCALES, translations } from './i18n'
 
 const TOKEN_KEY = 'manawise_token'
@@ -59,6 +62,9 @@ function App() {
     }
   }, [token])
 
+  const [sharedDecklist, setSharedDecklist] = useState('')
+  const [sharedFormat,   setSharedFormat]   = useState('standard')
+
   if (!token) {
     return <Auth onLogin={handleLogin} locale={locale} messages={messages} onLocaleChange={handleLocaleChange} />
   }
@@ -94,7 +100,32 @@ function App() {
       </header>
       <main>
         <div className="container">
-          <Analyzer token={token} user={user} locale={locale} messages={messages} />
+          <Analyzer
+            token={token}
+            user={user}
+            locale={locale}
+            messages={messages}
+            onDeckChange={setSharedDecklist}
+            onFormatChange={setSharedFormat}
+          />
+          <MatchupSimulator
+            token={token}
+            decklist={sharedDecklist}
+            format={sharedFormat}
+            messages={messages}
+          />
+          <SideboardCoach
+            token={token}
+            decklist={sharedDecklist}
+            format={sharedFormat}
+            messages={messages}
+          />
+          <MulliganAssistant
+            token={token}
+            decklist={sharedDecklist}
+            format={sharedFormat}
+            messages={messages}
+          />
         </div>
       </main>
     </>

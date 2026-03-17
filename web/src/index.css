@@ -467,6 +467,145 @@ button {
   color: var(--primary-h);
 }
 
+/* ── Utility sections for advanced tools ── */
+.section-kicker {
+  font-size: .78rem;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 10px;
+  font-weight: 700;
+}
+
+.chip-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  font-size: .82rem;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.chip-toggle input {
+  margin: 0;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .86rem;
+}
+
+.data-table th,
+.data-table td {
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+
+.data-table th {
+  color: var(--muted);
+  font-size: .74rem;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+
+/* ── Matchup simulator ── */
+.matchup-results {
+  margin-top: 18px;
+}
+
+.matchup-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.matchup-summary-stat {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  background: var(--bg);
+}
+
+.matchup-summary-stat span {
+  display: block;
+  color: var(--muted);
+  font-size: .72rem;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.matchup-summary-stat strong {
+  font-size: 1rem;
+}
+
+.weakness-list {
+  display: grid;
+  gap: 10px;
+}
+
+.weakness-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: var(--bg);
+}
+
+.weakness-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.weakness-items {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+  font-size: .84rem;
+}
+
+.weakness-items.remedy {
+  margin-top: 6px;
+  color: var(--text);
+}
+
+/* ── Sideboard coach ── */
+.sideboard-result {
+  margin-top: 18px;
+}
+
+.sideboard-matchup-label {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: .9rem;
+}
+
+.sideboard-columns {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.sideboard-col {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  background: var(--bg);
+}
+
+/* ── Mulligan assistant ── */
+.mulligan-results {
+  margin-top: 18px;
+}
+
 @media (max-width: 720px) {
   .fingerprint-hero {
     flex-direction: column;
@@ -477,6 +616,14 @@ button {
   }
 
   .fingerprint-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .matchup-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .sideboard-columns {
     grid-template-columns: 1fr;
   }
 
