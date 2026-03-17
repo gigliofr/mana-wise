@@ -27,9 +27,10 @@ export default function Analyzer({ token, user, locale, messages }) {
   const [decklist, setDecklist] = useState('')
   const [format,   setFormat]   = useState('standard')
   const [result,   setResult]   = useState(null)
+  const [fingerprint, setFingerprint] = useState(null)
   const [loading,  setLoading]  = useState(false)
   const [error,    setError]    = useState('')
-  const [tab,      setTab]      = useState('mana') // 'mana' | 'interaction' | 'ai'
+  const [tab,      setTab]      = useState('mana') // 'mana' | 'interaction' | 'fingerprint' | 'ai'
   const [remaining, setRemaining] = useState(typeof user?.remaining === 'number' ? user.remaining : 3)
 
   useEffect(() => {
@@ -59,25 +60,51 @@ export default function Analyzer({ token, user, locale, messages }) {
     e.preventDefault()
     setError('')
     setResult(null)
+    setFingerprint(null)
     setLoading(true)
     try {
-      const res = await fetch(`${API}/analyze`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({ decklist, format, locale }),
-      })
+      const headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      }
+
+      const [analysisOutcome, fingerprintOutcome] = await Promise.allSettled([
+        fetch(`${API}/analyze`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ decklist, format, locale }),
+        }),
+        fetch(`${API}/deck/classify`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ decklist, format }),
+        }),
+      ])
+
+      if (analysisOutcome.status !== 'fulfilled') {
+        throw new Error(messages.analysisFailed)
+      }
+
+      const res = analysisOutcome.value
       const data = await res.json()
       if (!res.ok) {
         if (typeof data?.remaining === 'number') {
           setRemaining(data.remaining)
         }
-        throw new Error(data.error || 'Analysis failed')
+        throw new Error(data.error || messages.analysisFailed)
       }
+
       setResult(data)
       setTab('mana')
+
+      if (fingerprintOutcome.status === 'fulfilled') {
+        const fingerprintRes = fingerprintOutcome.value
+        const fingerprintData = await fingerprintRes.json()
+        if (fingerprintRes.ok) {
+          setFingerprint(fingerprintData)
+        }
+      }
+
       if (isFree) {
         setRemaining(prev => Math.max(0, (typeof prev === 'number' ? prev : 3) - 1))
       }
@@ -165,6 +192,14 @@ export default function Analyzer({ token, user, locale, messages }) {
               </div>
               <div className="stat-label">{messages.detectedArchetype}</div>
             </div>
+            {fingerprint && (
+              <div className="stat-item">
+                <div className="stat-value" style={{ color: 'var(--primary-h)' }}>
+                  {fingerprint.color_identity?.length ? fingerprint.color_identity.join('/') : messages.unknownLabel}
+                </div>
+                <div className="stat-label">{messages.colorIdentity}</div>
+              </div>
+            )}
           </div>
 
           <AnalysisLegend result={result} messages={messages} />
@@ -174,6 +209,7 @@ export default function Analyzer({ token, user, locale, messages }) {
             {[
               { key: 'mana',        label: messages.manaCurveTab },
               { key: 'interaction', label: messages.interactionTab },
+              { key: 'fingerprint', label: messages.fingerprintTab },
               { key: 'ai',         label: messages.aiTab },
             ].map(t => (
               <button key={t.key} className={`tab-btn${tab === t.key ? ' active' : ''}`} onClick={() => setTab(t.key)}>
@@ -184,6 +220,7 @@ export default function Analyzer({ token, user, locale, messages }) {
 
           {tab === 'mana' && <ManaCurvePanel data={result.deterministic.mana} messages={messages} />}
           {tab === 'interaction' && <InteractionPanel data={{ ...result.deterministic.interaction, messages }} />}
+          {tab === 'fingerprint' && <FingerprintPanel data={fingerprint} messages={messages} />} 
           {tab === 'ai' && <AIPanel text={result.ai_suggestions} error={result.ai_error} source={result.ai_source} result={result} messages={messages} locale={locale} />}
         </div>
       )}
@@ -255,6 +292,63 @@ function ManaCurvePanel({ data, messages }) {
           </ul>
         </>
       )}
+    </div>
+  )
+}
+
+function FingerprintPanel({ data, messages }) {
+  if (!data) {
+    return (
+      <div className="banner banner-warn" style={{ marginBottom: 0 }}>
+        {messages.fingerprintUnavailable}
+      </div>
+    )
+  }
+
+  const curveItems = [
+    { label: '1', value: data.mana_curve?.one ?? 0 },
+    { label: '2', value: data.mana_curve?.two ?? 0 },
+    { label: '3', value: data.mana_curve?.three ?? 0 },
+    { label: '4', value: data.mana_curve?.four ?? 0 },
+    { label: '5+', value: data.mana_curve?.five_plus ?? 0 },
+  ]
+
+  return (
+    <div className="fingerprint-panel">
+      <div className="fingerprint-hero">
+        <div>
+          <div className="fingerprint-kicker">{messages.deckFingerprint}</div>
+          <h3>{messages.fingerprintSummary(data.archetype || messages.unknownLabel, data.confidence ?? 0)}</h3>
+          <p>{data.strategy_description || messages.fingerprintUnavailable}</p>
+        </div>
+        <div className="fingerprint-confidence">
+          <span>{messages.confidenceLabel}</span>
+          <strong>{Math.round((data.confidence || 0) * 100)}%</strong>
+        </div>
+      </div>
+
+      <div className="fingerprint-grid">
+        <div className="fingerprint-card">
+          <div className="fingerprint-card-label">{messages.colorIdentity}</div>
+          <div className="fingerprint-chip-row">
+            {(data.color_identity?.length ? data.color_identity : [messages.unknownLabel]).map(item => (
+              <span key={item} className="fingerprint-chip">{item}</span>
+            ))}
+          </div>
+        </div>
+
+        <div className="fingerprint-card fingerprint-card-wide">
+          <div className="fingerprint-card-label">{messages.manaCurveFingerprint}</div>
+          <div className="fingerprint-curve-grid">
+            {curveItems.map(item => (
+              <div key={item.label} className="fingerprint-curve-item">
+                <span>{item.label}</span>
+                <strong>{item.value}</strong>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
