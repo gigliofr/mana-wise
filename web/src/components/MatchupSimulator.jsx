@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 const API = '/api/v1'
 const ARCHETYPES = ['aggro', 'midrange', 'control', 'combo', 'ramp']
@@ -13,6 +13,18 @@ export default function MatchupSimulator({ token, decklist: decklistProp, format
   const [loading, setLoading]       = useState(false)
   const [result, setResult]         = useState(null)
   const [error, setError]           = useState('')
+
+  useEffect(() => {
+    if (decklistProp !== undefined && decklistProp !== decklist) {
+      setDecklist(decklistProp)
+    }
+  }, [decklistProp])
+
+  useEffect(() => {
+    if (formatProp && formatProp !== format) {
+      setFormat(formatProp)
+    }
+  }, [formatProp])
 
   function toggleOpponent(a) {
     setOpponents(prev =>
@@ -93,7 +105,7 @@ export default function MatchupSimulator({ token, decklist: decklistProp, format
                     checked={opponents.includes(a)}
                     onChange={() => toggleOpponent(a)}
                   />
-                  <span>{a}</span>
+                  <span>{messages.archetypeLabel(a)}</span>
                 </label>
               ))}
             </div>

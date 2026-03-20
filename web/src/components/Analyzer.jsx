@@ -23,7 +23,7 @@ const SAMPLE_DECK = `// Sample Modern Burn deck
 4 Sunbaked Canyon
 `
 
-export default function Analyzer({ token, user, locale, messages, onDeckChange, onFormatChange }) {
+export default function Analyzer({ token, user, locale, messages, decklist: decklistProp, format: formatProp, onDeckChange, onFormatChange }) {
   const [decklist, setDecklist] = useState('')
   const [format,   setFormat]   = useState('standard')
 
@@ -41,6 +41,18 @@ export default function Analyzer({ token, user, locale, messages, onDeckChange, 
   const [error,    setError]    = useState('')
   const [tab,      setTab]      = useState('mana') // 'mana' | 'interaction' | 'fingerprint' | 'ai'
   const [remaining, setRemaining] = useState(typeof user?.remaining === 'number' ? user.remaining : 3)
+
+  useEffect(() => {
+    if (decklistProp !== undefined && decklistProp !== decklist) {
+      setDecklist(decklistProp)
+    }
+  }, [decklistProp])
+
+  useEffect(() => {
+    if (formatProp && formatProp !== format) {
+      setFormat(formatProp)
+    }
+  }, [formatProp])
 
   useEffect(() => {
     if (typeof user?.remaining === 'number') {
@@ -130,7 +142,7 @@ export default function Analyzer({ token, user, locale, messages, onDeckChange, 
     <>
       {/* Input panel */}
       <div className="card">
-        <h2>🃏 Deck Analyzer</h2>
+        <h2>🃏 {messages.deckAnalyzer}</h2>
 
         {isFree && (
           <div className="banner banner-info" style={{ marginBottom: 16 }}>

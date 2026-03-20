@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 const API = '/api/v1'
 const ARCHETYPES = ['aggro', 'midrange', 'control', 'combo', 'ramp']
@@ -12,6 +12,18 @@ export default function SideboardCoach({ token, decklist: decklistProp, format: 
   const [loading, setLoading]             = useState(false)
   const [result, setResult]               = useState(null)
   const [error, setError]                 = useState('')
+
+  useEffect(() => {
+    if (decklistProp !== undefined && decklistProp !== mainDecklist) {
+      setMainDecklist(decklistProp)
+    }
+  }, [decklistProp])
+
+  useEffect(() => {
+    if (formatProp && formatProp !== format) {
+      setFormat(formatProp)
+    }
+  }, [formatProp])
 
   async function runPlan(e) {
     e.preventDefault()
@@ -79,7 +91,7 @@ export default function SideboardCoach({ token, decklist: decklistProp, format: 
           <div className="form-row" style={{ flex: '0 0 auto', minWidth: 140, marginBottom: 0 }}>
             <label>{messages.opponentArchetype}</label>
             <select value={opponent} onChange={e => setOpponent(e.target.value)}>
-              {ARCHETYPES.map(a => <option key={a} value={a}>{a.charAt(0).toUpperCase() + a.slice(1)}</option>)}
+              {ARCHETYPES.map(a => <option key={a} value={a}>{messages.archetypeLabel(a)}</option>)}
             </select>
           </div>
         </div>
@@ -110,7 +122,7 @@ function SideboardPlanResult({ data, messages }) {
         <div className="sideboard-col">
           <p className="section-kicker" style={{ color: 'var(--green)' }}>▲ {messages.sideboardIns}</p>
           {data.ins?.length > 0
-            ? <SwapTable swaps={data.ins} />
+            ? <SwapTable swaps={data.ins} messages={messages} />
             : <p style={{ color: 'var(--muted)', fontSize: '.88rem' }}>—</p>
           }
         </div>
@@ -119,7 +131,7 @@ function SideboardPlanResult({ data, messages }) {
         <div className="sideboard-col">
           <p className="section-kicker" style={{ color: 'var(--red)' }}>▼ {messages.sideboardOuts}</p>
           {data.outs?.length > 0
-            ? <SwapTable swaps={data.outs} />
+            ? <SwapTable swaps={data.outs} messages={messages} />
             : <p style={{ color: 'var(--muted)', fontSize: '.88rem' }}>—</p>
           }
         </div>
@@ -137,14 +149,14 @@ function SideboardPlanResult({ data, messages }) {
   )
 }
 
-function SwapTable({ swaps }) {
+function SwapTable({ swaps, messages }) {
   return (
     <table className="data-table">
       <thead>
         <tr>
-          <th>#</th>
-          <th>Card</th>
-          <th>Reason</th>
+          <th>{messages.qty}</th>
+          <th>{messages.card}</th>
+          <th>{messages.reason}</th>
         </tr>
       </thead>
       <tbody>

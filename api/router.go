@@ -55,7 +55,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 	analyticsH := handlers.NewAnalyticsHandler(deps.Analytics)
 	var deckH *handlers.DeckHandler
 	if deps.DeckRepo != nil {
-		deckH = handlers.NewDeckHandler(deps.DeckRepo)
+		deckH = handlers.NewDeckHandler(deps.DeckRepo, deps.UserRepo)
 	}
 
 	jwtMW := middleware.JWTAuth(deps.JWTSecret)

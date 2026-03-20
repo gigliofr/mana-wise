@@ -4,6 +4,7 @@ import Analyzer from './components/Analyzer'
 import MatchupSimulator from './components/MatchupSimulator'
 import SideboardCoach from './components/SideboardCoach'
 import MulliganAssistant from './components/MulliganAssistant'
+import DeckLibrary from './components/DeckLibrary'
 import { LOCALES, translations } from './i18n'
 
 const TOKEN_KEY = 'manawise_token'
@@ -17,6 +18,9 @@ function App() {
     try { return JSON.parse(localStorage.getItem(USER_KEY) || 'null') } catch { return null }
   })
   const messages = translations[locale] || translations.it
+  const [activeTool, setActiveTool] = useState('analyzer')
+  const [sharedDecklist, setSharedDecklist] = useState('')
+  const [sharedFormat, setSharedFormat] = useState('standard')
 
   function handleLogin(token, user) {
     localStorage.setItem(TOKEN_KEY, token)
@@ -62,12 +66,16 @@ function App() {
     }
   }, [token])
 
-  const [sharedDecklist, setSharedDecklist] = useState('')
-  const [sharedFormat,   setSharedFormat]   = useState('standard')
-
   if (!token) {
     return <Auth onLogin={handleLogin} locale={locale} messages={messages} onLocaleChange={handleLocaleChange} />
   }
+
+  const tools = [
+    { key: 'analyzer', label: messages.navAnalyzer },
+    { key: 'matchup', label: messages.navMatchup },
+    { key: 'sideboard', label: messages.navSideboard },
+    { key: 'mulligan', label: messages.navMulligan },
+  ]
 
   return (
     <>
@@ -100,32 +108,67 @@ function App() {
       </header>
       <main>
         <div className="container">
-          <Analyzer
+          <DeckLibrary
             token={token}
             user={user}
-            locale={locale}
             messages={messages}
-            onDeckChange={setSharedDecklist}
-            onFormatChange={setSharedFormat}
+            currentDecklist={sharedDecklist}
+            currentFormat={sharedFormat}
+            onSelectDeck={(decklist, format) => {
+              setSharedDecklist(decklist)
+              setSharedFormat(format)
+            }}
           />
-          <MatchupSimulator
-            token={token}
-            decklist={sharedDecklist}
-            format={sharedFormat}
-            messages={messages}
-          />
-          <SideboardCoach
-            token={token}
-            decklist={sharedDecklist}
-            format={sharedFormat}
-            messages={messages}
-          />
-          <MulliganAssistant
-            token={token}
-            decklist={sharedDecklist}
-            format={sharedFormat}
-            messages={messages}
-          />
+
+          <div className="tool-links" aria-label={messages.toolLinksAria}>
+            {tools.map(tool => (
+              <button
+                key={tool.key}
+                type="button"
+                className={`tool-link${activeTool === tool.key ? ' active' : ''}`}
+                onClick={() => setActiveTool(tool.key)}
+              >
+                {tool.label}
+              </button>
+            ))}
+          </div>
+
+          {activeTool === 'analyzer' && (
+            <Analyzer
+              token={token}
+              user={user}
+              locale={locale}
+              messages={messages}
+              decklist={sharedDecklist}
+              format={sharedFormat}
+              onDeckChange={setSharedDecklist}
+              onFormatChange={setSharedFormat}
+            />
+          )}
+          {activeTool === 'matchup' && (
+            <MatchupSimulator
+              token={token}
+              decklist={sharedDecklist}
+              format={sharedFormat}
+              messages={messages}
+            />
+          )}
+          {activeTool === 'sideboard' && (
+            <SideboardCoach
+              token={token}
+              decklist={sharedDecklist}
+              format={sharedFormat}
+              messages={messages}
+            />
+          )}
+          {activeTool === 'mulligan' && (
+            <MulliganAssistant
+              token={token}
+              decklist={sharedDecklist}
+              format={sharedFormat}
+              messages={messages}
+            />
+          )}
         </div>
       </main>
     </>

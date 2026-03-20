@@ -276,6 +276,100 @@ button {
 }
 .tab-btn.active { color: var(--primary-h); border-bottom-color: var(--primary-h); font-weight: 600; }
 
+/* ── Tool links (top navigation between features) ── */
+.tool-links {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0 0 16px;
+}
+
+.tool-link {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: .84rem;
+  font-weight: 700;
+}
+
+.tool-link:hover {
+  color: var(--text);
+  border-color: var(--primary-h);
+}
+
+.tool-link.active {
+  color: #fff;
+  border-color: var(--primary-h);
+  background: linear-gradient(90deg, rgba(124,92,191,.92), rgba(155,127,224,.92));
+}
+
+/* ── Deck library ── */
+.decklib-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.decklib-meta > div {
+  border: 1px solid var(--border);
+  background: var(--bg);
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.decklib-meta strong {
+  display: block;
+  color: var(--muted);
+  font-size: .72rem;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.decklib-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.decklib-actions input {
+  flex: 1;
+}
+
+.decklib-list {
+  display: grid;
+  gap: 8px;
+}
+
+.decklib-item {
+  border: 1px solid var(--border);
+  background: var(--bg);
+  border-radius: 8px;
+  padding: 10px;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+}
+
+.decklib-name {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.decklib-sub {
+  font-size: .8rem;
+  color: var(--muted);
+}
+
+.decklib-buttons {
+  display: flex;
+  gap: 6px;
+}
+
 /* ── Deck fingerprint ── */
 .fingerprint-panel {
   display: grid;
@@ -617,6 +711,27 @@ button {
 
   .fingerprint-grid {
     grid-template-columns: 1fr;
+  }
+
+  .decklib-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .decklib-actions {
+    flex-direction: column;
+  }
+
+  .decklib-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .decklib-buttons {
+    width: 100%;
+  }
+
+  .decklib-buttons .btn-ghost {
+    flex: 1;
   }
 
   .matchup-summary {

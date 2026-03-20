@@ -79,6 +79,12 @@ Query options for synergies:
 | Free | 3 |
 | Pro  | Unlimited |
 
+For local testing you can switch a user plan quickly:
+
+```powershell
+./scripts/set_user_plan.ps1 -Email "you@example.com" -Plan pro
+```
+
 ## AI pipeline
 
 ManaWise uses a multi-tier AI routing system controlled by environment variables.

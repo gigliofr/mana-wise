@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 const API = '/api/v1'
 const FORMATS = ['standard', 'pioneer', 'modern', 'legacy', 'vintage', 'commander', 'pauper']
@@ -13,6 +13,18 @@ export default function MulliganAssistant({ token, decklist: decklistProp, forma
   const [loading, setLoading]   = useState(false)
   const [result, setResult]     = useState(null)
   const [error, setError]       = useState('')
+
+  useEffect(() => {
+    if (decklistProp !== undefined && decklistProp !== decklist) {
+      setDecklist(decklistProp)
+    }
+  }, [decklistProp])
+
+  useEffect(() => {
+    if (formatProp && formatProp !== format) {
+      setFormat(formatProp)
+    }
+  }, [formatProp])
 
   async function runSimulation(e) {
     e.preventDefault()
@@ -72,7 +84,7 @@ export default function MulliganAssistant({ token, decklist: decklistProp, forma
             <label>{messages.archetype} <span style={{ color: 'var(--muted)', fontWeight: 400 }}>({messages.optional})</span></label>
             <select value={archetype} onChange={e => setArchetype(e.target.value)}>
               {ARCHETYPES.map(a => (
-                <option key={a} value={a}>{a ? a.charAt(0).toUpperCase() + a.slice(1) : messages.autoDetect}</option>
+                <option key={a} value={a}>{a ? messages.archetypeLabel(a) : messages.autoDetect}</option>
               ))}
             </select>
           </div>

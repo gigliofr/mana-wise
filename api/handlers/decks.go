@@ -14,12 +14,13 @@ import (
 
 // DeckHandler handles CRUD operations for saved decks.
 type DeckHandler struct {
-	repo domain.DeckRepository
+	repo     domain.DeckRepository
+	userRepo domain.UserRepository
 }
 
 // NewDeckHandler creates a DeckHandler.
-func NewDeckHandler(repo domain.DeckRepository) *DeckHandler {
-	return &DeckHandler{repo: repo}
+func NewDeckHandler(repo domain.DeckRepository, userRepo domain.UserRepository) *DeckHandler {
+	return &DeckHandler{repo: repo, userRepo: userRepo}
 }
 
 // saveDeckRequest is the JSON body for deck save/update.
@@ -77,6 +78,27 @@ func (h *DeckHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if userID == "" {
 		jsonError(w, "unauthorized", http.StatusUnauthorized)
 		return
+	}
+
+	plan := strings.ToLower(strings.TrimSpace(middleware.PlanFromContext(r.Context())))
+	if h.userRepo != nil {
+		if u, err := h.userRepo.FindByID(r.Context(), userID); err == nil && u != nil {
+			plan = strings.ToLower(strings.TrimSpace(string(u.Plan)))
+		}
+	}
+	if plan == "" {
+		plan = "free"
+	}
+	if plan != "pro" {
+		decks, err := h.repo.FindByUserID(r.Context(), userID)
+		if err != nil {
+			jsonError(w, "failed to check deck limit", http.StatusInternalServerError)
+			return
+		}
+		if len(decks) >= 1 {
+			jsonError(w, "free plan allows only 1 saved deck. upgrade to pro for unlimited decks", http.StatusForbidden)
+			return
+		}
 	}
 
 	var req saveDeckRequest
