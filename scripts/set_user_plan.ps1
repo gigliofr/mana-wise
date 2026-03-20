@@ -7,7 +7,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$goScript = @"
+$goScript = @'
 package main
 
 import (
@@ -49,7 +49,7 @@ func main() {
   }
   fmt.Printf("updated %s to plan=%s (matched=%d modified=%d)\n", email, plan, res.MatchedCount, res.ModifiedCount)
 }
-"@
+'@
 
 if (Test-Path .env) {
   Get-Content .env | ForEach-Object {
