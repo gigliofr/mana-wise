@@ -6,6 +6,7 @@ const FORMATS = ['standard', 'pioneer', 'modern', 'legacy', 'vintage', 'commande
 
 export default function MatchupSimulator({ token, decklist: decklistProp, format: formatProp, messages }) {
   const [decklist, setDecklist]     = useState(decklistProp || '')
+  const [savedDecks, setSavedDecks] = useState([])
   const [sideboard, setSideboard]   = useState('')
   const [format, setFormat]         = useState(formatProp || 'standard')
   const [opponents, setOpponents]   = useState(['aggro', 'midrange', 'control'])
@@ -285,5 +286,3 @@ function MatchupResults({ data, messages }) {
     </div>
   )
 }
-
-  const [savedDecks, setSavedDecks] = useState([])
