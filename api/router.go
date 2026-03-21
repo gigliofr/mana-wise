@@ -2,6 +2,9 @@ package api
 
 import (
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -122,11 +125,38 @@ func NewRouter(deps RouterDeps) http.Handler {
 		})
 	})
 
-	// SPA / frontend fallback — serves files from ./web/dist.
-	fileServer := http.FileServer(http.Dir("./web/dist"))
-	r.Handle("/*", fileServer)
+	// SPA / frontend fallback.
+	// Serve static assets directly, and fallback to index.html for client routes
+	// (e.g. /login) so deep links in the React app don't return 404.
+	r.Handle("/*", spaFallbackHandler("./web/dist"))
 
 	return r
+}
+
+func spaFallbackHandler(distDir string) http.Handler {
+	fileServer := http.FileServer(http.Dir(distDir))
+	indexFile := filepath.Join(distDir, "index.html")
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			http.NotFound(w, r)
+			return
+		}
+
+		cleanPath := filepath.Clean(strings.TrimPrefix(r.URL.Path, "/"))
+		if cleanPath == "." || cleanPath == string(filepath.Separator) {
+			http.ServeFile(w, r, indexFile)
+			return
+		}
+
+		candidate := filepath.Join(distDir, cleanPath)
+		if fi, err := os.Stat(candidate); err == nil && !fi.IsDir() {
+			fileServer.ServeHTTP(w, r)
+			return
+		}
+
+		http.ServeFile(w, r, indexFile)
+	})
 }
 
 // corsMiddleware sets permissive CORS headers for development.
