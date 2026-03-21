@@ -53,6 +53,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 	embedH := handlers.NewEmbedBatchHandler(deps.EmbedBatchUC)
 	otaH := handlers.NewOTAHandler(deps.OTAUC)
 	analyticsH := handlers.NewAnalyticsHandler(deps.Analytics)
+	adminH := handlers.NewAdminHandler(deps.UserRepo)
 	var deckH *handlers.DeckHandler
 	if deps.DeckRepo != nil {
 		deckH = handlers.NewDeckHandler(deps.DeckRepo, deps.UserRepo)
@@ -112,6 +113,12 @@ func NewRouter(deps RouterDeps) http.Handler {
 			r.Post("/ota/release", otaH.PublishRelease)
 			r.Post("/ota/report-boot", otaH.ReportBoot)
 			r.Get("/ota/manifest", otaH.Manifest)
+		})
+
+		// Admin endpoints — protected by ADMIN_SECRET header.
+		r.Route("/admin", func(r chi.Router) {
+			r.Use(handlers.AdminSecretMiddleware)
+			r.Post("/user/plan", adminH.UpdateUserPlan)
 		})
 	})
 
