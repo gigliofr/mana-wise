@@ -7,6 +7,8 @@ const ARCHETYPES = ['', 'aggro', 'midrange', 'control', 'combo', 'ramp']
 export default function MulliganAssistant({ token, decklist: decklistProp, format: formatProp, messages }) {
   const [decklist, setDecklist] = useState(decklistProp || '')
   const [format, setFormat]     = useState(formatProp || 'standard')
+  const [savedDecks, setSavedDecks] = useState([])
+  const [loadingSavedDecks, setLoadingSavedDecks] = useState(false)
   const [archetype, setArchetype] = useState('')
   const [onPlay, setOnPlay]     = useState(true)
   const [iterations, setIterations] = useState(1000)
@@ -25,6 +27,23 @@ export default function MulliganAssistant({ token, decklist: decklistProp, forma
       setFormat(formatProp)
     }
   }, [formatProp])
+
+  useEffect(() => {
+    if (!token) return
+    setLoadingSavedDecks(true)
+    fetch(`${API}/decks`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(r => r.json())
+      .then(decks => {
+        setSavedDecks(Array.isArray(decks) ? decks : [])
+        setLoadingSavedDecks(false)
+      })
+      .catch(err => {
+        console.error('Failed to load saved decks:', err)
+        setLoadingSavedDecks(false)
+      })
+  }, [token])
 
   async function runSimulation(e) {
     e.preventDefault()
@@ -71,6 +90,30 @@ export default function MulliganAssistant({ token, decklist: decklistProp, forma
             required
           />
         </div>
+
+        {savedDecks.length > 0 && (
+          <div className="form-row">
+            <label>💾 {messages.selectADeck}</label>
+            <select onChange={e => {
+              const deck = savedDecks.find(d => d.id === e.target.value)
+              if (deck) {
+                const formatted = deck.cards.map(c => `${c.quantity} ${c.name}`).join('\n')
+                setDecklist(formatted)
+                setFormat(deck.format)
+                e.target.value = ''
+              }
+            }} defaultValue="">
+              <option value="">
+                {loadingSavedDecks ? messages.loading : messages.loadSavedDeck}
+              </option>
+              {savedDecks.map(d => (
+                <option key={d.id} value={d.id}>
+                  {d.name} ({d.format})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <div className="form-row-inline" style={{ gap: 16, flexWrap: 'wrap' }}>
           <div className="form-row" style={{ flex: '0 0 auto', minWidth: 140, marginBottom: 0 }}>

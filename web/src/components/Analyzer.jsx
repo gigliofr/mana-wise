@@ -26,6 +26,8 @@ const SAMPLE_DECK = `// Sample Modern Burn deck
 export default function Analyzer({ token, user, locale, messages, decklist: decklistProp, format: formatProp, onDeckChange, onFormatChange }) {
   const [decklist, setDecklist] = useState('')
   const [format,   setFormat]   = useState('standard')
+  const [savedDecks, setSavedDecks] = useState([])
+  const [loadingSavedDecks, setLoadingSavedDecks] = useState(false)
 
   function handleDecklistChange(val) {
     setDecklist(val)
@@ -47,6 +49,29 @@ export default function Analyzer({ token, user, locale, messages, decklist: deck
       setDecklist(decklistProp)
     }
   }, [decklistProp])
+
+  // Load saved decks
+  useEffect(() => {
+    let cancelled = false
+    async function loadDecks() {
+      setLoadingSavedDecks(true)
+      try {
+        const res = await fetch(`${API}/decks`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        const data = await res.json()
+        if (res.ok && !cancelled) {
+          setSavedDecks(Array.isArray(data) ? data : [])
+        }
+      } catch (err) {
+        // Silently fail
+      } finally {
+        if (!cancelled) setLoadingSavedDecks(false)
+      }
+    }
+    if (token) loadDecks()
+    return () => { cancelled = true }
+  }, [token])
 
   useEffect(() => {
     if (formatProp && formatProp !== format) {
@@ -160,6 +185,27 @@ export default function Analyzer({ token, user, locale, messages, decklist: deck
               placeholder={SAMPLE_DECK}
               required
             />
+
+                    {savedDecks.length > 0 && (
+                      <div className="form-row">
+                        <label>{messages.loadSavedDeck}</label>
+                        <select onChange={e => {
+                          if (!e.target.value) return
+                          const deck = savedDecks.find(d => d.id === e.target.value)
+                          if (deck) {
+                            const deckStr = deck.cards?.map(c => `${c.quantity || 1} ${c.card_name || ''}`).join('\n') || ''
+                            handleDecklistChange(deckStr)
+                            handleFormatChange(deck.format || 'standard')
+                            e.target.value = ''
+                          }
+                        }}>
+                          <option value="">{messages.selectADeck}</option>
+                          {savedDecks.map(d => (
+                            <option key={d.id} value={d.id}>{d.name} ({d.format})</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
           </div>
 
           <div className="form-row-inline" style={{ alignItems: 'flex-end', gap: 12 }}>

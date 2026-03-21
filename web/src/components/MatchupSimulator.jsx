@@ -26,6 +26,25 @@ export default function MatchupSimulator({ token, decklist: decklistProp, format
     }
   }, [formatProp])
 
+  useEffect(() => {
+    let cancelled = false
+    async function loadDecks() {
+      try {
+        const res = await fetch(`${API}/decks`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        const data = await res.json()
+        if (res.ok && !cancelled) {
+          setSavedDecks(Array.isArray(data) ? data : [])
+        }
+      } catch (err) {
+        // Silently fail
+      }
+    }
+    if (token) loadDecks()
+    return () => { cancelled = true }
+  }, [token])
+
   function toggleOpponent(a) {
     setOpponents(prev =>
       prev.includes(a) ? prev.filter(x => x !== a) : [...prev, a],
@@ -76,6 +95,24 @@ export default function MatchupSimulator({ token, decklist: decklistProp, format
             required
           />
         </div>
+
+        {savedDecks.length > 0 && (
+          <div className="form-row">
+            <label>{messages.loadSavedDeck}</label>
+            <select onChange={e => {
+              if (!e.target.value) return
+              const deck = savedDecks.find(d => d.id === e.target.value)
+              if (deck) {
+                setDecklist(deck.cards?.map(c => `${c.quantity || 1} ${c.card_name || ''}`).join('\n') || '')
+                setFormat(deck.format || 'standard')
+                e.target.value = ''
+              }
+            }}>
+              <option value="">{messages.selectADeck}</option>
+              {savedDecks.map(d => <option key={d.id} value={d.id}>{d.name} ({d.format})</option>)}
+            </select>
+          </div>
+        )}
 
         <div className="form-row">
           <label>{messages.sideboardDecklist} <span style={{ color: 'var(--muted)', fontWeight: 400 }}>({messages.optional})</span></label>
@@ -248,3 +285,5 @@ function MatchupResults({ data, messages }) {
     </div>
   )
 }
+
+  const [savedDecks, setSavedDecks] = useState([])

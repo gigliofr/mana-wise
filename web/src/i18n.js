@@ -207,6 +207,9 @@ export const translations = {
     back: 'Indietro',
     noDecklistProvided: 'Nessun mazzo fornito',
     cards: 'carte',
+      previous: 'Precedente',
+      loadSavedDeck: 'Qualche mazzo salvato?',
+      selectADeck: 'Seleziona un mazzo',
     // Generic labels
     qty: 'Qtà',
     card: 'Carta',
@@ -413,6 +416,9 @@ export const translations = {
     back: 'Back',
     noDecklistProvided: 'No decklist provided',
     cards: 'cards',
+      previous: 'Previous',
+      loadSavedDeck: 'Have a saved deck?',
+      selectADeck: 'Select a deck',
     // Generic labels
     qty: 'Qty',
     card: 'Card',

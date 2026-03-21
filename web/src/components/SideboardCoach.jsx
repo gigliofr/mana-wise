@@ -12,6 +12,8 @@ export default function SideboardCoach({ token, decklist: decklistProp, format: 
   const [loading, setLoading]             = useState(false)
   const [result, setResult]               = useState(null)
   const [error, setError]                 = useState('')
+  const [savedDecks, setSavedDecks]       = useState([])
+  const [loadingSavedDecks, setLoadingSavedDecks] = useState(false)
 
   useEffect(() => {
     if (decklistProp !== undefined && decklistProp !== mainDecklist) {
@@ -24,6 +26,17 @@ export default function SideboardCoach({ token, decklist: decklistProp, format: 
       setFormat(formatProp)
     }
   }, [formatProp])
+  useEffect(() => {
+    if (!token) return
+    setLoadingSavedDecks(true)
+    fetch(`${API}/decks`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(decks => {
+        setSavedDecks(Array.isArray(decks) ? decks : [])
+        setLoadingSavedDecks(false)
+      })
+      .catch(() => setLoadingSavedDecks(false))
+  }, [token])
 
   async function runPlan(e) {
     e.preventDefault()
@@ -68,6 +81,29 @@ export default function SideboardCoach({ token, decklist: decklistProp, format: 
             required
           />
         </div>
+
+        {savedDecks.length > 0 && (
+          <div className="form-row">
+            <label>💾 {messages.selectADeck}</label>
+            <select onChange={e => {
+              const deck = savedDecks.find(d => d.id === e.target.value)
+              if (deck) {
+                const formatted = deck.cards.map(c => `${c.quantity} ${c.name}`).join('\n')
+                setMainDecklist(formatted)
+                setFormat(deck.format)
+                e.target.value = ''
+              }
+            }} defaultValue="">
+              <option value="">{loadingSavedDecks ? messages.loading : messages.loadSavedDeck}</option>
+              {savedDecks.map(d => (
+                <option key={d.id} value={d.id}>
+                  {d.name} ({d.format})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
 
         <div className="form-row">
           <label>{messages.sideboardDecklist}</label>
