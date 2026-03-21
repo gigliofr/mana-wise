@@ -12,19 +12,11 @@ const USER_KEY  = 'manawise_user'
 const LOCALE_KEY = 'manawise_locale'
 
 function App() {
-  const isLoginRoute = (() => {
-    if (typeof window === 'undefined') return false
-    const path = window.location.pathname || '/'
-    const hash = window.location.hash || ''
-    const search = window.location.search || ''
-    return /^\/login(\/|$)/.test(path) || hash.startsWith('#/login') || search.includes('forceLogin=1')
-  })()
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) || '')
   const [locale, setLocale] = useState(() => localStorage.getItem(LOCALE_KEY) || 'it')
   const [user,  setUser]  = useState(() => {
     try { return JSON.parse(localStorage.getItem(USER_KEY) || 'null') } catch { return null }
   })
-  const [authChecking, setAuthChecking] = useState(true)
   const messages = translations[locale] || translations.it
   const [activeTool, setActiveTool] = useState('analyzer')
   const [sharedDecklist, setSharedDecklist] = useState('')
@@ -35,9 +27,6 @@ function App() {
     localStorage.setItem(USER_KEY, JSON.stringify(user))
     setToken(token)
     setUser(user)
-    if (typeof window !== 'undefined' && /^\/login(\/|$)/.test(window.location.pathname)) {
-      window.history.replaceState({}, '', '/')
-    }
   }
 
   function handleLogout() {
@@ -45,7 +34,6 @@ function App() {
     localStorage.removeItem(USER_KEY)
     setToken('')
     setUser(null)
-    setAuthChecking(false)
   }
 
   function handleLocaleChange(nextLocale) {
@@ -54,59 +42,38 @@ function App() {
   }
 
   useEffect(() => {
-    if (!isLoginRoute) return
-    localStorage.removeItem(TOKEN_KEY)
-    localStorage.removeItem(USER_KEY)
-    setToken('')
-    setUser(null)
-    setAuthChecking(false)
-  }, [isLoginRoute])
-
-  useEffect(() => {
-    if (!token) {
-      setAuthChecking(false)
-      return
-    }
+    if (!token) return
     let cancelled = false
 
-    async function checkAuth() {
+    async function syncUser() {
       try {
         const res = await fetch('/api/v1/auth/me', {
           headers: { 'Authorization': `Bearer ${token}` },
         })
-        if (!res.ok) throw new Error('Invalid session')
+        if (res.status === 401 || res.status === 403) {
+          if (!cancelled) {
+            localStorage.removeItem(TOKEN_KEY)
+            localStorage.removeItem(USER_KEY)
+            setToken('')
+            setUser(null)
+          }
+          return
+        }
+        if (!res.ok) return
         const freshUser = await res.json()
         if (cancelled) return
         localStorage.setItem(USER_KEY, JSON.stringify(freshUser))
         setUser(freshUser)
       } catch {
-        if (cancelled) return
-        localStorage.removeItem(TOKEN_KEY)
-        localStorage.removeItem(USER_KEY)
-        setToken('')
-        setUser(null)
-      } finally {
-        if (!cancelled) setAuthChecking(false)
+        // Silent best-effort sync.
       }
     }
 
-    checkAuth()
+    syncUser()
     return () => {
       cancelled = true
     }
   }, [token])
-
-  if (authChecking) {
-    return (
-      <main>
-        <div className="container">
-          <div className="card" style={{ maxWidth: 520, margin: '72px auto', textAlign: 'center' }}>
-            {messages.loading}
-          </div>
-        </div>
-      </main>
-    )
-  }
 
   if (!token) {
     return <Auth onLogin={handleLogin} locale={locale} messages={messages} onLocaleChange={handleLocaleChange} />
