@@ -108,7 +108,7 @@ export default function MatchupSimulator({ token, user, decklist: decklistProp, 
               if (!e.target.value) return
               const deck = savedDecks.find(d => d.id === e.target.value)
               if (deck) {
-                setDecklist(deck.cards?.map(c => `${c.quantity || 1} ${c.card_name || ''}`).join('\n') || '')
+                setDecklist(deck.cards?.map(c => `${c.quantity || 1} ${c.card_name || c.name || ''}`).join('\n') || '')
                 setFormat(deck.format || 'standard')
                 e.target.value = ''
               }

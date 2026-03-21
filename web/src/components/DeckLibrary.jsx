@@ -67,7 +67,7 @@ export default function DeckLibrary({
     const cards = Array.isArray(deck?.cards) ? deck.cards : []
     return cards
       .filter(c => !c.is_sideboard)
-      .map(c => `${c.quantity || 1} ${c.card_name || ''}`.trim())
+      .map(c => `${c.quantity || 1} ${c.card_name || c.name || ''}`.trim())
       .filter(Boolean)
       .join('\n')
   }

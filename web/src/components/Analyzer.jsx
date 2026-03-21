@@ -197,7 +197,7 @@ export default function Analyzer({ token, user, locale, messages, decklist: deck
                           if (!e.target.value) return
                           const deck = savedDecks.find(d => d.id === e.target.value)
                           if (deck) {
-                            const deckStr = deck.cards?.map(c => `${c.quantity || 1} ${c.card_name || ''}`).join('\n') || ''
+                            const deckStr = deck.cards?.map(c => `${c.quantity || 1} ${c.card_name || c.name || ''}`).join('\n') || ''
                             handleDecklistChange(deckStr)
                             handleFormatChange(deck.format || 'standard')
                             e.target.value = ''
