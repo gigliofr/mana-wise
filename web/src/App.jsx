@@ -17,6 +17,7 @@ function App() {
   const [user,  setUser]  = useState(() => {
     try { return JSON.parse(localStorage.getItem(USER_KEY) || 'null') } catch { return null }
   })
+  const [authChecking, setAuthChecking] = useState(true)
   const messages = translations[locale] || translations.it
   const [activeTool, setActiveTool] = useState('analyzer')
   const [sharedDecklist, setSharedDecklist] = useState('')
@@ -34,6 +35,7 @@ function App() {
     localStorage.removeItem(USER_KEY)
     setToken('')
     setUser(null)
+    setAuthChecking(false)
   }
 
   function handleLocaleChange(nextLocale) {
@@ -42,29 +44,50 @@ function App() {
   }
 
   useEffect(() => {
-    if (!token) return
+    if (!token) {
+      setAuthChecking(false)
+      return
+    }
     let cancelled = false
 
-    async function syncUser() {
+    async function checkAuth() {
       try {
         const res = await fetch('/api/v1/auth/me', {
           headers: { 'Authorization': `Bearer ${token}` },
         })
-        if (!res.ok) return
+        if (!res.ok) throw new Error('Invalid session')
         const freshUser = await res.json()
         if (cancelled) return
         localStorage.setItem(USER_KEY, JSON.stringify(freshUser))
         setUser(freshUser)
       } catch {
-        // Silent best-effort sync.
+        if (cancelled) return
+        localStorage.removeItem(TOKEN_KEY)
+        localStorage.removeItem(USER_KEY)
+        setToken('')
+        setUser(null)
+      } finally {
+        if (!cancelled) setAuthChecking(false)
       }
     }
 
-    syncUser()
+    checkAuth()
     return () => {
       cancelled = true
     }
   }, [token])
+
+  if (authChecking) {
+    return (
+      <main>
+        <div className="container">
+          <div className="card" style={{ maxWidth: 520, margin: '72px auto', textAlign: 'center' }}>
+            {messages.loading}
+          </div>
+        </div>
+      </main>
+    )
+  }
 
   if (!token) {
     return <Auth onLogin={handleLogin} locale={locale} messages={messages} onLocaleChange={handleLocaleChange} />

@@ -288,55 +288,57 @@ export default function DeckLibrary({
       ) : decks.length === 0 ? (
         <div style={{ color: 'var(--muted)', fontSize: '.9rem' }}>{messages.noSavedDecks}</div>
       ) : (
-        <div className="decklib-list">
-          {paginatedDecks.map(deck => (
-            <div className="decklib-item" key={deck.id}>
-              <div>
-                <div className="decklib-name">{deck.name}</div>
-                <div className="decklib-sub">{deck.format}</div>
+        <>
+          <div className="decklib-list">
+            {paginatedDecks.map(deck => (
+              <div className="decklib-item" key={deck.id}>
+                <div>
+                  <div className="decklib-name">{deck.name}</div>
+                  <div className="decklib-sub">{deck.format}</div>
+                </div>
+                <div className="decklib-buttons">
+                  <button
+                    type="button"
+                    className="btn-ghost"
+                    onClick={() => onSelectDeck?.(deckToDecklist(deck), deck.format || 'standard')}
+                  >
+                    {messages.useDeck}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn-ghost"
+                    onClick={() => deleteDeck(deck.id)}
+                  >
+                    {messages.deleteDeck}
+                  </button>
+                </div>
               </div>
-              <div className="decklib-buttons">
-                          {totalPages > 1 && (
-                            <div style={{ marginTop: '12px', display: 'flex', gap: '6px', justifyContent: 'center', alignItems: 'center' }}>
-                              <button
-                                type="button"
-                                className="btn-ghost"
-                                onClick={() => setPage(p => Math.max(0, p - 1))}
-                                disabled={page === 0}
-                              >
-                                ← {messages.previous || 'Precedente'}
-                              </button>
-                              <span style={{ fontSize: '.9rem', color: 'var(--muted)' }}>
-                                {page + 1}/{totalPages}
-                              </span>
-                              <button
-                                type="button"
-                                className="btn-ghost"
-                                onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
-                                disabled={page >= totalPages - 1}
-                              >
-                                {messages.next || 'Successivo'} →
-                              </button>
-                            </div>
-                          )}
-                <button
-                  type="button"
-                  className="btn-ghost"
-                  onClick={() => onSelectDeck?.(deckToDecklist(deck), deck.format || 'standard')}
-                >
-                  {messages.useDeck}
-                </button>
-                <button
-                  type="button"
-                  className="btn-ghost"
-                  onClick={() => deleteDeck(deck.id)}
-                >
-                  {messages.deleteDeck}
-                </button>
-              </div>
+            ))}
+          </div>
+          {totalPages > 1 && (
+            <div style={{ marginTop: '12px', display: 'flex', gap: '6px', justifyContent: 'center', alignItems: 'center' }}>
+              <button
+                type="button"
+                className="btn-ghost"
+                onClick={() => setPage(p => Math.max(0, p - 1))}
+                disabled={page === 0}
+              >
+                ← {messages.previous || 'Precedente'}
+              </button>
+              <span style={{ fontSize: '.9rem', color: 'var(--muted)' }}>
+                {page + 1}/{totalPages}
+              </span>
+              <button
+                type="button"
+                className="btn-ghost"
+                onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+                disabled={page >= totalPages - 1}
+              >
+                {messages.next || 'Successivo'} →
+              </button>
             </div>
-          ))}
-        </div>
+          )}
+        </>
       )}
     </div>
   )
