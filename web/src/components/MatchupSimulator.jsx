@@ -179,9 +179,35 @@ function verdictColor(verdict) {
   switch ((verdict || '').toLowerCase()) {
     case 'favored':     return 'var(--green)'
     case 'unfavored':   return 'var(--red)'
+    case 'close':       return 'var(--orange)'
     case 'even':        return 'var(--muted)'
     default:            return 'var(--text)'
   }
+}
+
+function verdictLabel(verdict, messages) {
+  const v = (verdict || '').toLowerCase()
+  if (v === 'favored') return messages.verdictFavored || 'Favored'
+  if (v === 'unfavored') return messages.verdictUnfavored || 'Unfavored'
+  if (v === 'close') return messages.verdictClose || 'Close'
+  if (v === 'even') return messages.verdictEven || 'Even'
+  return verdict || '—'
+}
+
+function pct(value) {
+  if (value == null) return '—'
+  return `${Math.round(value * 100)}%`
+}
+
+function clampPct(value) {
+  if (value == null) return 0
+  return Math.max(0, Math.min(100, Math.round(value * 100)))
+}
+
+function deltaColor(delta) {
+  if (delta > 0) return 'var(--green)'
+  if (delta < 0) return 'var(--red)'
+  return 'var(--muted)'
 }
 
 function severityColor(s) {
@@ -221,6 +247,9 @@ function MatchupResults({ data, messages }) {
       {data.matchups?.length > 0 && (
         <>
           <p className="section-kicker">{messages.matchupsTable}</p>
+          <p style={{ fontSize: '.8rem', color: 'var(--muted)', marginBottom: 10 }}>
+            {messages.matchupTableHint}
+          </p>
           <div style={{ overflowX: 'auto' }}>
             <table className="data-table">
               <thead>
@@ -229,25 +258,48 @@ function MatchupResults({ data, messages }) {
                   <th>{messages.metaShare}</th>
                   <th>{messages.winRate}</th>
                   <th>{messages.postBoardWR}</th>
+                  <th>{messages.deltaLabel}</th>
                   <th>{messages.verdict}</th>
                 </tr>
               </thead>
               <tbody>
                 {data.matchups.map((m, i) => (
-                  <tr key={i}>
+                  <tr key={i} className="matchup-row">
                     <td style={{ textTransform: 'capitalize', fontWeight: 600 }}>{m.opponent_archetype}</td>
-                    <td>{m.meta_share != null ? `${Math.round(m.meta_share * 100)}%` : '—'}</td>
-                    <td style={{ color: m.win_rate >= 0.5 ? 'var(--green)' : 'var(--red)', fontWeight: 700 }}>
-                      {Math.round(m.win_rate * 100)}%
+                    <td>
+                      <div className="matchup-meta-cell">
+                        <strong>{pct(m.meta_share)}</strong>
+                        <div className="matchup-mini-track">
+                          <div className="matchup-mini-fill" style={{ width: `${clampPct(m.meta_share)}%`, background: 'var(--accent)' }} />
+                        </div>
+                      </div>
                     </td>
                     <td>
-                      {m.post_board_win_rate
-                        ? <span style={{ color: m.post_board_win_rate >= m.win_rate ? 'var(--green)' : 'var(--red)', fontWeight: 600 }}>
-                            {Math.round(m.post_board_win_rate * 100)}%
-                          </span>
-                        : '—'}
+                      <div className="matchup-rate-cell">
+                        <strong style={{ color: m.win_rate >= 0.5 ? 'var(--green)' : 'var(--red)' }}>{pct(m.win_rate)}</strong>
+                        <div className="matchup-mini-track">
+                          <div className="matchup-mini-fill" style={{ width: `${clampPct(m.win_rate)}%`, background: m.win_rate >= 0.5 ? 'var(--green)' : 'var(--red)' }} />
+                        </div>
+                      </div>
                     </td>
-                    <td style={{ color: verdictColor(m.verdict), fontWeight: 700, textTransform: 'capitalize' }}>{m.verdict}</td>
+                    <td>
+                      <div className="matchup-rate-cell">
+                        <strong style={{ color: m.post_board_win_rate >= m.win_rate ? 'var(--green)' : 'var(--red)' }}>
+                          {pct(m.post_board_win_rate)}
+                        </strong>
+                        <div className="matchup-mini-track">
+                          <div className="matchup-mini-fill" style={{ width: `${clampPct(m.post_board_win_rate)}%`, background: m.post_board_win_rate >= m.win_rate ? 'var(--green)' : 'var(--red)' }} />
+                        </div>
+                      </div>
+                    </td>
+                    <td style={{ fontWeight: 700, color: deltaColor((m.post_board_win_rate ?? m.win_rate) - m.win_rate) }}>
+                      {`${((m.post_board_win_rate ?? m.win_rate) - m.win_rate) >= 0 ? '+' : ''}${Math.round(((m.post_board_win_rate ?? m.win_rate) - m.win_rate) * 100)}%`}
+                    </td>
+                    <td>
+                      <span className="matchup-verdict-pill" style={{ color: verdictColor(m.verdict), borderColor: verdictColor(m.verdict) }}>
+                        {verdictLabel(m.verdict, messages)}
+                      </span>
+                    </td>
                   </tr>
                 ))}
               </tbody>
