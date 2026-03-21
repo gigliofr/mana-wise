@@ -144,39 +144,96 @@ main { padding: 32px 0 64px; }
 .site-footer {
   margin-top: 28px;
   border-top: 1px solid var(--border);
-  background: var(--surface);
+  background: linear-gradient(180deg, rgba(22,22,31,.98), rgba(14,14,20,.98));
 }
 
 .footer-inner {
   padding: 16px;
+  display: grid;
+  gap: 10px;
+}
+
+.footer-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255,255,255,.06);
+}
+
+.footer-brand {
+  font-weight: 700;
+  letter-spacing: .02em;
+  color: var(--text);
 }
 
 .footer-links {
   display: flex;
-  gap: 12px;
+  gap: 8px;
   flex-wrap: wrap;
-  margin-bottom: 10px;
 }
 
 .footer-links a {
   color: var(--primary-h);
   text-decoration: none;
-  font-size: .86rem;
+  font-size: .8rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 10px;
 }
 
-.footer-meta {
-  display: grid;
-  gap: 5px;
+.footer-links a:hover {
+  border-color: var(--primary-h);
+  color: var(--text);
+}
+
+.footer-meta-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.footer-pill {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: .74rem;
+  color: var(--muted);
+}
+
+.footer-pill a {
+  color: var(--accent);
+}
+
+.footer-disclaimer {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: rgba(255,255,255,.02);
+}
+
+.footer-disclaimer summary {
+  cursor: pointer;
   color: var(--muted);
   font-size: .78rem;
-}
-
-.footer-meta a {
-  color: var(--accent);
+  font-weight: 600;
 }
 
 .wizards-disclaimer {
   color: #b8b8c8;
+  font-size: .74rem;
+  margin-top: 8px;
+  line-height: 1.45;
+}
+
+.footer-bottom {
+  color: var(--muted);
+  font-size: .72rem;
+  text-align: right;
 }
 
 .legal-card {
@@ -994,8 +1051,16 @@ button {
   }
 
   .footer-links {
+    width: 100%;
+  }
+
+  .footer-top {
     flex-direction: column;
-    gap: 6px;
+    align-items: flex-start;
+  }
+
+  .footer-bottom {
+    text-align: left;
   }
 
   .sideboard-columns {
