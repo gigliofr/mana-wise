@@ -45,6 +45,12 @@ func (h *MulliganHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	req.Archetype = normalizeArchetypeInput(req.Archetype)
+	if req.Archetype != "" && !isPlayableArchetype(req.Archetype) {
+		jsonError(w, "invalid archetype: supported values are aggro, midrange, control, combo, ramp", http.StatusBadRequest)
+		return
+	}
+
 	onPlay := true
 	if req.OnPlay != nil {
 		onPlay = *req.OnPlay

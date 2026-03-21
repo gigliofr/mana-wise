@@ -169,7 +169,11 @@ func uniqueNames(mainMap, sideMap map[string]int) []string {
 func normalizeOpponent(opponent string) string {
 	o := strings.ToLower(strings.TrimSpace(opponent))
 	switch o {
-	case "aggro", "control", "combo", "midrange", "graveyard", "artifacts", "enchantments":
+	case "aggressive":
+		return "aggro"
+	case "ctrl":
+		return "control"
+	case "aggro", "control", "combo", "midrange", "ramp", "graveyard", "artifacts", "enchantments":
 		return o
 	default:
 		return "midrange"
@@ -184,6 +188,8 @@ func desiredTagsForMatchup(opponent string) map[string]int {
 		return map[string]int{"anti_control": 5, "discard": 4, "counter": 4, "threat": 3}
 	case "combo":
 		return map[string]int{"anti_combo": 5, "counter": 4, "discard": 4, "graveyard_hate": 3}
+	case "ramp":
+		return map[string]int{"counter": 4, "discard": 4, "threat": 2, "anti_control": 2}
 	case "graveyard":
 		return map[string]int{"graveyard_hate": 6, "cheap_removal": 2, "counter": 2}
 	case "artifacts":

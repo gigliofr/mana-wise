@@ -274,6 +274,7 @@ export default function Analyzer({ token, user, locale, messages, decklist: deck
           </div>
 
           <AnalysisLegend result={result} messages={messages} />
+          <LegalityLegend legality={result.legality} messages={messages} />
 
           {/* Tabs */}
           <div className="tabs" style={{ marginTop: 24 }}>
@@ -513,6 +514,58 @@ function AnalysisLegend({ result, messages }) {
             <li>{messages.legendArchetypeRamp}</li>
           </ul>
         </div>
+      </div>
+    </details>
+  )
+}
+
+function LegalityLegend({ legality, messages }) {
+  const rows = ['standard', 'pioneer', 'modern', 'legacy', 'vintage', 'commander', 'pauper']
+    .map(format => ({ format, data: legality?.[format] }))
+    .filter(item => item.data)
+
+  if (rows.length === 0) return null
+
+  return (
+    <details className="legend" style={{ marginTop: 12 }}>
+      <summary>{messages.legalityLegendTitle}</summary>
+      <p style={{ color: 'var(--muted)', fontSize: '.84rem', margin: '8px 0 12px' }}>
+        {messages.legalityLegendBody}
+      </p>
+
+      <div className="legality-key">
+        <span className="legality-chip legal">{messages.legalityLegalLabel}</span>
+        <span className="legality-chip illegal">{messages.legalityIllegalLabel}</span>
+      </div>
+
+      <div style={{ overflowX: 'auto', marginTop: 10 }}>
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>{messages.format}</th>
+              <th>{messages.verdict}</th>
+              <th>{messages.totalCards}</th>
+              <th>{messages.legalityIssuesLabel}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(({ format, data }) => {
+              const issueCount = (data.issues?.length || 0) + (data.illegal_cards?.length || 0)
+              return (
+                <tr key={format}>
+                  <td style={{ textTransform: 'capitalize', fontWeight: 600 }}>{format}</td>
+                  <td>
+                    <span className={`legality-chip ${data.is_legal ? 'legal' : 'illegal'}`}>
+                      {data.is_legal ? messages.legalityLegalLabel : messages.legalityIllegalLabel}
+                    </span>
+                  </td>
+                  <td>{data.deck_size}</td>
+                  <td>{issueCount}</td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
       </div>
     </details>
   )

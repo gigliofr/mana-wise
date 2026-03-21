@@ -48,6 +48,20 @@ func (h *MatchupHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	req.PlayerArchetype = normalizeArchetypeInput(req.PlayerArchetype)
+	if req.PlayerArchetype != "" && !isPlayableArchetype(req.PlayerArchetype) {
+		jsonError(w, "invalid player_archetype: supported values are aggro, midrange, control, combo, ramp", http.StatusBadRequest)
+		return
+	}
+
+	req.Opponents = normalizeArchetypeList(req.Opponents)
+	for _, opponent := range req.Opponents {
+		if !isPlayableArchetype(opponent) {
+			jsonError(w, "invalid opponent archetype: supported values are aggro, midrange, control, combo, ramp", http.StatusBadRequest)
+			return
+		}
+	}
+
 	res, err := h.uc.Execute(r.Context(), usecase.MatchupSimulationRequest{
 		Decklist:          req.Decklist,
 		SideboardDecklist: strings.TrimSpace(req.SideboardDecklist),

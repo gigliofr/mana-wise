@@ -22,11 +22,11 @@ type MulliganAssistantUseCase struct {
 
 // MulliganSimulationRequest carries the simulation input.
 type MulliganSimulationRequest struct {
-	Decklist    string
-	Format      string
-	Archetype   string
-	Iterations  int
-	OnPlay      bool
+	Decklist   string
+	Format     string
+	Archetype  string
+	Iterations int
+	OnPlay     bool
 }
 
 // MulliganSummary contains aggregate stats for a specific hand size.
@@ -48,11 +48,11 @@ type MulliganSimulationResult struct {
 }
 
 type mulliganCard struct {
-	isLand       bool
+	isLand        bool
 	isInteraction bool
-	isCantrip    bool
-	isThreat     bool
-	cmc          float64
+	isCantrip     bool
+	isThreat      bool
+	cmc           float64
 }
 
 // NewMulliganAssistantUseCase creates the mulligan simulator.
@@ -205,7 +205,11 @@ func buildMulliganRecommendation(res MulliganSimulationResult) string {
 func normalizeArchetype(a string) string {
 	x := strings.ToLower(strings.TrimSpace(a))
 	switch x {
-	case "aggro", "control", "combo", "midrange":
+	case "aggressive":
+		return "aggro"
+	case "ctrl":
+		return "control"
+	case "aggro", "control", "combo", "midrange", "ramp":
 		return x
 	default:
 		return "midrange"

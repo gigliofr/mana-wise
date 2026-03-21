@@ -41,7 +41,7 @@ func (h *SideboardCoachHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 
 	req.MainDecklist = strings.TrimSpace(req.MainDecklist)
 	req.SideboardDecklist = strings.TrimSpace(req.SideboardDecklist)
-	req.OpponentArchetype = strings.TrimSpace(req.OpponentArchetype)
+	req.OpponentArchetype = normalizeArchetypeInput(req.OpponentArchetype)
 
 	if req.MainDecklist == "" {
 		jsonError(w, "main_decklist is required", http.StatusBadRequest)
@@ -53,6 +53,10 @@ func (h *SideboardCoachHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 	}
 	if req.OpponentArchetype == "" {
 		jsonError(w, "opponent_archetype is required", http.StatusBadRequest)
+		return
+	}
+	if !isValidSideboardOpponentArchetype(req.OpponentArchetype) {
+		jsonError(w, "invalid opponent_archetype: supported values are aggro, midrange, control, combo, ramp, graveyard, artifacts, enchantments", http.StatusBadRequest)
 		return
 	}
 
