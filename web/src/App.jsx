@@ -12,6 +12,7 @@ const USER_KEY  = 'manawise_user'
 const LOCALE_KEY = 'manawise_locale'
 
 function App() {
+  const isLoginRoute = typeof window !== 'undefined' && window.location.pathname === '/login'
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) || '')
   const [locale, setLocale] = useState(() => localStorage.getItem(LOCALE_KEY) || 'it')
   const [user,  setUser]  = useState(() => {
@@ -28,6 +29,9 @@ function App() {
     localStorage.setItem(USER_KEY, JSON.stringify(user))
     setToken(token)
     setUser(user)
+    if (typeof window !== 'undefined' && window.location.pathname === '/login') {
+      window.history.replaceState({}, '', '/')
+    }
   }
 
   function handleLogout() {
@@ -42,6 +46,15 @@ function App() {
     localStorage.setItem(LOCALE_KEY, nextLocale)
     setLocale(nextLocale)
   }
+
+  useEffect(() => {
+    if (!isLoginRoute) return
+    localStorage.removeItem(TOKEN_KEY)
+    localStorage.removeItem(USER_KEY)
+    setToken('')
+    setUser(null)
+    setAuthChecking(false)
+  }, [isLoginRoute])
 
   useEffect(() => {
     if (!token) {
