@@ -370,6 +370,36 @@ button {
   gap: 6px;
 }
 
+.decklib-save-step {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 12px;
+  background: var(--bg-secondary);
+}
+
+.decklib-save-step h3 {
+  margin: 0 0 12px 0;
+  font-size: 1rem;
+}
+
+.decklib-save-step input,
+.decklib-save-step textarea {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: .9rem;
+}
+
+.decklib-save-step textarea {
+  resize: vertical;
+  font-family: 'Courier New', monospace;
+}
+
 /* ── Deck fingerprint ── */
 .fingerprint-panel {
   display: grid;

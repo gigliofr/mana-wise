@@ -14,6 +14,7 @@ export default function DeckLibrary({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [name, setName] = useState('')
+  const [saveStep, setSaveStep] = useState(0) // 0=hidden, 1=name, 2=confirm
 
   const isPro = (user?.plan || '').toLowerCase() === 'pro'
   const canSaveMore = isPro || decks.length < 1
@@ -82,36 +83,56 @@ export default function DeckLibrary({
 
   async function saveCurrentDeck() {
     setError('')
-    if (!canSaveMore) {
-      setError(messages.deckLimitReached)
+    
+    // Step 1: Validate name and move to confirm
+    if (saveStep === 1) {
+      const cards = parseDecklistToCards(currentDecklist)
+      if (cards.length === 0) {
+        setError(messages.deckEmptyCannotSave)
+        return
+      }
+      if (!name.trim()) {
+        setError(messages.deckNameRequired)
+        return
+      }
+      setSaveStep(2)
       return
     }
-    const cards = parseDecklistToCards(currentDecklist)
-    if (cards.length === 0) {
-      setError(messages.deckEmptyCannotSave)
-      return
-    }
-    const deckName = (name || '').trim() || `${messages.defaultDeckName} ${new Date().toISOString().slice(0, 10)}`
-    try {
-      const res = await fetch(`${API}/decks`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          name: deckName,
-          format: currentFormat || 'standard',
-          cards,
-          is_public: false,
-        }),
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || messages.deckSaveFailed)
-      setDecks(prev => [data, ...prev])
-      setName('')
-    } catch (err) {
-      setError(err.message)
+
+    // Step 2: Confirm and save
+    if (saveStep === 2) {
+      if (!canSaveMore) {
+        setError(messages.deckLimitReached)
+        return
+      }
+      const cards = parseDecklistToCards(currentDecklist)
+      if (cards.length === 0) {
+        setError(messages.deckEmptyCannotSave)
+        return
+      }
+      const deckName = (name || '').trim() || `${messages.defaultDeckName} ${new Date().toISOString().slice(0, 10)}`
+      try {
+        const res = await fetch(`${API}/decks`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            name: deckName,
+            format: currentFormat || 'standard',
+            cards,
+            is_public: false,
+          }),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error || messages.deckSaveFailed)
+        setDecks(prev => [data, ...prev])
+        setName('')
+        setSaveStep(0)
+      } catch (err) {
+        setError(err.message)
+      }
     }
   }
 
@@ -157,17 +178,91 @@ export default function DeckLibrary({
         </div>
       </div>
 
+      {/* Step 0: Show save button */}
+      {saveStep === 0 && (
+        <div className="decklib-actions">
+          <button 
+            type="button" 
+            className="btn-primary" 
+            onClick={() => {
+              setError('')
+              setSaveStep(1)
+            }}
+            disabled={!canSaveMore}
+          >
+            {messages.saveDeck}
+          </button>
+        </div>
+      )}
+
+      {/* Step 1: Input deck name */}
+      {saveStep === 1 && (
+        <div className="decklib-save-step">
+          <h3>{messages.saveDeck}</h3>
+          <input
+            type="text"
+            value={name}
+            onChange={e => setName(e.target.value)}
+            placeholder={messages.deckNamePlaceholder}
+            autoFocus
+          />
+          <textarea
+            readOnly
+            value={currentDecklist}
+            placeholder={messages.noDecklistProvided}
+            style={{ maxHeight: '150px', marginTop: '12px', opacity: 0.6 }}
+          />
+          <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+            <button type="button" className="btn-primary" onClick={saveCurrentDeck}>
+              {messages.next || 'Avanti'}
+            </button>
+            <button 
+              type="button" 
+              className="btn-ghost" 
+              onClick={() => {
+                setSaveStep(0)
+                setName('')
+                setError('')
+              }}
+            >
+              {messages.cancel || 'Annulla'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Step 2: Confirm and show deck preview */}
+      {saveStep === 2 && (
+        <div className="decklib-save-step">
+          <h3>{messages.confirmSaveDeck || 'Conferma salvataggio'}</h3>
+          <div style={{ marginBottom: '12px', padding: '12px', background: 'var(--bg-secondary)', borderRadius: '4px' }}>
+            <strong>{name}</strong>
+            <div style={{ fontSize: '.9rem', color: 'var(--muted)', marginTop: '4px' }}>
+              {activeSummary.cards} {messages.cards} · {currentFormat || 'standard'}
+            </div>
+          </div>
+          <textarea
+            readOnly
+            value={currentDecklist}
+            placeholder={messages.noDecklistProvided}
+            style={{ maxHeight: '200px', opacity: 0.7 }}
+          />
+          <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+            <button type="button" className="btn-primary" onClick={saveCurrentDeck}>
+              {messages.confirmSave || 'Salva'}
+            </button>
+            <button 
+              type="button" 
+              className="btn-ghost" 
+              onClick={() => setSaveStep(1)}
+            >
+              {messages.back || 'Indietro'}
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="decklib-actions">
-        <input
-          type="text"
-          value={name}
-          onChange={e => setName(e.target.value)}
-          placeholder={messages.deckNamePlaceholder}
-          disabled={!canSaveMore}
-        />
-        <button type="button" className="btn-primary" onClick={saveCurrentDeck} disabled={!canSaveMore}>
-          {messages.saveDeck}
-        </button>
       </div>
 
       {!isPro && !canSaveMore && (
