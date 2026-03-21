@@ -4,7 +4,7 @@ const API = '/api/v1'
 const ARCHETYPES = ['aggro', 'midrange', 'control', 'combo', 'ramp']
 const FORMATS = ['standard', 'pioneer', 'modern', 'legacy', 'vintage', 'commander', 'pauper']
 
-export default function MatchupSimulator({ token, decklist: decklistProp, format: formatProp, messages }) {
+export default function MatchupSimulator({ token, user, decklist: decklistProp, format: formatProp, messages }) {
   const [decklist, setDecklist]     = useState(decklistProp || '')
   const [savedDecks, setSavedDecks] = useState([])
   const [sideboard, setSideboard]   = useState('')
@@ -36,7 +36,11 @@ export default function MatchupSimulator({ token, decklist: decklistProp, format
         })
         const data = await res.json()
         if (res.ok && !cancelled) {
-          setSavedDecks(Array.isArray(data) ? data : [])
+          const allDecks = Array.isArray(data) ? data : []
+          const ownedDecks = user?.id
+            ? allDecks.filter(d => d?.user_id === user.id)
+            : allDecks
+          setSavedDecks(ownedDecks)
         }
       } catch (err) {
         // Silently fail
@@ -44,7 +48,7 @@ export default function MatchupSimulator({ token, decklist: decklistProp, format
     }
     if (token) loadDecks()
     return () => { cancelled = true }
-  }, [token])
+  }, [token, user?.id])
 
   function toggleOpponent(a) {
     setOpponents(prev =>

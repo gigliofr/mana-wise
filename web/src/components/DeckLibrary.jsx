@@ -45,7 +45,11 @@ export default function DeckLibrary({
         const data = await res.json()
         if (!res.ok) throw new Error(data.error || messages.deckLoadFailed)
         if (!cancelled) {
-          setDecks(Array.isArray(data) ? data : [])
+          const allDecks = Array.isArray(data) ? data : []
+          const ownedDecks = user?.id
+            ? allDecks.filter(d => d?.user_id === user.id)
+            : allDecks
+          setDecks(ownedDecks)
         }
       } catch (err) {
         if (!cancelled) setError(err.message)

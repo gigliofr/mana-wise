@@ -4,7 +4,7 @@ const API = '/api/v1'
 const FORMATS = ['standard', 'pioneer', 'modern', 'legacy', 'vintage', 'commander', 'pauper']
 const ARCHETYPES = ['', 'aggro', 'midrange', 'control', 'combo', 'ramp']
 
-export default function MulliganAssistant({ token, decklist: decklistProp, format: formatProp, messages }) {
+export default function MulliganAssistant({ token, user, decklist: decklistProp, format: formatProp, messages }) {
   const [decklist, setDecklist] = useState(decklistProp || '')
   const [format, setFormat]     = useState(formatProp || 'standard')
   const [savedDecks, setSavedDecks] = useState([])
@@ -36,14 +36,18 @@ export default function MulliganAssistant({ token, decklist: decklistProp, forma
     })
       .then(r => r.json())
       .then(decks => {
-        setSavedDecks(Array.isArray(decks) ? decks : [])
+        const allDecks = Array.isArray(decks) ? decks : []
+        const ownedDecks = user?.id
+          ? allDecks.filter(d => d?.user_id === user.id)
+          : allDecks
+        setSavedDecks(ownedDecks)
         setLoadingSavedDecks(false)
       })
       .catch(err => {
         console.error('Failed to load saved decks:', err)
         setLoadingSavedDecks(false)
       })
-  }, [token])
+  }, [token, user?.id])
 
   async function runSimulation(e) {
     e.preventDefault()

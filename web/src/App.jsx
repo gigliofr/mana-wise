@@ -157,6 +157,7 @@ function App() {
           {activeTool === 'matchup' && (
             <MatchupSimulator
               token={token}
+              user={user}
               decklist={sharedDecklist}
               format={sharedFormat}
               messages={messages}
@@ -165,6 +166,7 @@ function App() {
           {activeTool === 'sideboard' && (
             <SideboardCoach
               token={token}
+              user={user}
               decklist={sharedDecklist}
               format={sharedFormat}
               messages={messages}
@@ -173,6 +175,7 @@ function App() {
           {activeTool === 'mulligan' && (
             <MulliganAssistant
               token={token}
+              user={user}
               decklist={sharedDecklist}
               format={sharedFormat}
               messages={messages}

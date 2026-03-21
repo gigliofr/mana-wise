@@ -61,7 +61,11 @@ export default function Analyzer({ token, user, locale, messages, decklist: deck
         })
         const data = await res.json()
         if (res.ok && !cancelled) {
-          setSavedDecks(Array.isArray(data) ? data : [])
+          const allDecks = Array.isArray(data) ? data : []
+          const ownedDecks = user?.id
+            ? allDecks.filter(d => d?.user_id === user.id)
+            : allDecks
+          setSavedDecks(ownedDecks)
         }
       } catch (err) {
         // Silently fail

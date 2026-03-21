@@ -4,7 +4,7 @@ const API = '/api/v1'
 const ARCHETYPES = ['aggro', 'midrange', 'control', 'combo', 'ramp']
 const FORMATS = ['standard', 'pioneer', 'modern', 'legacy', 'vintage', 'commander', 'pauper']
 
-export default function SideboardCoach({ token, decklist: decklistProp, format: formatProp, messages }) {
+export default function SideboardCoach({ token, user, decklist: decklistProp, format: formatProp, messages }) {
   const [mainDecklist, setMainDecklist]   = useState(decklistProp || '')
   const [sideboard, setSideboard]         = useState('')
   const [opponent, setOpponent]           = useState('aggro')
@@ -32,11 +32,15 @@ export default function SideboardCoach({ token, decklist: decklistProp, format: 
     fetch(`${API}/decks`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.json())
       .then(decks => {
-        setSavedDecks(Array.isArray(decks) ? decks : [])
+        const allDecks = Array.isArray(decks) ? decks : []
+        const ownedDecks = user?.id
+          ? allDecks.filter(d => d?.user_id === user.id)
+          : allDecks
+        setSavedDecks(ownedDecks)
         setLoadingSavedDecks(false)
       })
       .catch(() => setLoadingSavedDecks(false))
-  }, [token])
+  }, [token, user?.id])
 
   async function runPlan(e) {
     e.preventDefault()
