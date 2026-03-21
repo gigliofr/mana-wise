@@ -6,6 +6,8 @@ import SideboardCoach from './components/SideboardCoach'
 import MulliganAssistant from './components/MulliganAssistant'
 import DeckLibrary from './components/DeckLibrary'
 import PlansSupport from './components/PlansSupport'
+import LegalFooter from './components/LegalFooter'
+import { LegalPage } from './components/LegalPages'
 import { LOCALES, translations } from './i18n'
 
 const TOKEN_KEY = 'manawise_token'
@@ -22,6 +24,8 @@ function App() {
   const [activeTool, setActiveTool] = useState('analyzer')
   const [sharedDecklist, setSharedDecklist] = useState('')
   const [sharedFormat, setSharedFormat] = useState('standard')
+  const currentPath = window.location.pathname.toLowerCase()
+  const isLegalPage = ['/privacy', '/cookie', '/contatti'].includes(currentPath)
 
   function handleLogin(token, user) {
     localStorage.setItem(TOKEN_KEY, token)
@@ -76,8 +80,34 @@ function App() {
     }
   }, [token])
 
+  if (isLegalPage) {
+    return (
+      <>
+        <header>
+          <div className="container inner">
+            <div className="logo">🔮 Mana<span>Wise</span> AI</div>
+            <div className="header-actions">
+              <a className="btn-ghost" href="/">{messages.backToApp}</a>
+            </div>
+          </div>
+        </header>
+        <main>
+          <div className="container">
+            <LegalPage path={currentPath} messages={messages} />
+          </div>
+        </main>
+        <LegalFooter messages={messages} />
+      </>
+    )
+  }
+
   if (!token) {
-    return <Auth onLogin={handleLogin} locale={locale} messages={messages} onLocaleChange={handleLocaleChange} />
+    return (
+      <>
+        <Auth onLogin={handleLogin} locale={locale} messages={messages} onLocaleChange={handleLocaleChange} />
+        <LegalFooter messages={messages} />
+      </>
+    )
   }
 
   const tools = [
@@ -186,6 +216,7 @@ function App() {
           )}
         </div>
       </main>
+      <LegalFooter messages={messages} />
     </>
   )
 }
