@@ -5,6 +5,7 @@ import MatchupSimulator from './components/MatchupSimulator'
 import SideboardCoach from './components/SideboardCoach'
 import MulliganAssistant from './components/MulliganAssistant'
 import DeckLibrary from './components/DeckLibrary'
+import PlansSupport from './components/PlansSupport'
 import { LOCALES, translations } from './i18n'
 
 const TOKEN_KEY = 'manawise_token'
@@ -128,6 +129,8 @@ function App() {
               setSharedFormat(format)
             }}
           />
+
+          <PlansSupport messages={messages} />
 
           <div className="tool-links" aria-label={messages.toolLinksAria}>
             {tools.map(tool => (

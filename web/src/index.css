@@ -74,6 +74,73 @@ main { padding: 32px 0 64px; }
 .card + .card { margin-top: 24px; }
 .card h2 { font-size: 1.1rem; margin-bottom: 16px; color: var(--primary-h); }
 
+.plan-support-card {
+  margin-top: 24px;
+}
+
+.plan-support-subtitle {
+  color: var(--muted);
+  font-size: .9rem;
+  margin-bottom: 14px;
+}
+
+.plan-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.plan-box {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  background: var(--bg);
+}
+
+.plan-box.pro {
+  border-color: rgba(229, 162, 42, .6);
+}
+
+.plan-box-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.plan-box-head span {
+  font-size: .72rem;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+.plan-list {
+  list-style: none;
+  display: grid;
+  gap: 6px;
+  font-size: .86rem;
+}
+
+.donate-box {
+  margin-top: 12px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.donate-box p {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: .84rem;
+}
+
 /* ── Form elements ── */
 label { display: block; font-size: .85rem; color: var(--muted); margin-bottom: 4px; }
 input, textarea, select {
@@ -833,6 +900,15 @@ button {
 
   .matchup-summary {
     grid-template-columns: 1fr;
+  }
+
+  .plan-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .donate-box {
+    flex-direction: column;
+    align-items: flex-start;
   }
 
   .sideboard-columns {
