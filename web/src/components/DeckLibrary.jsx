@@ -15,6 +15,7 @@ export default function DeckLibrary({
   const [error, setError] = useState('')
   const [name, setName] = useState('')
   const [saveStep, setSaveStep] = useState(0) // 0=hidden, 1=name, 2=confirm
+  const [editedDecklist, setEditedDecklist] = useState('')
 
   const isPro = (user?.plan || '').toLowerCase() === 'pro'
   const canSaveMore = isPro || decks.length < 1
@@ -84,9 +85,9 @@ export default function DeckLibrary({
   async function saveCurrentDeck() {
     setError('')
     
-    // Step 1: Validate name and move to confirm
+    // Step 1: Validate name and decklist, move to confirm
     if (saveStep === 1) {
-      const cards = parseDecklistToCards(currentDecklist)
+      const cards = parseDecklistToCards(editedDecklist)
       if (cards.length === 0) {
         setError(messages.deckEmptyCannotSave)
         return
@@ -105,7 +106,7 @@ export default function DeckLibrary({
         setError(messages.deckLimitReached)
         return
       }
-      const cards = parseDecklistToCards(currentDecklist)
+      const cards = parseDecklistToCards(editedDecklist)
       if (cards.length === 0) {
         setError(messages.deckEmptyCannotSave)
         return
@@ -129,6 +130,7 @@ export default function DeckLibrary({
         if (!res.ok) throw new Error(data.error || messages.deckSaveFailed)
         setDecks(prev => [data, ...prev])
         setName('')
+        setEditedDecklist('')
         setSaveStep(0)
       } catch (err) {
         setError(err.message)
@@ -186,6 +188,8 @@ export default function DeckLibrary({
             className="btn-primary" 
             onClick={() => {
               setError('')
+              setName('')
+              setEditedDecklist(currentDecklist || '')
               setSaveStep(1)
             }}
             disabled={!canSaveMore}
@@ -195,7 +199,7 @@ export default function DeckLibrary({
         </div>
       )}
 
-      {/* Step 1: Input deck name */}
+      {/* Step 1: Input deck name and decklist */}
       {saveStep === 1 && (
         <div className="decklib-save-step">
           <h3>{messages.saveDeck}</h3>
@@ -207,10 +211,10 @@ export default function DeckLibrary({
             autoFocus
           />
           <textarea
-            readOnly
-            value={currentDecklist}
-            placeholder={messages.noDecklistProvided}
-            style={{ maxHeight: '150px', marginTop: '12px', opacity: 0.6 }}
+            value={editedDecklist}
+            onChange={e => setEditedDecklist(e.target.value)}
+            placeholder={messages.decklistHint}
+            style={{ maxHeight: '200px', marginTop: '12px' }}
           />
           <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
             <button type="button" className="btn-primary" onClick={saveCurrentDeck}>
@@ -222,6 +226,7 @@ export default function DeckLibrary({
               onClick={() => {
                 setSaveStep(0)
                 setName('')
+                setEditedDecklist('')
                 setError('')
               }}
             >
@@ -238,12 +243,12 @@ export default function DeckLibrary({
           <div style={{ marginBottom: '12px', padding: '12px', background: 'var(--bg-secondary)', borderRadius: '4px' }}>
             <strong>{name}</strong>
             <div style={{ fontSize: '.9rem', color: 'var(--muted)', marginTop: '4px' }}>
-              {activeSummary.cards} {messages.cards} · {currentFormat || 'standard'}
+              {editedDecklist.split('\n').filter(l => l.trim()).length} {messages.cards} · {currentFormat || 'standard'}
             </div>
           </div>
           <textarea
             readOnly
-            value={currentDecklist}
+            value={editedDecklist}
             placeholder={messages.noDecklistProvided}
             style={{ maxHeight: '200px', opacity: 0.7 }}
           />
