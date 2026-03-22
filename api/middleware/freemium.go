@@ -3,6 +3,7 @@ package middleware
 import (
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/manawise/api/domain"
 )
@@ -22,11 +23,25 @@ func FreemiumGate(userRepo domain.UserRepository, tracker domain.AnalyticsTracke
 				return
 			}
 
-			plan := PlanFromContext(r.Context())
-			if plan == string(domain.PlanPro) {
+			user, err := userRepo.FindByID(r.Context(), userID)
+			if err != nil || user == nil {
+				http.Error(w, `{"error":"user not found"}`, http.StatusUnauthorized)
+				return
+			}
+
+			if user.HasActivePro() {
 				next.ServeHTTP(w, r)
 				return
 			}
+
+			if user.Plan == domain.PlanPro && user.ProUntil != nil && !user.ProUntil.After(time.Now().UTC()) {
+				// Pro expired: downgrade to free for future sessions.
+				user.Plan = domain.PlanFree
+				user.ProUntil = nil
+				_ = userRepo.Update(r.Context(), user)
+			}
+
+			plan := string(user.Plan)
 
 			today := domain.CurrentBusinessDay()
 			// Atomic check-and-increment: quota is reserved only if the DB

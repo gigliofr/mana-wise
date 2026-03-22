@@ -124,6 +124,26 @@ main { padding: 32px 0 64px; }
   font-size: .86rem;
 }
 
+.plan-beta-note {
+  margin-bottom: 8px;
+  font-size: .8rem;
+  color: var(--accent);
+}
+
+.plan-donation-tiers {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.plan-pro-until {
+  margin-top: 8px;
+  font-size: .8rem;
+  color: var(--green);
+  font-weight: 600;
+}
+
 .donate-box {
   margin-top: 12px;
   border: 1px dashed var(--border);
@@ -1042,6 +1062,10 @@ button {
   }
 
   .plan-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .plan-donation-tiers {
     grid-template-columns: 1fr;
   }
 

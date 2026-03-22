@@ -30,12 +30,13 @@ type RegisterRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
 	Name     string `json:"name"`
-	Plan     string `json:"plan,omitempty"`
 }
 
 // UpdatePlanRequest is the JSON body for POST /auth/plan.
 type UpdatePlanRequest struct {
-	Plan string `json:"plan"`
+	Plan              string `json:"plan"`
+	DonationTier      string `json:"donation_tier,omitempty"`
+	DonationReference string `json:"donation_reference,omitempty"`
 }
 
 // LoginRequest is the JSON body for POST /auth/login.
@@ -70,17 +71,6 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	selectedPlan := domain.PlanFree
-	if strings.TrimSpace(req.Plan) != "" {
-		switch domain.Plan(strings.ToLower(strings.TrimSpace(req.Plan))) {
-		case domain.PlanFree, domain.PlanPro:
-			selectedPlan = domain.Plan(strings.ToLower(strings.TrimSpace(req.Plan)))
-		default:
-			jsonError(w, "invalid plan: supported values are free, pro", http.StatusBadRequest)
-			return
-		}
-	}
-
 	existing, err := h.userRepo.FindByEmail(r.Context(), req.Email)
 	if err != nil {
 		jsonError(w, "internal error", http.StatusInternalServerError)
@@ -102,7 +92,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		Email:        req.Email,
 		PasswordHash: string(hash),
 		Name:         req.Name,
-		Plan:         selectedPlan,
+		Plan:         domain.PlanFree,
 		CreatedAt:    time.Now().UTC(),
 	}
 	if err = h.userRepo.Create(r.Context(), user); err != nil {
@@ -148,6 +138,12 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if user.Plan == domain.PlanPro && user.ProUntil != nil && !user.ProUntil.After(time.Now().UTC()) {
+		user.Plan = domain.PlanFree
+		user.ProUntil = nil
+		_ = h.userRepo.Update(r.Context(), user)
+	}
+
 	token, err := middleware.GenerateToken(user.ID, user.Email, string(user.Plan), h.jwtSecret, h.expiryHours)
 	if err != nil {
 		jsonError(w, "could not generate token", http.StatusInternalServerError)
@@ -188,11 +184,42 @@ func (h *AuthHandler) UpdatePlan(w http.ResponseWriter, r *http.Request) {
 
 	if user.Plan != plan {
 		user.Plan = plan
+		if plan == domain.PlanFree {
+			user.ProUntil = nil
+		}
 		user.UpdatedAt = time.Now().UTC()
-		if err := h.userRepo.Update(r.Context(), user); err != nil {
-			jsonError(w, "could not update plan", http.StatusInternalServerError)
+	}
+
+	if plan == domain.PlanPro {
+		tier := strings.ToLower(strings.TrimSpace(req.DonationTier))
+		ref := strings.TrimSpace(req.DonationReference)
+		if ref == "" {
+			jsonError(w, "donation_reference is required to activate pro", http.StatusBadRequest)
 			return
 		}
+		base := time.Now().UTC()
+		if user.ProUntil != nil && user.ProUntil.After(base) {
+			base = *user.ProUntil
+		}
+
+		switch tier {
+		case "beta_month_1eur":
+			expires := base.AddDate(0, 1, 0)
+			user.ProUntil = &expires
+		case "beta_year_190eur":
+			expires := base.AddDate(1, 0, 0)
+			user.ProUntil = &expires
+		default:
+			jsonError(w, "invalid donation_tier: use beta_month_1eur or beta_year_190eur", http.StatusBadRequest)
+			return
+		}
+
+		user.UpdatedAt = time.Now().UTC()
+	}
+
+	if err := h.userRepo.Update(r.Context(), user); err != nil {
+		jsonError(w, "could not update plan", http.StatusInternalServerError)
+		return
 	}
 
 	user.Remaining = user.RemainingAnalyses(domain.CurrentBusinessDay())
@@ -212,6 +239,11 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	if err != nil || user == nil {
 		jsonError(w, "user not found", http.StatusNotFound)
 		return
+	}
+	if user.Plan == domain.PlanPro && user.ProUntil != nil && !user.ProUntil.After(time.Now().UTC()) {
+		user.Plan = domain.PlanFree
+		user.ProUntil = nil
+		_ = h.userRepo.Update(r.Context(), user)
 	}
 	user.Remaining = user.RemainingAnalyses(domain.CurrentBusinessDay())
 	jsonOK(w, user)

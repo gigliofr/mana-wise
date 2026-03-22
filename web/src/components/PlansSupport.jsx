@@ -5,6 +5,7 @@ const API = '/api/v1'
 
 export default function PlansSupport({ token, user, messages, onSessionUpdate }) {
   const [planError, setPlanError] = useState('')
+  const [donationReference, setDonationReference] = useState('')
 
   const planRows = [
     {
@@ -25,25 +26,51 @@ export default function PlansSupport({ token, user, messages, onSessionUpdate })
   ]
 
   const currentPlan = (user?.plan || 'free').toLowerCase()
+  const proUntil = user?.pro_until
 
-  async function switchPlan(nextPlan) {
+  async function downgradeToFree() {
     setPlanError('')
-    if (!token || !nextPlan || nextPlan === currentPlan) return
+    if (!token || currentPlan === 'free') return
     const res = await fetch(`${API}/auth/plan`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ plan: nextPlan }),
+      body: JSON.stringify({ plan: 'free' }),
     })
     const data = await res.json()
     if (!res.ok) throw new Error(data.error || messages.planSwitchError)
     onSessionUpdate?.(data.token, data.user)
   }
 
-  function donateCoffee() {
-    window.open(PAYPAL_DONATE_URL, '_blank', 'noopener,noreferrer')
+  async function activatePro(tier) {
+    setPlanError('')
+    if (!token) return
+    if (!donationReference.trim()) {
+      setPlanError(messages.planDonationReferenceRequired)
+      return
+    }
+    const res = await fetch(`${API}/auth/plan`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        plan: 'pro',
+        donation_tier: tier,
+        donation_reference: donationReference.trim(),
+      }),
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error || messages.planSwitchError)
+    onSessionUpdate?.(data.token, data.user)
+  }
+
+  function donateWithAmount(amount) {
+    const normalized = String(amount).replace(',', '.')
+    window.open(`${PAYPAL_DONATE_URL}/${normalized}`, '_blank', 'noopener,noreferrer')
   }
 
   return (
@@ -63,7 +90,7 @@ export default function PlansSupport({ token, user, messages, onSessionUpdate })
           <button
             type="button"
             className="btn-ghost"
-            onClick={() => switchPlan('free').catch(err => setPlanError(err.message))}
+            onClick={() => downgradeToFree().catch(err => setPlanError(err.message))}
             disabled={currentPlan === 'free'}
             style={{ width: '100%', marginTop: 10 }}
           >
@@ -76,18 +103,46 @@ export default function PlansSupport({ token, user, messages, onSessionUpdate })
             <strong>{messages.planProTitle}</strong>
             <span>{messages.planProBadge}</span>
           </div>
+          <p className="plan-beta-note">{messages.planBetaNotice}</p>
           <ul className="plan-list">
             {planRows.map(item => <li key={`pro-${item.label}`}><strong>{item.label}:</strong> {item.pro}</li>)}
           </ul>
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={() => switchPlan('pro').catch(err => setPlanError(err.message))}
-            disabled={currentPlan === 'pro'}
-            style={{ width: '100%', marginTop: 10 }}
-          >
-            {currentPlan === 'pro' ? messages.planCurrent : messages.planSelect}
-          </button>
+          {proUntil && <p className="plan-pro-until">{messages.planActiveUntil(proUntil)}</p>}
+
+          <div className="plan-donation-tiers">
+            <button type="button" className="btn-ghost" onClick={() => donateWithAmount('1')}>
+              {messages.planDonateMonth}
+            </button>
+            <button type="button" className="btn-ghost" onClick={() => donateWithAmount('1.9')}>
+              {messages.planDonateYear}
+            </button>
+          </div>
+
+          <div className="form-row" style={{ marginTop: 10 }}>
+            <label>{messages.planDonationReferenceLabel}</label>
+            <input
+              value={donationReference}
+              onChange={e => setDonationReference(e.target.value)}
+              placeholder={messages.planDonationReferencePlaceholder}
+            />
+          </div>
+
+          <div className="plan-donation-tiers">
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => activatePro('beta_month_1eur').catch(err => setPlanError(err.message))}
+            >
+              {messages.planActivateMonth}
+            </button>
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => activatePro('beta_year_190eur').catch(err => setPlanError(err.message))}
+            >
+              {messages.planActivateYear}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -98,7 +153,7 @@ export default function PlansSupport({ token, user, messages, onSessionUpdate })
           <strong>{messages.donateTitle}</strong>
           <p>{messages.donateBody}</p>
         </div>
-        <button type="button" className="btn-primary" onClick={donateCoffee}>
+        <button type="button" className="btn-primary" onClick={() => donateWithAmount('1')}>
           {messages.donateButton}
         </button>
       </div>

@@ -5,7 +5,7 @@ const API = '/api/v1'
 
 export default function Auth({ onLogin, locale, messages, onLocaleChange }) {
   const [mode, setMode] = useState('login') // 'login' | 'register'
-  const [form, setForm] = useState({ email: '', password: '', name: '', plan: 'free' })
+  const [form, setForm] = useState({ email: '', password: '', name: '' })
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -22,7 +22,7 @@ export default function Auth({ onLogin, locale, messages, onLocaleChange }) {
       const endpoint = mode === 'login' ? `${API}/auth/login` : `${API}/auth/register`
       const body = mode === 'login'
         ? { email: form.email, password: form.password }
-        : { email: form.email, password: form.password, name: form.name, plan: form.plan }
+        : { email: form.email, password: form.password, name: form.name }
 
       const res = await fetch(endpoint, {
         method: 'POST',
@@ -73,13 +73,7 @@ export default function Auth({ onLogin, locale, messages, onLocaleChange }) {
                     <label>{messages.name}</label>
                     <input value={form.name} onChange={set('name')} placeholder={messages.yourName} required />
                   </div>
-                  <div className="form-row">
-                    <label>{messages.choosePlan}</label>
-                    <select value={form.plan} onChange={set('plan')}>
-                      <option value="free">{messages.planFree}</option>
-                      <option value="pro">{messages.planPro}</option>
-                    </select>
-                  </div>
+                  <p style={{ fontSize: '.82rem', color: 'var(--muted)', marginBottom: 12 }}>{messages.proActivationFromPlansNote}</p>
                 </>
               )}
               <div className="form-row">
