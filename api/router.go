@@ -17,21 +17,21 @@ import (
 
 // RouterDeps groups all handler dependencies.
 type RouterDeps struct {
-	CardRepo      domain.CardRepository
-	UserRepo      domain.UserRepository
-	DeckRepo      domain.DeckRepository
-	AnalyzeUC     *usecase.AnalyzeDeckUseCase
-	AISuggester   *usecase.AISuggester
-	EmbedBatchUC  *usecase.EmbedBatchUseCase
-	ResolveCardUC *usecase.ResolveCardByNameUseCase
-	SideboardUC   *usecase.SideboardCoachUseCase
-	MulliganUC    *usecase.MulliganAssistantUseCase
-	MatchupUC     *usecase.MatchupSimulatorUseCase
+	CardRepo       domain.CardRepository
+	UserRepo       domain.UserRepository
+	DeckRepo       domain.DeckRepository
+	AnalyzeUC      *usecase.AnalyzeDeckUseCase
+	AISuggester    *usecase.AISuggester
+	EmbedBatchUC   *usecase.EmbedBatchUseCase
+	ResolveCardUC  *usecase.ResolveCardByNameUseCase
+	SideboardUC    *usecase.SideboardCoachUseCase
+	MulliganUC     *usecase.MulliganAssistantUseCase
+	MatchupUC      *usecase.MatchupSimulatorUseCase
 	DeckClassifyUC *usecase.DeckClassifierUseCase
-	OTAUC         *usecase.OTAUpdateUseCase
-	Analytics     domain.AnalyticsTracker
-	JWTSecret     string
-	ExpiryHours   int
+	OTAUC          *usecase.OTAUpdateUseCase
+	Analytics      domain.AnalyticsTracker
+	JWTSecret      string
+	ExpiryHours    int
 }
 
 // NewRouter builds and returns the chi router with all routes registered.
@@ -76,6 +76,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 			r.With(authRateMW).Post("/register", authH.Register)
 			r.With(authRateMW).Post("/login", authH.Login)
 			r.With(jwtMW).Get("/me", authH.Me)
+			r.With(jwtMW).Post("/plan", authH.UpdatePlan)
 		})
 
 		// Protected endpoints.

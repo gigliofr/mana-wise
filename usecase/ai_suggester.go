@@ -55,14 +55,21 @@ func (s *AISuggester) Suggest(ctx context.Context, decklist, format, locale stri
 			return
 		}
 		text, source, err = s.tryExternalChain(ctx, hash, decklist, format, locale, analysis, cards)
+		if err == nil {
+			text, source = s.enforceLocale(format, locale, analysis, cards, text, source)
+		}
 		return
 	case AIModeExternalOnly:
 		text, source, err = s.tryExternalChain(ctx, hash, decklist, format, locale, analysis, cards)
+		if err == nil {
+			text, source = s.enforceLocale(format, locale, analysis, cards, text, source)
+		}
 		return
 	default: // hybrid_prefer_external
 		var extErr error
 		text, source, extErr = s.tryExternalChain(ctx, hash, decklist, format, locale, analysis, cards)
 		if extErr == nil {
+			text, source = s.enforceLocale(format, locale, analysis, cards, text, source)
 			return
 		}
 		if !s.internalEnable {
@@ -136,4 +143,32 @@ func sourceLabel(c *llm.Connector) string {
 		return provider
 	}
 	return provider + ":" + model
+}
+
+func (s *AISuggester) enforceLocale(format, locale string, analysis *domain.AnalysisResult, cards []*domain.Card, text, source string) (string, string) {
+	locale = strings.ToLower(strings.TrimSpace(locale))
+	if strings.HasPrefix(locale, "it") && seemsEnglishSuggestion(text) && s.internalEnable {
+		if fallback, fallbackSource, err := s.tryInternal(format, "it", analysis, cards); err == nil && strings.TrimSpace(fallback) != "" {
+			return fallback, fallbackSource
+		}
+	}
+	return text, source
+}
+
+func seemsEnglishSuggestion(text string) bool {
+	l := strings.ToLower(strings.TrimSpace(text))
+	if l == "" {
+		return false
+	}
+	if strings.Contains(l, "cut:") || strings.Contains(l, "add:") || strings.Contains(l, "why:") {
+		return true
+	}
+	enSignals := []string{"you should", "your deck", "replace", "because", "interaction", "mana base"}
+	hits := 0
+	for _, s := range enSignals {
+		if strings.Contains(l, s) {
+			hits++
+		}
+	}
+	return hits >= 2
 }

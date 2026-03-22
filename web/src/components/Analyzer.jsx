@@ -116,6 +116,7 @@ export default function Analyzer({ token, user, locale, messages, decklist: deck
       const headers = {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
+        'Accept-Language': locale || 'it',
       }
 
       const [analysisOutcome, fingerprintOutcome] = await Promise.allSettled([

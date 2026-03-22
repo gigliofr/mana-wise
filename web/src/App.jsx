@@ -27,6 +27,13 @@ function App() {
   const currentPath = window.location.pathname.toLowerCase()
   const isLegalPage = ['/privacy', '/cookie', '/contatti'].includes(currentPath)
 
+  function handleSessionUpdate(nextToken, nextUser) {
+    localStorage.setItem(TOKEN_KEY, nextToken)
+    localStorage.setItem(USER_KEY, JSON.stringify(nextUser))
+    setToken(nextToken)
+    setUser(nextUser)
+  }
+
   function handleLogin(token, user) {
     localStorage.setItem(TOKEN_KEY, token)
     localStorage.setItem(USER_KEY, JSON.stringify(user))
@@ -115,6 +122,7 @@ function App() {
     { key: 'matchup', label: messages.navMatchup },
     { key: 'sideboard', label: messages.navSideboard },
     { key: 'mulligan', label: messages.navMulligan },
+    { key: 'plans', label: messages.navPlans },
   ]
 
   return (
@@ -159,8 +167,6 @@ function App() {
               setSharedFormat(format)
             }}
           />
-
-          <PlansSupport messages={messages} />
 
           <div className="tool-links" aria-label={messages.toolLinksAria}>
             {tools.map(tool => (
@@ -212,6 +218,14 @@ function App() {
               decklist={sharedDecklist}
               format={sharedFormat}
               messages={messages}
+            />
+          )}
+          {activeTool === 'plans' && (
+            <PlansSupport
+              token={token}
+              user={user}
+              messages={messages}
+              onSessionUpdate={handleSessionUpdate}
             />
           )}
         </div>

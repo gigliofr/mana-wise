@@ -30,6 +30,12 @@ type RegisterRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
 	Name     string `json:"name"`
+	Plan     string `json:"plan,omitempty"`
+}
+
+// UpdatePlanRequest is the JSON body for POST /auth/plan.
+type UpdatePlanRequest struct {
+	Plan string `json:"plan"`
 }
 
 // LoginRequest is the JSON body for POST /auth/login.
@@ -64,6 +70,17 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	selectedPlan := domain.PlanFree
+	if strings.TrimSpace(req.Plan) != "" {
+		switch domain.Plan(strings.ToLower(strings.TrimSpace(req.Plan))) {
+		case domain.PlanFree, domain.PlanPro:
+			selectedPlan = domain.Plan(strings.ToLower(strings.TrimSpace(req.Plan)))
+		default:
+			jsonError(w, "invalid plan: supported values are free, pro", http.StatusBadRequest)
+			return
+		}
+	}
+
 	existing, err := h.userRepo.FindByEmail(r.Context(), req.Email)
 	if err != nil {
 		jsonError(w, "internal error", http.StatusInternalServerError)
@@ -85,7 +102,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		Email:        req.Email,
 		PasswordHash: string(hash),
 		Name:         req.Name,
-		Plan:         domain.PlanFree,
+		Plan:         selectedPlan,
 		CreatedAt:    time.Now().UTC(),
 	}
 	if err = h.userRepo.Create(r.Context(), user); err != nil {
@@ -137,6 +154,53 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	user.Remaining = user.RemainingAnalyses(domain.CurrentBusinessDay())
+
+	jsonOK(w, TokenResponse{Token: token, User: user})
+}
+
+// UpdatePlan handles POST /auth/plan for authenticated users.
+func (h *AuthHandler) UpdatePlan(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.UserIDFromContext(r.Context())
+	if userID == "" {
+		jsonError(w, "unauthenticated", http.StatusUnauthorized)
+		return
+	}
+
+	var req UpdatePlanRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	plan := domain.Plan(strings.ToLower(strings.TrimSpace(req.Plan)))
+	switch plan {
+	case domain.PlanFree, domain.PlanPro:
+	default:
+		jsonError(w, "invalid plan: supported values are free, pro", http.StatusBadRequest)
+		return
+	}
+
+	user, err := h.userRepo.FindByID(r.Context(), userID)
+	if err != nil || user == nil {
+		jsonError(w, "user not found", http.StatusNotFound)
+		return
+	}
+
+	if user.Plan != plan {
+		user.Plan = plan
+		user.UpdatedAt = time.Now().UTC()
+		if err := h.userRepo.Update(r.Context(), user); err != nil {
+			jsonError(w, "could not update plan", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	user.Remaining = user.RemainingAnalyses(domain.CurrentBusinessDay())
+	token, err := middleware.GenerateToken(user.ID, user.Email, string(user.Plan), h.jwtSecret, h.expiryHours)
+	if err != nil {
+		jsonError(w, "could not generate token", http.StatusInternalServerError)
+		return
+	}
 
 	jsonOK(w, TokenResponse{Token: token, User: user})
 }

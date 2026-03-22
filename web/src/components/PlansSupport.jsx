@@ -1,6 +1,11 @@
-const PAYPAL_DONATE_URL = import.meta.env.VITE_PAYPAL_DONATE_URL || 'https://paypal.me/gigliofr'
+import { useState } from 'react'
 
-export default function PlansSupport({ messages }) {
+const PAYPAL_DONATE_URL = import.meta.env.VITE_PAYPAL_DONATE_URL || 'https://paypal.me/gigliofr'
+const API = '/api/v1'
+
+export default function PlansSupport({ token, user, messages, onSessionUpdate }) {
+  const [planError, setPlanError] = useState('')
+
   const planRows = [
     {
       label: messages.planFeatureAnalyses,
@@ -18,6 +23,24 @@ export default function PlansSupport({ messages }) {
       pro: messages.planFeatureToolsPro,
     },
   ]
+
+  const currentPlan = (user?.plan || 'free').toLowerCase()
+
+  async function switchPlan(nextPlan) {
+    setPlanError('')
+    if (!token || !nextPlan || nextPlan === currentPlan) return
+    const res = await fetch(`${API}/auth/plan`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ plan: nextPlan }),
+    })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error || messages.planSwitchError)
+    onSessionUpdate?.(data.token, data.user)
+  }
 
   function donateCoffee() {
     window.open(PAYPAL_DONATE_URL, '_blank', 'noopener,noreferrer')
@@ -37,6 +60,15 @@ export default function PlansSupport({ messages }) {
           <ul className="plan-list">
             {planRows.map(item => <li key={`free-${item.label}`}><strong>{item.label}:</strong> {item.free}</li>)}
           </ul>
+          <button
+            type="button"
+            className="btn-ghost"
+            onClick={() => switchPlan('free').catch(err => setPlanError(err.message))}
+            disabled={currentPlan === 'free'}
+            style={{ width: '100%', marginTop: 10 }}
+          >
+            {currentPlan === 'free' ? messages.planCurrent : messages.planSelect}
+          </button>
         </div>
 
         <div className="plan-box pro">
@@ -47,8 +79,19 @@ export default function PlansSupport({ messages }) {
           <ul className="plan-list">
             {planRows.map(item => <li key={`pro-${item.label}`}><strong>{item.label}:</strong> {item.pro}</li>)}
           </ul>
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={() => switchPlan('pro').catch(err => setPlanError(err.message))}
+            disabled={currentPlan === 'pro'}
+            style={{ width: '100%', marginTop: 10 }}
+          >
+            {currentPlan === 'pro' ? messages.planCurrent : messages.planSelect}
+          </button>
         </div>
       </div>
+
+      {planError && <div className="banner banner-error" style={{ marginTop: 10 }}>{planError}</div>}
 
       <div className="donate-box">
         <div>
