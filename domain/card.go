@@ -1,6 +1,9 @@
 package domain
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // PriceSnapshot represents a historical price point for a card.
 type PriceSnapshot struct {
@@ -38,6 +41,7 @@ type Card struct {
 	CollectorNumber string             `bson:"collector_number" json:"collector_number"`
 	EdhrecRank      int                `bson:"edhrec_rank"      json:"edhrec_rank"`
 	ReservedList    bool               `bson:"reserved_list"    json:"reserved_list"`
+	Layout          string             `bson:"layout"           json:"layout"`
 	Faces           []CardFace         `bson:"faces,omitempty"  json:"faces,omitempty"`
 	PriceHistory    []PriceSnapshot    `bson:"price_history"    json:"price_history"`
 	CurrentPrices   map[string]float64 `bson:"current_prices"  json:"current_prices"`
@@ -64,4 +68,21 @@ func (c *Card) LatestPrice() *PriceSnapshot {
 		}
 	}
 	return &latest
+}
+
+// IsBasicLand returns true if the card is a basic land.
+func (c *Card) IsBasicLand() bool {
+	return strings.Contains(c.TypeLine, "Basic Land")
+}
+
+// IsLand returns true if the card is a land or a MDFC (modal double-faced card) with a land on the back.
+func (c *Card) IsLand() bool {
+	if strings.Contains(c.TypeLine, "Land") {
+		return true
+	}
+	// Check for MDFC (modal_dfc) with a land face on the back
+	if c.Layout == "modal_dfc" && len(c.Faces) > 1 {
+		return strings.Contains(c.Faces[1].TypeLine, "Land")
+	}
+	return false
 }

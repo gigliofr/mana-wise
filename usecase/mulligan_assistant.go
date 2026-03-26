@@ -3,7 +3,6 @@ package usecase
 import (
 	"context"
 	"fmt"
-	"math"
 	"math/rand"
 	"regexp"
 	"strconv"
@@ -302,8 +301,4 @@ func drawHand(pool []mulliganCard, size int, rng *rand.Rand) []mulliganCard {
 		hand = append(hand, pool[idx[i]])
 	}
 	return hand
-}
-
-func round2(v float64) float64 {
-	return math.Round(v*100) / 100
 }

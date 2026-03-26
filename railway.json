@@ -1,0 +1,65 @@
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "build": {
+    "builder": "nixpacks",
+    "buildCommand": "go build -o manawise ./cmd/server"
+  },
+  "start": "manawise",
+  "variables": {
+    "PORT": {
+      "description": "Server port",
+      "default": "8080"
+    },
+    "ENVIRONMENT": {
+      "description": "Environment (development/production)",
+      "default": "production"
+    },
+    "MONGODB_URI": {
+      "description": "MongoDB connection string",
+      "required": true
+    },
+    "JWT_SECRET": {
+      "description": "JWT signing secret",
+      "required": true
+    },
+    "SCRYFALL_RATE_LIMIT": {
+      "description": "Scryfall API rate limit (requests per second)",
+      "default": "10"
+    },
+    "CORS_ORIGINS": {
+      "description": "CORS allowed origins (comma-separated)",
+      "default": "*"
+    },
+    "LOG_LEVEL": {
+      "description": "Log level (debug/info/warn/error)",
+      "default": "info"
+    },
+    "EDH_IMPACT_CACHE_TTL_HOURS": {
+      "description": "Impact analysis cache TTL in hours",
+      "default": "24"
+    },
+    "EDH_IMPACT_WEIGHTS_PRICE": {
+      "description": "Weight for price in impact calculation",
+      "default": "0.4"
+    },
+    "EDH_IMPACT_WEIGHTS_EDHREC": {
+      "description": "Weight for EDHREC rank in impact calculation",
+      "default": "0.5"
+    },
+    "EDH_IMPACT_WEIGHTS_REPRINT": {
+      "description": "Weight for reprint frequency in impact calculation",
+      "default": "0.1"
+    }
+  },
+  "deploymentConfig": {
+    "dockerfile": null,
+    "port": 8080,
+    "healthCheck": {
+      "path": "/api/v1/health",
+      "interval": 30,
+      "timeout": 10,
+      "successThreshold": 1,
+      "failureThreshold": 3
+    }
+  }
+}

@@ -37,6 +37,7 @@ type ScryfallCard struct {
 	CollectorNumber string            `json:"collector_number"`
 	EdhrecRank      int               `json:"edhrec_rank"`
 	ReservedList    bool              `json:"reserved_list"`
+	Layout          string            `json:"layout"`
 	Prices          struct {
 		USD     *string `json:"usd"`
 		USDFoil *string `json:"usd_foil"`
@@ -155,6 +156,61 @@ func (c *Client) SearchCards(ctx context.Context, query string) (*SearchResponse
 	return &result, nil
 }
 
+// CollectionIdentifier represents a card to fetch by ID or name.
+type CollectionIdentifier struct {
+	ID   string `json:"id,omitempty"`
+	Name string `json:"name,omitempty"`
+	Set  string `json:"set,omitempty"`
+}
+
+// CollectionResponse is returned from POST /cards/collection.
+type CollectionResponse struct {
+	Data []ScryfallCard `json:"data"`
+}
+
+// FetchCardsByCollection fetches multiple cards by ID or name using POST /cards/collection.
+// The API accepts up to 75 identifiers per request.
+func (c *Client) FetchCardsByCollection(ctx context.Context, identifiers []CollectionIdentifier) ([]ScryfallCard, error) {
+	if len(identifiers) == 0 {
+		return []ScryfallCard{}, nil
+	}
+
+	// Scryfall collection API accepts max 75 identifiers per request
+	const maxBatch = 75
+	var allCards []ScryfallCard
+
+	for i := 0; i < len(identifiers); i += maxBatch {
+		end := i + maxBatch
+		if end > len(identifiers) {
+			end = len(identifiers)
+		}
+
+		batch := identifiers[i:end]
+		if err := c.limiter.Wait(ctx); err != nil {
+			return nil, fmt.Errorf("rate limiter: %w", err)
+		}
+
+		endpoint := fmt.Sprintf("%s/cards/collection", c.baseURL)
+		payload := map[string]interface{}{
+			"identifiers": batch,
+		}
+
+		body, err := c.doPostWithRetry(ctx, endpoint, payload)
+		if err != nil {
+			return nil, fmt.Errorf("FetchCardsByCollection batch %d-%d: %w", i, end, err)
+		}
+
+		var result CollectionResponse
+		if err = json.Unmarshal(body, &result); err != nil {
+			return nil, fmt.Errorf("FetchCardsByCollection unmarshal batch %d-%d: %w", i, end, err)
+		}
+
+		allCards = append(allCards, result.Data...)
+	}
+
+	return allCards, nil
+}
+
 // fetchCard performs a GET and deserialises a single ScryfallCard.
 func (c *Client) fetchCard(ctx context.Context, endpoint string) (*ScryfallCard, error) {
 	if err := c.limiter.Wait(ctx); err != nil {
@@ -223,6 +279,62 @@ func (c *Client) doWithRetry(ctx context.Context, endpoint string) ([]byte, erro
 	return nil, fmt.Errorf("all %d retries exhausted: %w", maxRetries, lastErr)
 }
 
+// doPostWithRetry executes a POST with JSON body and exponential backoff on 429 / 5xx responses.
+func (c *Client) doPostWithRetry(ctx context.Context, endpoint string, payload interface{}) ([]byte, error) {
+	var lastErr error
+
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			delay := time.Duration(float64(retryBaseMs)*math.Pow(2, float64(attempt-1))) * time.Millisecond
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(delay):
+			}
+		}
+
+		jsonBody, err := json.Marshal(payload)
+		if err != nil {
+			return nil, fmt.Errorf("marshal payload: %w", err)
+		}
+
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(string(jsonBody)))
+		if err != nil {
+			return nil, fmt.Errorf("create request: %w", err)
+		}
+		req.Header.Set("User-Agent", "ManaWise/1.0")
+		req.Header.Set("Accept", "application/json")
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := c.httpClient.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("http do (attempt %d): %w", attempt+1, err)
+			continue
+		}
+
+		body, readErr := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if readErr != nil {
+			lastErr = fmt.Errorf("read body (attempt %d): %w", attempt+1, readErr)
+			continue
+		}
+
+		switch {
+		case resp.StatusCode == http.StatusOK:
+			return body, nil
+		case resp.StatusCode == http.StatusNotFound:
+			return nil, fmt.Errorf("not found: %s", endpoint)
+		case resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500:
+			lastErr = fmt.Errorf("http %d on attempt %d", resp.StatusCode, attempt+1)
+			continue
+		default:
+			return nil, fmt.Errorf("unexpected status %d for %s", resp.StatusCode, endpoint)
+		}
+	}
+
+	return nil, fmt.Errorf("all %d retries exhausted: %w", maxRetries, lastErr)
+}
+
 // ToDomainCard converts a ScryfallCard to a domain.Card.
 func ToDomainCard(sc *ScryfallCard) *domain.Card {
 	card := &domain.Card{
@@ -242,6 +354,7 @@ func ToDomainCard(sc *ScryfallCard) *domain.Card {
 		CollectorNumber: sc.CollectorNumber,
 		EdhrecRank:      sc.EdhrecRank,
 		ReservedList:    sc.ReservedList,
+		Layout:          sc.Layout,
 		UpdatedAt:       time.Now().UTC(),
 	}
 

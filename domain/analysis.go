@@ -87,5 +87,6 @@ type AnalysisResult struct {
 	Format      string              `json:"format"`
 	Mana        ManaAnalysis        `json:"mana"`
 	Interaction InteractionAnalysis `json:"interaction"`
+	ScoreDetail *ScoreDetail        `json:"score_detail,omitempty" bson:"score_detail,omitempty"`
 	LatencyMs   int64               `json:"latency_ms"`
 }
