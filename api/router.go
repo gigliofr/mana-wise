@@ -29,6 +29,8 @@ type RouterDeps struct {
 	MatchupUC      *usecase.MatchupSimulatorUseCase
 	DeckClassifyUC *usecase.DeckClassifierUseCase
 	OTAUC          *usecase.OTAUpdateUseCase
+	ScoreUC        *usecase.ScoreUseCase
+	ImpactScoreUC  *usecase.ImpactScoreUseCase
 	Analytics      domain.AnalyticsTracker
 	JWTSecret      string
 	ExpiryHours    int
@@ -57,6 +59,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 	otaH := handlers.NewOTAHandler(deps.OTAUC)
 	analyticsH := handlers.NewAnalyticsHandler(deps.Analytics)
 	adminH := handlers.NewAdminHandler(deps.UserRepo)
+	scoreH := handlers.NewScoreHandler(deps.AnalyzeUC, deps.ScoreUC, deps.ImpactScoreUC, deps.UserRepo)
 	var deckH *handlers.DeckHandler
 	if deps.DeckRepo != nil {
 		deckH = handlers.NewDeckHandler(deps.DeckRepo, deps.UserRepo)
@@ -85,6 +88,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 
 			// Analyze — also gate by freemium quota.
 			r.With(freemiumMW).Post("/analyze", analyzeH.ServeHTTP)
+			r.With(freemiumMW).Post("/score", scoreH.Score)
 			r.Post("/sideboard/plan", sideboardH.ServeHTTP)
 			r.Post("/mulligan/simulate", mulliganH.ServeHTTP)
 			r.Post("/matchup/simulate", matchupH.ServeHTTP)

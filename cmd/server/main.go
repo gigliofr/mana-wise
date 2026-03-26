@@ -80,6 +80,14 @@ func main() {
 	mulliganUC := usecase.NewMulliganAssistantUseCase(cardRepo)
 	matchupUC := usecase.NewMatchupSimulatorUseCase(cardRepo)
 	deckClassifyUC := usecase.NewDeckClassifierUseCase(cardRepo)
+	
+	// EDH Power Level Scoring
+	impactScoreUC := &usecase.ImpactScoreUseCase{
+		Weights: domain.DefaultImpactWeights(),
+	}
+	powerLevelUC := &usecase.PowerLevelUseCase{}
+	scoreUC := usecase.NewScoreUseCase(impactScoreUC, powerLevelUC)
+	
 	var embedBatchUC *usecase.EmbedBatchUseCase
 	var otaUC *usecase.OTAUpdateUseCase
 	log.Printf("✅ Worker pool size: %d", cfg.Worker.PoolSize)
@@ -150,21 +158,23 @@ func main() {
 
 	// ── Router ───────────────────────────────────────────────────────────────
 	router := api.NewRouter(api.RouterDeps{
-		CardRepo:      cardRepo,
-		UserRepo:      userRepo,
-		DeckRepo:      deckRepo,
-		AnalyzeUC:     analyzeUC,
-		SideboardUC:   sideboardUC,
-		MulliganUC:    mulliganUC,
-		MatchupUC:     matchupUC,
+		CardRepo:       cardRepo,
+		UserRepo:       userRepo,
+		DeckRepo:       deckRepo,
+		AnalyzeUC:      analyzeUC,
+		SideboardUC:    sideboardUC,
+		MulliganUC:     mulliganUC,
+		MatchupUC:      matchupUC,
 		DeckClassifyUC: deckClassifyUC,
-		AISuggester:   aiSuggester,
-		EmbedBatchUC:  embedBatchUC,
-		ResolveCardUC: resolveCardUC,
-		OTAUC:         otaUC,
-		Analytics:     tracker,
-		JWTSecret:     cfg.JWT.Secret,
-		ExpiryHours:   cfg.JWT.ExpiryHours,
+		ScoreUC:        scoreUC,
+		ImpactScoreUC:  impactScoreUC,
+		AISuggester:    aiSuggester,
+		EmbedBatchUC:   embedBatchUC,
+		ResolveCardUC:  resolveCardUC,
+		OTAUC:          otaUC,
+		Analytics:      tracker,
+		JWTSecret:      cfg.JWT.Secret,
+		ExpiryHours:    cfg.JWT.ExpiryHours,
 	})
 
 	// ── HTTP server ───────────────────────────────────────────────────────────

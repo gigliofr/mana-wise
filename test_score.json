@@ -1,0 +1,19 @@
+{
+  "decklist": [
+    {
+      "id": "sol-ring",
+      "name": "Sol Ring",
+      "cmc": 1,
+      "type_line": "Artifact",
+      "edhrec_rank": 10
+    },
+    {
+      "id": "swamp",
+      "name": "Swamp",
+      "cmc": 0,
+      "type_line": "Basic Land - Swamp",
+      "edhrec_rank": 1000
+    }
+  ],
+  "format": "commander"
+}
