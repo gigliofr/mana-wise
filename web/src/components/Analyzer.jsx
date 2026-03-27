@@ -325,6 +325,9 @@ function ManaCurvePanel({ data, messages }) {
         <div style={{ marginTop: 16 }}>
           <p style={{ fontSize: '.85rem', color: 'var(--muted)', marginBottom: 8 }}>{messages.sourceReqTitle}</p>
           <p style={{ fontSize: '.78rem', color: 'var(--muted)', marginBottom: 10 }}>{messages.sourceReqHint}</p>
+          <p style={{ fontSize: '.78rem', color: 'var(--muted)', marginBottom: 10 }}>
+            {messages.sourceReqCountedLands(data.land_count, data.ideal_land_count)}
+          </p>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.86rem' }}>
               <thead>
