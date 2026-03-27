@@ -30,6 +30,10 @@ type ManaAnalysis struct {
 	Distribution      []CMCBucket           `json:"distribution"`
 	LandCount         int                   `json:"land_count"`
 	IdealLandCount    int                   `json:"ideal_land_count"`
+	ManaProducerCount int                   `json:"mana_producer_count,omitempty"`
+	CurrentTotalSources int                 `json:"current_total_sources,omitempty"`
+	TargetTotalSources  int                 `json:"target_total_sources,omitempty"`
+	TotalSourceGap      int                 `json:"total_source_gap,omitempty"`
 	ColorDistribution map[string]int        `json:"color_distribution"`
 	// PipDistribution counts how many coloured pips appear across all non-land mana costs.
 	// Keys are single-letter colour codes: W, U, B, R, G, C.

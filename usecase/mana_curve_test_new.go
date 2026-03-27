@@ -8,10 +8,10 @@ import (
 
 func TestGetManaProducingColors_LlanowarElves(t *testing.T) {
 	card := &domain.Card{
-		Name:      "Llanowar Elves",
+		Name:       "Llanowar Elves",
 		OracleText: "{T}: Add {G}.",
 	}
-	colors := getManaProducingColors(card)
+	colors := getManaProducingColors(card, map[string]bool{"G": true})
 	if len(colors) != 1 || colors[0] != "G" {
 		t.Errorf("Expected [G], got %v", colors)
 	}
@@ -22,7 +22,7 @@ func TestGetManaProducingColors_DualMana(t *testing.T) {
 		Name:       "Archdruid",
 		OracleText: "{T}: Add {W}, {U}, or {B}.",
 	}
-	colors := getManaProducingColors(card)
+	colors := getManaProducingColors(card, map[string]bool{"W": true, "U": true, "B": true})
 	if len(colors) != 3 {
 		t.Errorf("Expected 3 colors, got %d: %v", len(colors), colors)
 	}
@@ -33,7 +33,7 @@ func TestGetManaProducingColors_NoMana(t *testing.T) {
 		Name:       "Lightning Bolt",
 		OracleText: "Lightning Bolt deals 3 damage to any target.",
 	}
-	colors := getManaProducingColors(card)
+	colors := getManaProducingColors(card, map[string]bool{"R": true})
 	if len(colors) != 0 {
 		t.Errorf("Expected [], got %v", colors)
 	}
@@ -44,7 +44,7 @@ func TestGetManaProducingColors_MultiColor(t *testing.T) {
 		Name:       "Utopia Sprawl",
 		OracleText: "Enchant Forest\nWhenever a player plays a land, that player adds {G}.",
 	}
-	colors := getManaProducingColors(card)
+	colors := getManaProducingColors(card, map[string]bool{"G": true})
 	if len(colors) != 1 || colors[0] != "G" {
 		t.Errorf("Expected [G], got %v", colors)
 	}
@@ -55,7 +55,7 @@ func TestGetManaProducingColors_BlackGreen(t *testing.T) {
 		Name:       "Cabal Archon",
 		OracleText: "{T}, Pay 1 life: Add {B} or {G}.",
 	}
-	colors := getManaProducingColors(card)
+	colors := getManaProducingColors(card, map[string]bool{"B": true, "G": true})
 	if len(colors) != 2 {
 		t.Errorf("Expected 2 colors, got %d: %v", len(colors), colors)
 	}
@@ -89,21 +89,7 @@ func TestAnalyzeManaCurve_CountsCreatureMana(t *testing.T) {
 
 	result := AnalyzeManaCurve(cards, quantities, "modern")
 
-	// Should count both creatures (2 Elves) and lands (3 Forests) as G sources
-	// So current source for G should be 5
-	var gSource *domain.ColorSourceRequirement
-	for _, sr := range result.SourceRequirements {
-		if sr.Color == "G" {
-			gSource = &sr
-			break
-		}
-	}
-
-	if gSource == nil {
-		t.Fatal("G source not found in requirements")
-	}
-
-	if gSource.Current != 5 {
-		t.Errorf("Expected G current sources to be 5 (2 Elves + 3 Forests), got %d", gSource.Current)
+	if result.CurrentTotalSources != 5 {
+		t.Errorf("Expected total current sources to be 5 (2 Elves + 3 Forests), got %d", result.CurrentTotalSources)
 	}
 }

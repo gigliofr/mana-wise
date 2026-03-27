@@ -309,7 +309,12 @@ function scoreColor(score) {
 
 function ManaCurvePanel({ data, messages }) {
   const maxCount = Math.max(...data.distribution.map(b => b.count), 1)
-  const sourceRows = (data.source_requirements || []).filter(r => (r.required || 0) > 0)
+  const totalSourceRow = {
+    label: messages.sourceTotalLabel,
+    current: data.current_total_sources ?? data.land_count ?? 0,
+    required: data.target_total_sources ?? data.ideal_land_count ?? 0,
+    gap: data.total_source_gap ?? ((data.target_total_sources ?? data.ideal_land_count ?? 0) - (data.current_total_sources ?? data.land_count ?? 0)),
+  }
 
   function sourceStatus(row) {
     if (row.gap <= 0) return { label: messages.rowGood, color: 'var(--green)' }
@@ -321,18 +326,18 @@ function ManaCurvePanel({ data, messages }) {
     <div>
       <ManaCurveChart distribution={data.distribution} maxCount={maxCount} messages={messages} />
 
-      {sourceRows.length > 0 && (
+      {(totalSourceRow.required || 0) > 0 && (
         <div style={{ marginTop: 16 }}>
           <p style={{ fontSize: '.85rem', color: 'var(--muted)', marginBottom: 8 }}>{messages.sourceReqTitle}</p>
           <p style={{ fontSize: '.78rem', color: 'var(--muted)', marginBottom: 10 }}>{messages.sourceReqHint}</p>
           <p style={{ fontSize: '.78rem', color: 'var(--muted)', marginBottom: 10 }}>
-            {messages.sourceReqCountedLands(data.land_count, data.ideal_land_count)}
+            {messages.sourceReqCountedLands(data.land_count, data.mana_producer_count || 0, data.ideal_land_count)}
           </p>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.86rem' }}>
               <thead>
                 <tr>
-                  <th style={thStyle}>{messages.sourceColor}</th>
+                  <th style={thStyle}>{messages.sourceMetric}</th>
                   <th style={thStyle}>{messages.sourceCurrent}</th>
                   <th style={thStyle}>{messages.sourceRequired}</th>
                   <th style={thStyle}>{messages.sourceGap}</th>
@@ -340,18 +345,18 @@ function ManaCurvePanel({ data, messages }) {
                 </tr>
               </thead>
               <tbody>
-                {sourceRows.map((row, idx) => {
-                  const status = sourceStatus(row)
+                {(() => {
+                  const status = sourceStatus(totalSourceRow)
                   return (
-                    <tr key={`${row.color}-${idx}`}>
-                      <td style={tdStyle}>{row.color}</td>
-                      <td style={tdStyle}>{row.current}</td>
-                      <td style={tdStyle}>{row.required}</td>
-                      <td style={{ ...tdStyle, color: row.gap > 0 ? 'var(--red)' : 'var(--green)', fontWeight: 600 }}>{row.gap}</td>
+                    <tr>
+                      <td style={tdStyle}>{totalSourceRow.label}</td>
+                      <td style={tdStyle}>{totalSourceRow.current}</td>
+                      <td style={tdStyle}>{totalSourceRow.required}</td>
+                      <td style={{ ...tdStyle, color: totalSourceRow.gap > 0 ? 'var(--red)' : 'var(--green)', fontWeight: 600 }}>{totalSourceRow.gap}</td>
                       <td style={{ ...tdStyle, color: status.color, fontWeight: 600 }}>{status.label}</td>
                     </tr>
                   )
-                })}
+                })()}
               </tbody>
             </table>
           </div>

@@ -174,18 +174,15 @@ func TestAnalyzeManaCurve_SourceRequirementsExposeGap(t *testing.T) {
 
 	result := usecase.AnalyzeManaCurve(cards, qtys, "modern")
 
-	var blue *domain.ColorSourceRequirement
-	for i := range result.SourceRequirements {
-		if result.SourceRequirements[i].Color == "U" {
-			blue = &result.SourceRequirements[i]
-			break
-		}
+	if len(result.SourceRequirements) != 1 {
+		t.Fatalf("expected single aggregate source requirement row, got %d", len(result.SourceRequirements))
 	}
-	if blue == nil {
-		t.Fatal("expected U source requirement")
+	total := result.SourceRequirements[0]
+	if total.Color != "TOTAL" {
+		t.Fatalf("expected TOTAL source requirement row, got %q", total.Color)
 	}
-	if blue.Required <= blue.Current {
-		t.Fatalf("expected blue source gap, got current=%d required=%d", blue.Current, blue.Required)
+	if total.Required <= total.Current {
+		t.Fatalf("expected positive aggregate gap, got current=%d required=%d", total.Current, total.Required)
 	}
 }
 
@@ -244,21 +241,43 @@ func TestAnalyzeManaCurve_FetchLandsCountAsFlexibleSources(t *testing.T) {
 
 	result := usecase.AnalyzeManaCurve(cards, q, "standard")
 
-	blackCurrent := 0
-	greenCurrent := 0
-	for _, req := range result.SourceRequirements {
-		if req.Color == "B" {
-			blackCurrent = req.Current
-		}
-		if req.Color == "G" {
-			greenCurrent = req.Current
-		}
+	if result.LandCount != 16 {
+		t.Fatalf("expected 16 lands counted, got %d", result.LandCount)
+	}
+	if result.CurrentTotalSources != result.LandCount {
+		t.Fatalf("expected current sources to match lands when no non-land producers exist, got current=%d lands=%d", result.CurrentTotalSources, result.LandCount)
+	}
+}
+
+func TestAnalyzeManaCurve_IncludesManaProducingCreaturesInCurrentSources(t *testing.T) {
+	cards := []*domain.Card{
+		{ID: "forest", Name: "Forest", TypeLine: "Basic Land - Forest"},
+		{ID: "swamp", Name: "Swamp", TypeLine: "Basic Land - Swamp"},
+		{
+			ID:         "llanowar",
+			Name:       "Llanowar Elves",
+			TypeLine:   "Creature — Elf Druid",
+			CMC:        1,
+			ManaCost:   "{G}",
+			OracleText: "{T}: Add {G}.",
+		},
 	}
 
-	if blackCurrent < 8 {
-		t.Fatalf("expected black sources to include flexible lands, got %d", blackCurrent)
+	q := map[string]int{
+		"forest":   10,
+		"swamp":    10,
+		"llanowar": 4,
 	}
-	if greenCurrent < 12 {
-		t.Fatalf("expected green sources to include flexible lands, got %d", greenCurrent)
+
+	result := usecase.AnalyzeManaCurve(cards, q, "standard")
+
+	if result.LandCount != 20 {
+		t.Fatalf("expected 20 lands, got %d", result.LandCount)
+	}
+	if result.ManaProducerCount != 4 {
+		t.Fatalf("expected 4 mana-producing creatures, got %d", result.ManaProducerCount)
+	}
+	if result.CurrentTotalSources != 24 {
+		t.Fatalf("expected current total sources 24, got %d", result.CurrentTotalSources)
 	}
 }

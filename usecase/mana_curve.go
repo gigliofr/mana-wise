@@ -64,6 +64,7 @@ func AnalyzeManaCurve(cards []*domain.Card, quantities map[string]int, format st
 	// Track mana demand by turn and currently available coloured sources.
 	demandByTurn := map[string]map[int]int{}
 	currentSources := map[string]int{"W": 0, "U": 0, "B": 0, "R": 0, "G": 0, "C": 0}
+	manaProducerCount := 0
 
 	for _, card := range cards {
 		qty := quantities[card.ID]
@@ -120,19 +121,19 @@ func AnalyzeManaCurve(cards []*domain.Card, quantities map[string]int, format st
 		}
 	}
 
-	// Count creature and artifact sources (e.g. Llanowar Elves, mana dorks, etc.)
+	// Count non-land permanent mana sources (e.g. Llanowar Elves, mana rocks, mana auras)
 	for _, card := range cards {
-		// Skip lands (already counted) and only process creatures/artifacts that tap for mana
-		if isLandCardForCurve(card) {
+		if isLandCardForCurve(card) || !isPermanentManaSourceCandidate(card) {
 			continue
 		}
 		qty := quantities[card.ID]
 		if qty == 0 {
 			qty = 1
 		}
-		
-		manaColors := getManaProducingColors(card)
+
+		manaColors := getManaProducingColors(card, deckDemandColors)
 		if len(manaColors) > 0 {
+			manaProducerCount += qty
 			for _, c := range manaColors {
 				currentSources[c] += qty
 			}
@@ -147,23 +148,22 @@ func AnalyzeManaCurve(cards []*domain.Card, quantities map[string]int, format st
 
 	// Ideal land count based on format ratio
 	result.IdealLandCount = int(math.Round(float64(params.deckSize) * params.idealLandRatio))
+	result.ManaProducerCount = manaProducerCount
+	result.CurrentTotalSources = landCount + manaProducerCount
+	result.TargetTotalSources = result.IdealLandCount
+	result.TotalSourceGap = result.TargetTotalSources - result.CurrentTotalSources
 
 	// Build sorted distribution slice
 	for cmc := 0; cmc <= 6; cmc++ {
 		result.Distribution = append(result.Distribution, domain.CMCBucket{CMC: cmc, Count: buckets[cmc]})
 	}
 
-	for _, c := range []string{"W", "U", "B", "R", "G", "C"} {
-		required := requiredSourcesForColor(demandByTurn[c], params.deckSize, result.IdealLandCount)
-		current := currentSources[c]
-		gap := required - current
-		result.SourceRequirements = append(result.SourceRequirements, domain.ColorSourceRequirement{
-			Color:    c,
-			Required: required,
-			Current:  current,
-			Gap:      gap,
-		})
-	}
+	result.SourceRequirements = append(result.SourceRequirements, domain.ColorSourceRequirement{
+		Color:    "TOTAL",
+		Required: result.TargetTotalSources,
+		Current:  result.CurrentTotalSources,
+		Gap:      result.TotalSourceGap,
+	})
 
 	// Generate suggestions
 	result.Suggestions = generateManaSuggestions(result, params, landCount, flexibleSourceCount)
@@ -180,6 +180,20 @@ func isLandCard(card *domain.Card) bool {
 
 func isLandCardForCurve(card *domain.Card) bool {
 	return isLandCard(card)
+}
+
+func isPermanentManaSourceCandidate(card *domain.Card) bool {
+	if card == nil {
+		return false
+	}
+	tl := strings.ToLower(strings.TrimSpace(card.TypeLine))
+	if tl == "" {
+		return false
+	}
+	return strings.Contains(tl, "creature") || strings.Contains(tl, "creatura") ||
+		strings.Contains(tl, "artifact") || strings.Contains(tl, "artefatto") ||
+		strings.Contains(tl, "enchantment") || strings.Contains(tl, "incantesimo") ||
+		strings.Contains(tl, "planeswalker") || strings.Contains(tl, "battle")
 }
 
 func landSourceColors(card *domain.Card, deckDemandColors map[string]bool) []string {
@@ -272,31 +286,40 @@ func isFlexibleFixingLand(card *domain.Card) bool {
 	return false
 }
 
-// getManaProducingColors extracts the colors of mana that a card produces.
-// It looks for patterns like "{T}: Add {W}" or "{T}: Add {G}" in OracleText.
-// Returns a slice of color strings (e.g., []string{"G"} for Llanowar Elves).
-func getManaProducingColors(card *domain.Card) []string {
+// getManaProducingColors extracts the colours of mana a non-land permanent can produce.
+func getManaProducingColors(card *domain.Card, deckDemandColors map[string]bool) []string {
 	if card == nil || card.OracleText == "" {
 		return nil
 	}
 
-	text := card.OracleText
+	text := strings.ToUpper(card.OracleText)
 	seen := map[string]bool{}
 
-	// Look for mana ability patterns like "{T}: Add {W}" or "{T}: Add {G}, {W}", etc.
-	// Use a regex to find all "{X}" patterns that follow "Add"
-	addPattern := regexp.MustCompile(`(?i)add\s+(\{[WUBRG]\}(?:\s*,\s*\{[WUBRG]\})*)`)
-	matches := addPattern.FindAllStringSubmatch(text, -1)
+	// Explicit symbols after an "add" clause, e.g. "{T}: Add {G}".
+	addSymbolPattern := regexp.MustCompile(`ADD[^\n\r]*?(\{[WUBRGC]\})`)
+	if addSymbolPattern.MatchString(text) {
+		colorPattern := regexp.MustCompile(`\{([WUBRGC])\}`)
+		for _, m := range colorPattern.FindAllStringSubmatch(text, -1) {
+			if len(m) > 1 {
+				seen[m[1]] = true
+			}
+		}
+	}
 
-	for _, match := range matches {
-		if len(match) > 1 {
-			// Extract individual color symbols from "{W}, {U}" etc.
-			colorPattern := regexp.MustCompile(`\{([WUBRG])\}`)
-			colorMatches := colorPattern.FindAllStringSubmatch(match[1], -1)
-			for _, colorMatch := range colorMatches {
-				if len(colorMatch) > 1 {
-					seen[strings.ToUpper(colorMatch[1])] = true
-				}
+	// Generic any-colour producers, e.g. "Add one mana of any color".
+	if strings.Contains(text, "ADD ONE MANA OF ANY COLOR") || strings.Contains(text, "ADD ONE MANA OF ANY COLOUR") {
+		for _, c := range []string{"W", "U", "B", "R", "G"} {
+			if deckDemandColors[c] {
+				seen[c] = true
+			}
+		}
+	}
+
+	// "Add one mana of any type that a land you control could produce".
+	if strings.Contains(text, "ADD ONE MANA OF ANY TYPE") && strings.Contains(text, "LAND YOU CONTROL COULD PRODUCE") {
+		for _, c := range []string{"W", "U", "B", "R", "G"} {
+			if deckDemandColors[c] {
+				seen[c] = true
 			}
 		}
 	}
@@ -429,11 +452,15 @@ func generateManaSuggestions(analysis domain.ManaAnalysis, params formatParams, 
 	}
 
 	for _, req := range analysis.SourceRequirements {
-		if req.Gap >= 2 && req.Color != "C" {
+		if req.Gap >= 2 {
+			reason := fmt.Sprintf("You are short on mana sources (%d current, %d target). Add lands and mana producers to improve consistency.", req.Current, req.Required)
+			if req.Color != "TOTAL" {
+				reason = fmt.Sprintf("You are short on %s sources (%d current, %d required). Add duals/basics to improve consistency.", req.Color, req.Current, req.Required)
+			}
 			sug = append(sug, domain.ManaCurveSuggestion{
 				Type:    "add",
 				CMC:     0,
-				Reason:  fmt.Sprintf("You are short on %s sources (%d current, %d required). Add duals/basics to improve consistency.", req.Color, req.Current, req.Required),
+				Reason:  reason,
 				Urgency: urgency(req.Gap, 2, 4),
 			})
 		}
