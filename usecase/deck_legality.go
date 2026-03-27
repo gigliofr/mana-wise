@@ -165,8 +165,10 @@ func maxCopiesAllowed(card *domain.Card, format, status string) int {
 }
 
 func isBasicLand(card *domain.Card) bool {
-	tl := strings.ToLower(card.TypeLine)
-	return strings.Contains(tl, "basic") && strings.Contains(tl, "land")
+	if card == nil {
+		return false
+	}
+	return card.IsBasicLand()
 }
 
 func allowsAnyNumberCopies(card *domain.Card) bool {

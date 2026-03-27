@@ -132,20 +132,14 @@ func AnalyzeManaCurve(cards []*domain.Card, quantities map[string]int, format st
 }
 
 func isLandCard(card *domain.Card) bool {
-	t := strings.ToLower(card.TypeLine)
-	return strings.Contains(t, "land")
+	if card == nil {
+		return false
+	}
+	return card.IsLand()
 }
 
 func isLandCardForCurve(card *domain.Card) bool {
-	if isLandCard(card) {
-		return true
-	}
-	for _, face := range card.Faces {
-		if strings.Contains(strings.ToLower(face.TypeLine), "land") {
-			return true
-		}
-	}
-	return false
+	return isLandCard(card)
 }
 
 func landSourceColors(card *domain.Card) []string {
@@ -184,15 +178,15 @@ func landSourceColors(card *domain.Card) []string {
 	if len(seen) == 0 {
 		name := strings.ToLower(card.Name)
 		switch {
-		case strings.Contains(name, "plains"):
+		case strings.Contains(name, "plains") || strings.Contains(name, "pianura"):
 			seen["W"] = true
-		case strings.Contains(name, "island"):
+		case strings.Contains(name, "island") || strings.Contains(name, "isola"):
 			seen["U"] = true
-		case strings.Contains(name, "swamp"):
+		case strings.Contains(name, "swamp") || strings.Contains(name, "palude"):
 			seen["B"] = true
-		case strings.Contains(name, "mountain"):
+		case strings.Contains(name, "mountain") || strings.Contains(name, "montagna"):
 			seen["R"] = true
-		case strings.Contains(name, "forest"):
+		case strings.Contains(name, "forest") || strings.Contains(name, "foresta"):
 			seen["G"] = true
 		}
 	}

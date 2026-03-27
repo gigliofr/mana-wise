@@ -5,6 +5,18 @@ import (
 	"time"
 )
 
+var landTypeKeywords = []string{"land", "terra", "terrain", "lande", "tierra"}
+var basicTypeKeywords = []string{"basic", "base", "basique", "basico"}
+
+func containsAnyKeyword(s string, keywords []string) bool {
+	for _, kw := range keywords {
+		if strings.Contains(s, kw) {
+			return true
+		}
+	}
+	return false
+}
+
 // PriceSnapshot represents a historical price point for a card.
 type PriceSnapshot struct {
 	Date     time.Time `bson:"date"      json:"date"`
@@ -72,17 +84,24 @@ func (c *Card) LatestPrice() *PriceSnapshot {
 
 // IsBasicLand returns true if the card is a basic land.
 func (c *Card) IsBasicLand() bool {
-	return strings.Contains(c.TypeLine, "Basic Land")
+	tl := strings.ToLower(strings.TrimSpace(c.TypeLine))
+	if tl == "" {
+		return false
+	}
+	return containsAnyKeyword(tl, basicTypeKeywords) && containsAnyKeyword(tl, landTypeKeywords)
 }
 
 // IsLand returns true if the card is a land or a MDFC (modal double-faced card) with a land on the back.
 func (c *Card) IsLand() bool {
-	if strings.Contains(c.TypeLine, "Land") {
+	tl := strings.ToLower(strings.TrimSpace(c.TypeLine))
+	if containsAnyKeyword(tl, landTypeKeywords) {
 		return true
 	}
-	// Check for MDFC (modal_dfc) with a land face on the back
-	if c.Layout == "modal_dfc" && len(c.Faces) > 1 {
-		return strings.Contains(c.Faces[1].TypeLine, "Land")
+	// Check all faces for MDFC and split cards where one side is a land.
+	for _, face := range c.Faces {
+		if containsAnyKeyword(strings.ToLower(strings.TrimSpace(face.TypeLine)), landTypeKeywords) {
+			return true
+		}
 	}
 	return false
 }

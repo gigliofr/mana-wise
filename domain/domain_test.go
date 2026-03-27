@@ -135,3 +135,47 @@ func TestNormalizeFormat(t *testing.T) {
 		}
 	}
 }
+
+func TestCard_IsLand_MultilingualTypeLines(t *testing.T) {
+	cases := []struct {
+		name     string
+		typeLine string
+		want     bool
+	}{
+		{name: "English land", typeLine: "Basic Land - Forest", want: true},
+		{name: "Italian land", typeLine: "Terra Base - Palude", want: true},
+		{name: "French land", typeLine: "Terrain de base - Foret", want: true},
+		{name: "Non land", typeLine: "Creature - Elf Druid", want: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			card := &domain.Card{TypeLine: tc.typeLine}
+			if got := card.IsLand(); got != tc.want {
+				t.Fatalf("IsLand() = %v, want %v for type line %q", got, tc.want, tc.typeLine)
+			}
+		})
+	}
+}
+
+func TestCard_IsBasicLand_MultilingualTypeLines(t *testing.T) {
+	cases := []struct {
+		name     string
+		typeLine string
+		want     bool
+	}{
+		{name: "English basic land", typeLine: "Basic Land - Forest", want: true},
+		{name: "Italian basic land", typeLine: "Terra Base - Palude", want: true},
+		{name: "Non basic land", typeLine: "Land", want: false},
+		{name: "Non land", typeLine: "Sorcery", want: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			card := &domain.Card{TypeLine: tc.typeLine}
+			if got := card.IsBasicLand(); got != tc.want {
+				t.Fatalf("IsBasicLand() = %v, want %v for type line %q", got, tc.want, tc.typeLine)
+			}
+		})
+	}
+}

@@ -188,3 +188,30 @@ func TestAnalyzeManaCurve_SourceRequirementsExposeGap(t *testing.T) {
 		t.Fatalf("expected blue source gap, got current=%d required=%d", blue.Current, blue.Required)
 	}
 }
+
+func TestAnalyzeManaCurve_CountsItalianAndNonBasicLands(t *testing.T) {
+	cards := []*domain.Card{
+		{ID: "forest", Name: "Foresta", TypeLine: "Terra Base - Foresta"},
+		{ID: "swamp", Name: "Palude", TypeLine: "Terra Base - Palude"},
+		{ID: "gallery", Name: "Galleria di Fuga", TypeLine: "Terra"},
+		{ID: "wilds", Name: "Terre Selvagge in Evoluzione", TypeLine: "Terra"},
+		{ID: "elf", Name: "Elfi di Llanowar", CMC: 1, TypeLine: "Creatura - Elfo Druido", ManaCost: "{G}"},
+	}
+
+	q := map[string]int{
+		"forest":  12,
+		"swamp":  4,
+		"gallery": 4,
+		"wilds":  4,
+		"elf":    4,
+	}
+
+	result := usecase.AnalyzeManaCurve(cards, q, "standard")
+
+	if result.LandCount != 24 {
+		t.Fatalf("expected 24 lands (12+4+4+4), got %d", result.LandCount)
+	}
+	if result.TotalCards != 28 {
+		t.Fatalf("expected total cards 28, got %d", result.TotalCards)
+	}
+}

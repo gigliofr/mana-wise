@@ -102,15 +102,15 @@ func detectColors(entries map[string]int, cardMap map[string]*domain.Card) []str
 	for name := range entries {
 		n := strings.ToLower(strings.TrimSpace(name))
 		switch {
-		case strings.Contains(n, "plains"):
+		case strings.Contains(n, "plains") || strings.Contains(n, "pianura"):
 			set["W"] = true
-		case strings.Contains(n, "island"):
+		case strings.Contains(n, "island") || strings.Contains(n, "isola"):
 			set["U"] = true
-		case strings.Contains(n, "swamp"):
+		case strings.Contains(n, "swamp") || strings.Contains(n, "palude"):
 			set["B"] = true
-		case strings.Contains(n, "mountain"):
+		case strings.Contains(n, "mountain") || strings.Contains(n, "montagna"):
 			set["R"] = true
-		case strings.Contains(n, "forest"):
+		case strings.Contains(n, "forest") || strings.Contains(n, "foresta"):
 			set["G"] = true
 		}
 	}

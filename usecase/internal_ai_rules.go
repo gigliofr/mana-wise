@@ -233,7 +233,7 @@ func urgencyScore(urgency string) int {
 func topHighCMCNonlands(cards []*domain.Card, n int) []string {
 	var nonlands []*domain.Card
 	for _, c := range cards {
-		if c != nil && !strings.Contains(strings.ToLower(c.TypeLine), "land") {
+		if c != nil && !c.IsLand() {
 			nonlands = append(nonlands, c)
 		}
 	}
@@ -261,9 +261,8 @@ func topLandsToCut(cards []*domain.Card, n int) []string {
 		if c == nil {
 			continue
 		}
-		tl := strings.ToLower(c.TypeLine)
-		if strings.Contains(tl, "land") {
-			if strings.Contains(tl, "basic") {
+		if c.IsLand() {
+			if c.IsBasicLand() {
 				basic = append(basic, c)
 			} else {
 				nonbasic = append(nonbasic, c)
@@ -306,7 +305,7 @@ func filterNonInteractiveCards(cards []*domain.Card, n int) []string {
 	}
 	var nonInteractive []*domain.Card
 	for _, c := range cards {
-		if c == nil || strings.Contains(strings.ToLower(c.TypeLine), "land") {
+		if c == nil || c.IsLand() {
 			continue
 		}
 		ot := strings.ToLower(c.OracleText)
