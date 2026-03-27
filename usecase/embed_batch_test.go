@@ -3,6 +3,7 @@ package usecase_test
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 
 	"github.com/manawise/api/domain"
@@ -10,6 +11,7 @@ import (
 )
 
 type mockCardRepo struct {
+	mu         sync.Mutex
 	cards      []*domain.Card
 	updatedIDs []string
 	vectors    map[string][]float64
@@ -40,6 +42,8 @@ func (m *mockCardRepo) UpdateEmbedding(ctx context.Context, id string, vector []
 	if id == m.failID {
 		return errors.New("update failed")
 	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.vectors == nil {
 		m.vectors = map[string][]float64{}
 	}
