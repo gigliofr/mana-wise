@@ -215,3 +215,50 @@ func TestAnalyzeManaCurve_CountsItalianAndNonBasicLands(t *testing.T) {
 		t.Fatalf("expected total cards 28, got %d", result.TotalCards)
 	}
 }
+
+func TestAnalyzeManaCurve_FetchLandsCountAsFlexibleSources(t *testing.T) {
+	cards := []*domain.Card{
+		{ID: "swamp", Name: "Swamp", TypeLine: "Basic Land - Swamp"},
+		{ID: "forest", Name: "Forest", TypeLine: "Basic Land - Forest"},
+		{
+			ID:         "wilds",
+			Name:       "Evolving Wilds",
+			TypeLine:   "Land",
+			OracleText: "{T}, Sacrifice Evolving Wilds: Search your library for a basic land card, put it onto the battlefield tapped, then shuffle.",
+		},
+		{
+			ID:       "bgspell",
+			Name:     "BG Spell",
+			CMC:      2,
+			TypeLine: "Creature",
+			ManaCost: "{B}{G}",
+		},
+	}
+
+	q := map[string]int{
+		"swamp":  4,
+		"forest": 8,
+		"wilds":  4,
+		"bgspell": 4,
+	}
+
+	result := usecase.AnalyzeManaCurve(cards, q, "standard")
+
+	blackCurrent := 0
+	greenCurrent := 0
+	for _, req := range result.SourceRequirements {
+		if req.Color == "B" {
+			blackCurrent = req.Current
+		}
+		if req.Color == "G" {
+			greenCurrent = req.Current
+		}
+	}
+
+	if blackCurrent < 8 {
+		t.Fatalf("expected black sources to include flexible lands, got %d", blackCurrent)
+	}
+	if greenCurrent < 12 {
+		t.Fatalf("expected green sources to include flexible lands, got %d", greenCurrent)
+	}
+}

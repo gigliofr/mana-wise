@@ -16,6 +16,11 @@ type formatParams struct {
 	curveTarget    []int   // ideal number of cards per CMC slot (1-6+)
 }
 
+type landEntry struct {
+	card *domain.Card
+	qty  int
+}
+
 var formatDefaults = map[string]formatParams{
 	"commander": {deckSize: 100, idealLandRatio: 0.37, maxCMC: 5, curveTarget: []int{0, 12, 15, 18, 12, 8, 5}},
 	"modern":    {deckSize: 60, idealLandRatio: 0.38, maxCMC: 4, curveTarget: []int{0, 10, 14, 10, 8, 4, 2}},
@@ -50,6 +55,10 @@ func AnalyzeManaCurve(cards []*domain.Card, quantities map[string]int, format st
 	totalCards := 0
 	totalCMC := 0.0
 	landCount := 0
+	landEntries := make([]landEntry, 0)
+
+	deckDemandColors := map[string]bool{"W": false, "U": false, "B": false, "R": false, "G": false}
+	flexibleSourceCount := 0
 
 	// Track mana demand by turn and currently available coloured sources.
 	demandByTurn := map[string]map[int]int{}
@@ -65,9 +74,7 @@ func AnalyzeManaCurve(cards []*domain.Card, quantities map[string]int, format st
 		isLand := isLandCardForCurve(card)
 		if isLand {
 			landCount += qty
-			for _, c := range landSourceColors(card) {
-				currentSources[c] += qty
-			}
+			landEntries = append(landEntries, landEntry{card: card, qty: qty})
 		} else {
 			bucketKey := cardCMC
 			if bucketKey > 6 {
@@ -88,6 +95,9 @@ func AnalyzeManaCurve(cards []*domain.Card, quantities map[string]int, format st
 			pips := countPips(card.ManaCost)
 			for pip, count := range pips {
 				result.PipDistribution[pip] += count * qty
+				if pip == "W" || pip == "U" || pip == "B" || pip == "R" || pip == "G" {
+					deckDemandColors[pip] = true
+				}
 			}
 			turn := manaDemandTurn(cardCMC)
 			for pip, count := range pips {
@@ -96,6 +106,15 @@ func AnalyzeManaCurve(cards []*domain.Card, quantities map[string]int, format st
 				}
 				demandByTurn[pip][turn] += count * qty
 			}
+		}
+	}
+
+	for _, entry := range landEntries {
+		if isFlexibleFixingLand(entry.card) {
+			flexibleSourceCount += entry.qty
+		}
+		for _, c := range landSourceColors(entry.card, deckDemandColors) {
+			currentSources[c] += entry.qty
 		}
 	}
 
@@ -126,7 +145,7 @@ func AnalyzeManaCurve(cards []*domain.Card, quantities map[string]int, format st
 	}
 
 	// Generate suggestions
-	result.Suggestions = generateManaSuggestions(result, params, landCount)
+	result.Suggestions = generateManaSuggestions(result, params, landCount, flexibleSourceCount)
 
 	return result
 }
@@ -142,11 +161,20 @@ func isLandCardForCurve(card *domain.Card) bool {
 	return isLandCard(card)
 }
 
-func landSourceColors(card *domain.Card) []string {
+func landSourceColors(card *domain.Card, deckDemandColors map[string]bool) []string {
 	if !isLandCardForCurve(card) {
 		return nil
 	}
 	seen := map[string]bool{}
+
+	if isFlexibleFixingLand(card) {
+		for _, c := range []string{"W", "U", "B", "R", "G"} {
+			if deckDemandColors[c] {
+				seen[c] = true
+			}
+		}
+	}
+
 	for _, c := range card.ColorIdentity {
 		cc := strings.ToUpper(strings.TrimSpace(c))
 		if isColour(cc) {
@@ -200,6 +228,27 @@ func landSourceColors(card *domain.Card) []string {
 		}
 	}
 	return out
+}
+
+func isFlexibleFixingLand(card *domain.Card) bool {
+	if card == nil || !card.IsLand() {
+		return false
+	}
+	text := strings.ToLower(card.OracleText)
+	if text == "" {
+		return false
+	}
+	if strings.Contains(text, "search your library for a basic land") {
+		return true
+	}
+	if strings.Contains(text, "search your library for a plains") ||
+		strings.Contains(text, "search your library for an island") ||
+		strings.Contains(text, "search your library for a swamp") ||
+		strings.Contains(text, "search your library for a mountain") ||
+		strings.Contains(text, "search your library for a forest") {
+		return true
+	}
+	return false
 }
 
 func manaDemandTurn(cmc int) int {
@@ -257,7 +306,7 @@ func requiredSourcesForPips(pips, turn, deckSize int) int {
 	return scaled
 }
 
-func generateManaSuggestions(analysis domain.ManaAnalysis, params formatParams, landCount int) []domain.ManaCurveSuggestion {
+func generateManaSuggestions(analysis domain.ManaAnalysis, params formatParams, landCount int, flexibleSourceCount int) []domain.ManaCurveSuggestion {
 	var sug []domain.ManaCurveSuggestion
 
 	// Land count check
@@ -327,6 +376,15 @@ func generateManaSuggestions(analysis domain.ManaAnalysis, params formatParams, 
 				Urgency: urgency(req.Gap, 2, 4),
 			})
 		}
+	}
+
+	if flexibleSourceCount >= 4 {
+		sug = append(sug, domain.ManaCurveSuggestion{
+			Type:    "add",
+			CMC:     0,
+			Reason:  fmt.Sprintf("Detected %d flexible fixing lands. They improve colour consistency and support land-trigger synergies; evaluate them as multi-purpose curve enablers, not just colourless slots.", flexibleSourceCount),
+			Urgency: "minor",
+		})
 	}
 
 	return sug
