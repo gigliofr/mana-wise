@@ -74,6 +74,10 @@ func (f *analyzeMockFetcher) GetCardByFuzzyName(ctx context.Context, name string
 	return nil, context.Canceled
 }
 
+func (f *analyzeMockFetcher) GetCardBySetCollector(ctx context.Context, setCode, collectorNumber string) (*scryfall.ScryfallCard, error) {
+	return nil, context.Canceled
+}
+
 type analyzeMockUserRepo struct {
 	checkAndIncrementCalls int
 	lastUserID             string

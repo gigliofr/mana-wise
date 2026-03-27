@@ -136,6 +136,12 @@ func (c *Client) GetCardByFuzzyName(ctx context.Context, name string) (*Scryfall
 	return c.fetchCard(ctx, endpoint)
 }
 
+// GetCardBySetCollector fetches a card by set code + collector number using /cards/{set}/{collector}.
+func (c *Client) GetCardBySetCollector(ctx context.Context, setCode, collectorNumber string) (*ScryfallCard, error) {
+	endpoint := fmt.Sprintf("%s/cards/%s/%s", c.baseURL, url.PathEscape(strings.ToLower(strings.TrimSpace(setCode))), url.PathEscape(strings.ToLower(strings.TrimSpace(collectorNumber))))
+	return c.fetchCard(ctx, endpoint)
+}
+
 // SearchCards queries /cards/search and returns a paginated result.
 func (c *Client) SearchCards(ctx context.Context, query string) (*SearchResponse, error) {
 	endpoint := fmt.Sprintf("%s/cards/search?q=%s", c.baseURL, url.QueryEscape(query))

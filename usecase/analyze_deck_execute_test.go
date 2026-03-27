@@ -12,6 +12,7 @@ import (
 type fakeCardFetcher struct {
 	exact map[string]*scryfall.ScryfallCard
 	fuzzy map[string]*scryfall.ScryfallCard
+	bySet map[string]*scryfall.ScryfallCard
 }
 
 func (f *fakeCardFetcher) GetCardByName(ctx context.Context, name string) (*scryfall.ScryfallCard, error) {
@@ -23,6 +24,14 @@ func (f *fakeCardFetcher) GetCardByName(ctx context.Context, name string) (*scry
 
 func (f *fakeCardFetcher) GetCardByFuzzyName(ctx context.Context, name string) (*scryfall.ScryfallCard, error) {
 	if c, ok := f.fuzzy[name]; ok {
+		return c, nil
+	}
+	return nil, errors.New("not found")
+}
+
+func (f *fakeCardFetcher) GetCardBySetCollector(ctx context.Context, setCode, collectorNumber string) (*scryfall.ScryfallCard, error) {
+	key := setCode + "#" + collectorNumber
+	if c, ok := f.bySet[key]; ok {
 		return c, nil
 	}
 	return nil, errors.New("not found")
@@ -128,5 +137,41 @@ func TestAnalyzeDeckExecute_LocalizedNameResolvedByFuzzy(t *testing.T) {
 	}
 	if len(repo.upsert) != 1 {
 		t.Fatalf("expected 1 upsert for fetched card, got %d", len(repo.upsert))
+	}
+}
+
+func TestAnalyzeDeckExecute_ResolvesBySetCollectorBeforeName(t *testing.T) {
+	fetcher := &fakeCardFetcher{
+		exact: map[string]*scryfall.ScryfallCard{},
+		fuzzy: map[string]*scryfall.ScryfallCard{},
+		bySet: map[string]*scryfall.ScryfallCard{
+			"eoe#276": {
+				ID:              "forest-eoe-276",
+				Name:            "Forest",
+				TypeLine:        "Basic Land - Forest",
+				Set:             "eoe",
+				CollectorNumber: "276",
+				Legalities:      map[string]string{"standard": "legal"},
+			},
+		},
+	}
+	repo := &fakeCardRepo{byName: map[string]*domain.Card{}}
+	uc := NewAnalyzeDeckUseCase(fetcher, repo, 2)
+
+	resp, err := uc.Execute(context.Background(), AnalyzeDeckRequest{
+		Decklist: "Mazzo\n12 Foresta (EOE) 276",
+		Format:   "standard",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(resp.RawCards) != 1 {
+		t.Fatalf("expected 1 resolved card entry, got %d", len(resp.RawCards))
+	}
+	if !resp.RawCards[0].IsLand() {
+		t.Fatalf("expected resolved card to be identified as land, got type line %q", resp.RawCards[0].TypeLine)
+	}
+	if resp.Result.Mana.LandCount != 12 {
+		t.Fatalf("expected land count 12, got %d", resp.Result.Mana.LandCount)
 	}
 }

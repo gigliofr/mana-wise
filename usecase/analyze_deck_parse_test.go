@@ -20,8 +20,14 @@ func TestParseDecklist_MTGAArenaItalianFormat(t *testing.T) {
 	if entries[0].qty != 4 || entries[0].name != "Elfi di Llanowar" {
 		t.Fatalf("unexpected first entry: %+v", entries[0])
 	}
+	if entries[0].setCode != "fdn" || entries[0].collectorNumber != "227" {
+		t.Fatalf("unexpected first entry set/collector: %+v", entries[0])
+	}
 	if entries[1].qty != 12 || entries[1].name != "Foresta" {
 		t.Fatalf("unexpected second entry: %+v", entries[1])
+	}
+	if entries[1].setCode != "eoe" || entries[1].collectorNumber != "276" {
+		t.Fatalf("unexpected second entry set/collector: %+v", entries[1])
 	}
 }
 
