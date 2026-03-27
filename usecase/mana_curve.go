@@ -3,6 +3,7 @@ package usecase
 import (
 	"fmt"
 	"math"
+	"regexp"
 	"strings"
 
 	"github.com/manawise/api/domain"
@@ -109,12 +110,32 @@ func AnalyzeManaCurve(cards []*domain.Card, quantities map[string]int, format st
 		}
 	}
 
+	// Count land sources (bases and duals)
 	for _, entry := range landEntries {
 		if isFlexibleFixingLand(entry.card) {
 			flexibleSourceCount += entry.qty
 		}
 		for _, c := range landSourceColors(entry.card, deckDemandColors) {
 			currentSources[c] += entry.qty
+		}
+	}
+
+	// Count creature and artifact sources (e.g. Llanowar Elves, mana dorks, etc.)
+	for _, card := range cards {
+		// Skip lands (already counted) and only process creatures/artifacts that tap for mana
+		if isLandCardForCurve(card) {
+			continue
+		}
+		qty := quantities[card.ID]
+		if qty == 0 {
+			qty = 1
+		}
+		
+		manaColors := getManaProducingColors(card)
+		if len(manaColors) > 0 {
+			for _, c := range manaColors {
+				currentSources[c] += qty
+			}
 		}
 	}
 
@@ -249,6 +270,46 @@ func isFlexibleFixingLand(card *domain.Card) bool {
 		return true
 	}
 	return false
+}
+
+// getManaProducingColors extracts the colors of mana that a card produces.
+// It looks for patterns like "{T}: Add {W}" or "{T}: Add {G}" in OracleText.
+// Returns a slice of color strings (e.g., []string{"G"} for Llanowar Elves).
+func getManaProducingColors(card *domain.Card) []string {
+	if card == nil || card.OracleText == "" {
+		return nil
+	}
+
+	text := card.OracleText
+	seen := map[string]bool{}
+
+	// Look for mana ability patterns like "{T}: Add {W}" or "{T}: Add {G}, {W}", etc.
+	// Use a regex to find all "{X}" patterns that follow "Add"
+	addPattern := regexp.MustCompile(`(?i)add\s+(\{[WUBRG]\}(?:\s*,\s*\{[WUBRG]\})*)`)
+	matches := addPattern.FindAllStringSubmatch(text, -1)
+
+	for _, match := range matches {
+		if len(match) > 1 {
+			// Extract individual color symbols from "{W}, {U}" etc.
+			colorPattern := regexp.MustCompile(`\{([WUBRG])\}`)
+			colorMatches := colorPattern.FindAllStringSubmatch(match[1], -1)
+			for _, colorMatch := range colorMatches {
+				if len(colorMatch) > 1 {
+					seen[strings.ToUpper(colorMatch[1])] = true
+				}
+			}
+		}
+	}
+
+	// Convert to sorted slice
+	out := make([]string, 0, len(seen))
+	for _, c := range []string{"W", "U", "B", "R", "G", "C"} {
+		if seen[c] {
+			out = append(out, c)
+		}
+	}
+
+	return out
 }
 
 func manaDemandTurn(cmc int) int {
