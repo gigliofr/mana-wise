@@ -315,6 +315,29 @@ function ManaCurvePanel({ data, messages }) {
     required: data.target_total_sources ?? data.ideal_land_count ?? 0,
     gap: data.total_source_gap ?? ((data.target_total_sources ?? data.ideal_land_count ?? 0) - (data.current_total_sources ?? data.land_count ?? 0)),
   }
+  const consistencyCards = [
+    {
+      key: 'screw',
+      label: messages.manaScrewLabel,
+      value: data.mana_screw_chance ?? 0,
+      tone: 'var(--red)',
+      description: messages.landConsistencyScrew((data.mana_screw_chance ?? 0).toFixed(1)),
+    },
+    {
+      key: 'flood',
+      label: messages.manaFloodLabel,
+      value: data.mana_flood_chance ?? 0,
+      tone: 'var(--orange)',
+      description: messages.landConsistencyFlood((data.mana_flood_chance ?? 0).toFixed(1)),
+    },
+    {
+      key: 'sweet',
+      label: messages.sweetSpotLabel,
+      value: data.sweet_spot_chance ?? 0,
+      tone: 'var(--green)',
+      description: messages.landConsistencySweet((data.sweet_spot_chance ?? 0).toFixed(1)),
+    },
+  ]
 
   function sourceStatus(row) {
     if (row.gap <= 0) return { label: messages.rowGood, color: 'var(--green)' }
@@ -325,6 +348,24 @@ function ManaCurvePanel({ data, messages }) {
   return (
     <div>
       <ManaCurveChart distribution={data.distribution} maxCount={maxCount} messages={messages} />
+
+      {(data.land_sample_draws || 0) > 0 && (
+        <div style={{ marginTop: 16 }}>
+          <p style={{ fontSize: '.85rem', color: 'var(--muted)', marginBottom: 8 }}>{messages.landConsistencyTitle}</p>
+          <p style={{ fontSize: '.78rem', color: 'var(--muted)', marginBottom: 10 }}>
+            {messages.landConsistencyHint(data.land_sample_draws, data.sweet_spot_min_lands, data.sweet_spot_max_lands)}
+          </p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+            {consistencyCards.map(card => (
+              <div key={card.key} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 10, background: 'rgba(255,255,255,0.02)' }}>
+                <div style={{ fontSize: '.8rem', color: 'var(--muted)' }}>{card.label}</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 700, color: card.tone, marginTop: 4 }}>{card.value.toFixed(1)}%</div>
+                <div style={{ marginTop: 6, fontSize: '.76rem', color: 'var(--muted)' }}>{card.description}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {(totalSourceRow.required || 0) > 0 && (
         <div style={{ marginTop: 16 }}>

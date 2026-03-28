@@ -152,6 +152,7 @@ func AnalyzeManaCurve(cards []*domain.Card, quantities map[string]int, format st
 	result.CurrentTotalSources = landCount + manaProducerCount
 	result.TargetTotalSources = result.IdealLandCount
 	result.TotalSourceGap = result.TargetTotalSources - result.CurrentTotalSources
+	result.ManaScrewChance, result.ManaFloodChance, result.SweetSpotChance, result.LandSampleDraws, result.SweetSpotMinLands, result.SweetSpotMaxLands = landConsistencyModel(result.TotalCards, landCount, result.IdealLandCount)
 
 	// Build sorted distribution slice
 	for cmc := 0; cmc <= 6; cmc++ {
@@ -475,7 +476,120 @@ func generateManaSuggestions(analysis domain.ManaAnalysis, params formatParams, 
 		})
 	}
 
+	if analysis.ManaScrewChance >= 45 {
+		sug = append(sug, domain.ManaCurveSuggestion{
+			Type:    "add",
+			CMC:     0,
+			Reason:  fmt.Sprintf("High mana screw risk (%.1f%%) in the first %d draws. Increase stable mana sources or lower early pip intensity.", analysis.ManaScrewChance, analysis.LandSampleDraws),
+			Urgency: "critical",
+		})
+	} else if analysis.ManaScrewChance >= 35 {
+		sug = append(sug, domain.ManaCurveSuggestion{
+			Type:    "add",
+			CMC:     0,
+			Reason:  fmt.Sprintf("Mana screw risk is elevated (%.1f%%). Consider +1 source or smoother early curve.", analysis.ManaScrewChance),
+			Urgency: "moderate",
+		})
+	}
+
+	if analysis.ManaFloodChance >= 35 {
+		sug = append(sug, domain.ManaCurveSuggestion{
+			Type:    "remove",
+			CMC:     0,
+			Reason:  fmt.Sprintf("High mana flood risk (%.1f%%). Consider trimming lands or adding mana sinks/card selection.", analysis.ManaFloodChance),
+			Urgency: "moderate",
+		})
+	}
+
 	return sug
+}
+
+func landConsistencyModel(deckSize, landCount, idealLandCount int) (screw float64, flood float64, sweet float64, draws int, minLands int, maxLands int) {
+	if deckSize <= 0 || landCount < 0 || landCount > deckSize {
+		return 0, 0, 0, 0, 0, 0
+	}
+
+	// Inspired by EDH-style land consistency snapshots: evaluate first 12 cards seen.
+	draws = 12
+	if deckSize < draws {
+		draws = deckSize
+	}
+	if draws <= 0 {
+		return 0, 0, 0, 0, 0, 0
+	}
+
+	if idealLandCount <= 0 {
+		idealLandCount = int(math.Round(float64(deckSize) * 0.38))
+	}
+	idealRatio := float64(idealLandCount) / float64(deckSize)
+	targetSeen := idealRatio * float64(draws)
+
+	minLands = int(math.Max(2, math.Floor(targetSeen)-1))
+	maxLands = int(math.Ceil(targetSeen) + 1)
+	if minLands > draws {
+		minLands = draws
+	}
+	if maxLands > draws {
+		maxLands = draws
+	}
+	if minLands > maxLands {
+		minLands = maxLands
+	}
+
+	for k := 0; k <= draws; k++ {
+		p := hypergeomPMF(deckSize, landCount, draws, k)
+		if k < minLands {
+			screw += p
+			continue
+		}
+		if k > maxLands {
+			flood += p
+			continue
+		}
+		sweet += p
+	}
+
+	return roundPct(screw * 100), roundPct(flood * 100), roundPct(sweet * 100), draws, minLands, maxLands
+}
+
+func hypergeomPMF(population, successStates, draws, observedSuccesses int) float64 {
+	if population <= 0 || successStates < 0 || draws < 0 || observedSuccesses < 0 {
+		return 0
+	}
+	if successStates > population || draws > population || observedSuccesses > draws || observedSuccesses > successStates {
+		return 0
+	}
+	failStates := population - successStates
+	if draws-observedSuccesses > failStates {
+		return 0
+	}
+
+	logNum := logCombination(successStates, observedSuccesses) + logCombination(failStates, draws-observedSuccesses)
+	logDen := logCombination(population, draws)
+	return math.Exp(logNum - logDen)
+}
+
+func logCombination(n, k int) float64 {
+	if k < 0 || k > n {
+		return math.Inf(-1)
+	}
+	if k == 0 || k == n {
+		return 0
+	}
+	if k > n-k {
+		k = n - k
+	}
+	lnN, _ := math.Lgamma(float64(n + 1))
+	lnK, _ := math.Lgamma(float64(k + 1))
+	lnNK, _ := math.Lgamma(float64(n-k+1))
+	return lnN - lnK - lnNK
+}
+
+func roundPct(v float64) float64 {
+	if v < 0 {
+		return 0
+	}
+	return math.Round(v*10) / 10
 }
 
 func urgency(value, moderate, critical int) string {

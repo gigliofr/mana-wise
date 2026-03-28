@@ -281,3 +281,49 @@ func TestAnalyzeManaCurve_IncludesManaProducingCreaturesInCurrentSources(t *test
 		t.Fatalf("expected current total sources 24, got %d", result.CurrentTotalSources)
 	}
 }
+
+func TestAnalyzeManaCurve_LandConsistencyPercentagesBounded(t *testing.T) {
+	cards := []*domain.Card{
+		{ID: "forest", Name: "Forest", TypeLine: "Basic Land - Forest"},
+		{ID: "spell", Name: "Spell", TypeLine: "Instant", CMC: 2, ManaCost: "{1}{G}"},
+	}
+
+	q := map[string]int{
+		"forest": 24,
+		"spell":  36,
+	}
+
+	result := usecase.AnalyzeManaCurve(cards, q, "modern")
+
+	if result.LandSampleDraws != 12 {
+		t.Fatalf("expected sample draws 12, got %d", result.LandSampleDraws)
+	}
+	if result.SweetSpotMinLands <= 0 || result.SweetSpotMaxLands <= 0 {
+		t.Fatalf("expected positive sweet-spot bounds, got min=%d max=%d", result.SweetSpotMinLands, result.SweetSpotMaxLands)
+	}
+	if result.SweetSpotMinLands > result.SweetSpotMaxLands {
+		t.Fatalf("invalid sweet-spot bounds: min=%d max=%d", result.SweetSpotMinLands, result.SweetSpotMaxLands)
+	}
+
+	total := result.ManaScrewChance + result.ManaFloodChance + result.SweetSpotChance
+	if total < 99.0 || total > 101.0 {
+		t.Fatalf("expected consistency percentages around 100, got %.2f", total)
+	}
+}
+
+func TestAnalyzeManaCurve_LowLandDeckShowsHigherScrewThanFlood(t *testing.T) {
+	cards := []*domain.Card{
+		{ID: "land", Name: "Island", TypeLine: "Basic Land - Island"},
+		{ID: "spell", Name: "Spell", TypeLine: "Instant", CMC: 2, ManaCost: "{1}{U}"},
+	}
+
+	q := map[string]int{
+		"land": 16,
+		"spell": 44,
+	}
+
+	result := usecase.AnalyzeManaCurve(cards, q, "modern")
+	if result.ManaScrewChance <= result.ManaFloodChance {
+		t.Fatalf("expected screw risk > flood risk for low-land deck, got screw=%.1f flood=%.1f", result.ManaScrewChance, result.ManaFloodChance)
+	}
+}

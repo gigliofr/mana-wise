@@ -34,6 +34,12 @@ type ManaAnalysis struct {
 	CurrentTotalSources int                 `json:"current_total_sources,omitempty"`
 	TargetTotalSources  int                 `json:"target_total_sources,omitempty"`
 	TotalSourceGap      int                 `json:"total_source_gap,omitempty"`
+	ManaScrewChance     float64             `json:"mana_screw_chance,omitempty"`
+	ManaFloodChance     float64             `json:"mana_flood_chance,omitempty"`
+	SweetSpotChance     float64             `json:"sweet_spot_chance,omitempty"`
+	LandSampleDraws     int                 `json:"land_sample_draws,omitempty"`
+	SweetSpotMinLands   int                 `json:"sweet_spot_min_lands,omitempty"`
+	SweetSpotMaxLands   int                 `json:"sweet_spot_max_lands,omitempty"`
 	ColorDistribution map[string]int        `json:"color_distribution"`
 	// PipDistribution counts how many coloured pips appear across all non-land mana costs.
 	// Keys are single-letter colour codes: W, U, B, R, G, C.
