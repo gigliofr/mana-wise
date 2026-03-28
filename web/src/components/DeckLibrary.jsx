@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import CardHoverPreview from './CardHoverPreview'
 
 const API = '/api/v1'
 
@@ -70,6 +71,11 @@ export default function DeckLibrary({
       .map(c => `${c.quantity || 1} ${c.card_name || c.name || ''}`.trim())
       .filter(Boolean)
       .join('\n')
+  }
+
+  function mainDeckCards(deck) {
+    const cards = Array.isArray(deck?.cards) ? deck.cards : []
+    return cards.filter(c => !c.is_sideboard)
   }
 
   function parseDecklistToCards(decklist) {
@@ -299,6 +305,33 @@ export default function DeckLibrary({
                 <div>
                   <div className="decklib-name">{deck.name}</div>
                   <div className="decklib-sub">{deck.format}</div>
+                  <div style={{ marginTop: 6, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                    {mainDeckCards(deck).slice(0, 6).map((c, idx) => {
+                      const label = `${c.quantity || 1}x ${c.card_name || c.name || ''}`.trim()
+                      const cardName = (c.card_name || c.name || '').trim()
+                      if (!cardName) return null
+                      return (
+                        <span
+                          key={`${deck.id}-card-${idx}`}
+                          style={{
+                            fontSize: '.74rem',
+                            color: 'var(--muted)',
+                            border: '1px solid var(--border)',
+                            borderRadius: 999,
+                            padding: '2px 8px',
+                            background: 'rgba(255,255,255,0.02)',
+                          }}
+                        >
+                          <CardHoverPreview cardName={cardName} token={token} messages={messages}>
+                            {label}
+                          </CardHoverPreview>
+                        </span>
+                      )
+                    })}
+                    {mainDeckCards(deck).length > 6 && (
+                      <span style={{ fontSize: '.74rem', color: 'var(--muted)' }}>+{mainDeckCards(deck).length - 6}</span>
+                    )}
+                  </div>
                 </div>
                 <div className="decklib-buttons">
                   <button
