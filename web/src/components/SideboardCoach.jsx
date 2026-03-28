@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import CardHoverPreview from './CardHoverPreview'
 
 const API = '/api/v1'
 const ARCHETYPES = ['aggro', 'midrange', 'control', 'combo', 'ramp']
@@ -145,12 +146,12 @@ export default function SideboardCoach({ token, user, decklist: decklistProp, fo
 
       {error && <div className="banner banner-error" style={{ marginTop: 16 }}>{error}</div>}
 
-      {result && <SideboardPlanResult data={result} messages={messages} />}
+      {result && <SideboardPlanResult data={result} messages={messages} token={token} />}
     </div>
   )
 }
 
-function SideboardPlanResult({ data, messages }) {
+function SideboardPlanResult({ data, messages, token }) {
   return (
     <div className="sideboard-result">
       <p className="sideboard-matchup-label">
@@ -162,7 +163,7 @@ function SideboardPlanResult({ data, messages }) {
         <div className="sideboard-col">
           <p className="section-kicker" style={{ color: 'var(--green)' }}>▲ {messages.sideboardIns}</p>
           {data.ins?.length > 0
-            ? <SwapTable swaps={data.ins} messages={messages} />
+            ? <SwapTable swaps={data.ins} messages={messages} token={token} />
             : <p style={{ color: 'var(--muted)', fontSize: '.88rem' }}>—</p>
           }
         </div>
@@ -171,7 +172,7 @@ function SideboardPlanResult({ data, messages }) {
         <div className="sideboard-col">
           <p className="section-kicker" style={{ color: 'var(--red)' }}>▼ {messages.sideboardOuts}</p>
           {data.outs?.length > 0
-            ? <SwapTable swaps={data.outs} messages={messages} />
+            ? <SwapTable swaps={data.outs} messages={messages} token={token} />
             : <p style={{ color: 'var(--muted)', fontSize: '.88rem' }}>—</p>
           }
         </div>
@@ -189,7 +190,7 @@ function SideboardPlanResult({ data, messages }) {
   )
 }
 
-function SwapTable({ swaps, messages }) {
+function SwapTable({ swaps, messages, token }) {
   return (
     <table className="data-table">
       <thead>
@@ -203,7 +204,11 @@ function SwapTable({ swaps, messages }) {
         {swaps.map((s, i) => (
           <tr key={i}>
             <td style={{ fontWeight: 700, color: 'var(--accent)' }}>{s.qty}</td>
-            <td style={{ fontWeight: 600 }}>{s.card}</td>
+            <td style={{ fontWeight: 600 }}>
+              <CardHoverPreview cardName={s.card} token={token} messages={messages}>
+                {s.card}
+              </CardHoverPreview>
+            </td>
             <td style={{ color: 'var(--muted)', fontSize: '.83rem' }}>{s.reason}</td>
           </tr>
         ))}
