@@ -2,9 +2,38 @@ import { useMemo, useState } from 'react'
 
 const API = '/api/v1'
 const previewCache = new Map()
+const FAILED_CACHE_TTL_MS = 90 * 1000
 
 function normalizeCardName(name) {
-  return String(name || '').trim().toLowerCase()
+  return String(name || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase()
+}
+
+function deriveCardNameCandidates(rawName) {
+  const base = String(rawName || '').trim()
+  if (!base) return []
+
+  const out = new Set()
+  const push = value => {
+    const v = String(value || '').trim().replace(/\s+/g, ' ')
+    if (v) out.add(v)
+  }
+
+  push(base)
+  // Strip Arena-style quantity prefix (e.g. "4 Lightning Bolt").
+  push(base.replace(/^\d+x?\s+/i, ''))
+  // Strip set/collector suffix (e.g. "Card Name (SET) 123").
+  push(base.replace(/\s*\([A-Za-z0-9]{2,6}\)\s*[A-Za-z0-9-]+\s*$/i, ''))
+
+  const cleaned = Array.from(out)
+  for (const name of cleaned) {
+    // Normalize split card separators for better fuzzy matching.
+    push(name.replace(/\s*\/\/\s*/g, ' // '))
+  }
+
+  return Array.from(out)
 }
 
 function pickImageUrl(card) {
@@ -34,6 +63,24 @@ async function fetchFromScryfall(cardName) {
   }
 }
 
+async function fetchFromScryfallSearch(cardName) {
+  const query = `!"${cardName}"`
+  const url = `https://api.scryfall.com/cards/search?q=${encodeURIComponent(query)}`
+  const res = await fetch(url)
+  if (!res.ok) throw new Error('scryfall_search_not_found')
+  const data = await res.json()
+  const first = Array.isArray(data?.data) ? data.data[0] : null
+  if (!first) throw new Error('scryfall_search_empty')
+  return {
+    name: first.name || cardName,
+    mana_cost: first.mana_cost || '',
+    type_line: first.type_line || '',
+    oracle_text: first.oracle_text || '',
+    image_url: pickImageUrl(first),
+    source: 'scryfall_search',
+  }
+}
+
 async function fetchFromBackend(cardName, token) {
   if (!token) throw new Error('missing_token')
   const url = `${API}/cards/search?name=${encodeURIComponent(cardName)}`
@@ -55,11 +102,35 @@ async function fetchFromBackend(cardName, token) {
 }
 
 async function resolvePreview(cardName, token) {
-  try {
-    return await fetchFromScryfall(cardName)
-  } catch {
-    return fetchFromBackend(cardName, token)
+  const candidates = deriveCardNameCandidates(cardName)
+
+  for (const candidate of candidates) {
+    try {
+      return await fetchFromScryfall(candidate)
+    } catch {
+      // Continue through fallbacks.
+    }
   }
+
+  if (token) {
+    for (const candidate of candidates) {
+      try {
+        return await fetchFromBackend(candidate, token)
+      } catch {
+        // Continue through fallbacks.
+      }
+    }
+  }
+
+  for (const candidate of candidates) {
+    try {
+      return await fetchFromScryfallSearch(candidate)
+    } catch {
+      // Continue through fallbacks.
+    }
+  }
+
+  throw new Error('preview_not_found')
 }
 
 export default function CardHoverPreview({ cardName, token, messages, children }) {
@@ -75,19 +146,26 @@ export default function CardHoverPreview({ cardName, token, messages, children }
 
     if (previewCache.has(normalized)) {
       const cached = previewCache.get(normalized)
-      setPreview(cached)
-      setError(cached ? '' : 'not_found')
-      return
+      if (cached?.ok) {
+        setPreview(cached.data)
+        setError('')
+        return
+      }
+      if (cached?.failedAt && Date.now()-cached.failedAt < FAILED_CACHE_TTL_MS) {
+        setPreview(null)
+        setError('not_found')
+        return
+      }
     }
 
     setLoading(true)
     setError('')
     try {
       const data = await resolvePreview(cardName, token)
-      previewCache.set(normalized, data)
+      previewCache.set(normalized, { ok: true, data })
       setPreview(data)
     } catch {
-      previewCache.set(normalized, null)
+      previewCache.set(normalized, { ok: false, failedAt: Date.now() })
       setError('not_found')
       setPreview(null)
     } finally {
@@ -108,7 +186,7 @@ export default function CardHoverPreview({ cardName, token, messages, children }
   function openPreview(e) {
     updatePosition(e)
     setOpen(true)
-    if (!preview && !loading && !error) {
+    if (!preview && !loading) {
       loadPreview()
     }
   }
