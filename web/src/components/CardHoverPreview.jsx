@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 const API = '/api/v1'
 const previewCache = new Map()
 const FAILED_CACHE_TTL_MS = 90 * 1000
+const STICKY_PREF_KEY = 'mw_card_preview_sticky_default'
 
 function normalizeCardName(name) {
   return String(name || '')
@@ -186,6 +187,13 @@ export default function CardHoverPreview({ cardName, token, messages, children }
   const [error, setError] = useState('')
   const [position, setPosition] = useState({ x: 0, y: 0 })
   const [pinned, setPinned] = useState(false)
+  const [stickyDefault, setStickyDefault] = useState(() => {
+    try {
+      return window.localStorage.getItem(STICKY_PREF_KEY) === '1'
+    } catch {
+      return false
+    }
+  })
 
   useEffect(() => {
     if (!open) return
@@ -244,6 +252,9 @@ export default function CardHoverPreview({ cardName, token, messages, children }
   function openPreview(e) {
     updatePosition(e)
     setOpen(true)
+    if (stickyDefault) {
+      setPinned(true)
+    }
     if (!preview && !loading) {
       loadPreview()
     }
@@ -262,11 +273,11 @@ export default function CardHoverPreview({ cardName, token, messages, children }
       onMouseEnter={openPreview}
       onMouseMove={updatePosition}
       onMouseLeave={() => {
-        if (!pinned) setOpen(false)
+        if (!pinned && !stickyDefault) setOpen(false)
       }}
       onFocus={e => openPreview(e)}
       onBlur={() => {
-        if (!pinned) setOpen(false)
+        if (!pinned && !stickyDefault) setOpen(false)
       }}
       onClick={() => {
         setOpen(true)
@@ -295,14 +306,29 @@ export default function CardHoverPreview({ cardName, token, messages, children }
             pointerEvents: 'auto',
           }}
           onMouseEnter={() => setOpen(true)}
+          onClick={e => e.stopPropagation()}
         >
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginBottom: 6 }}>
             <button
               type="button"
-              onClick={() => setPinned(v => !v)}
+              onClick={e => {
+                e.stopPropagation()
+                setStickyDefault(prev => {
+                  const next = !prev
+                  try {
+                    window.localStorage.setItem(STICKY_PREF_KEY, next ? '1' : '0')
+                  } catch {
+                    // Best effort persistence only.
+                  }
+                  if (next) {
+                    setPinned(true)
+                  }
+                  return next
+                })
+              }}
               style={{
                 fontSize: '.72rem',
-                color: 'var(--muted)',
+                color: stickyDefault ? 'var(--green)' : 'var(--muted)',
                 border: '1px solid var(--border)',
                 background: 'transparent',
                 borderRadius: 8,
@@ -310,11 +336,16 @@ export default function CardHoverPreview({ cardName, token, messages, children }
                 cursor: 'pointer',
               }}
             >
-              {pinned ? 'Unpin' : 'Pin'}
+              {stickyDefault
+                ? (messages?.cardPreviewStickyOn || 'Sticky ON')
+                : (messages?.cardPreviewStickyOff || 'Sticky OFF')}
             </button>
             <button
               type="button"
-              onClick={closePreview}
+              onClick={e => {
+                e.stopPropagation()
+                setPinned(v => !v)
+              }}
               style={{
                 fontSize: '.72rem',
                 color: 'var(--muted)',
@@ -325,7 +356,27 @@ export default function CardHoverPreview({ cardName, token, messages, children }
                 cursor: 'pointer',
               }}
             >
-              X
+              {pinned
+                ? (messages?.cardPreviewUnpin || 'Unpin')
+                : (messages?.cardPreviewPin || 'Pin')}
+            </button>
+            <button
+              type="button"
+              onClick={e => {
+                e.stopPropagation()
+                closePreview()
+              }}
+              style={{
+                fontSize: '.72rem',
+                color: 'var(--muted)',
+                border: '1px solid var(--border)',
+                background: 'transparent',
+                borderRadius: 8,
+                padding: '2px 6px',
+                cursor: 'pointer',
+              }}
+            >
+              {messages?.cardPreviewClose || 'Close'}
             </button>
           </div>
 
