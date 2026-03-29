@@ -208,10 +208,13 @@ func AnalyzeInteraction(cards []*domain.Card, quantities map[string]int, format 
 		if qty == 0 {
 			qty = 1
 		}
-		if !isLandCard(card) {
-			totalNonLandCards += qty
-			totalCMC += card.CMC * float64(qty)
+		if isLandCard(card) {
+			continue
 		}
+
+		totalNonLandCards += qty
+		totalCMC += card.CMC * float64(qty)
+
 		text := strings.ToLower(card.OracleText + " " + card.TypeLine)
 		for cat, keywords := range interactionKeywords {
 			for _, kw := range keywords {
