@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 const API = '/api/v1'
 const previewCache = new Map()
@@ -36,6 +36,17 @@ function deriveCardNameCandidates(rawName) {
   return Array.from(out)
 }
 
+function extractSetCollector(rawName) {
+  const text = String(rawName || '').trim()
+  if (!text) return null
+
+  const arena = text.match(/\(([A-Za-z0-9]{2,6})\)\s*([A-Za-z0-9-]+)/)
+  if (arena) {
+    return { setCode: arena[1].toLowerCase(), collectorNumber: arena[2].toLowerCase() }
+  }
+  return null
+}
+
 function pickImageUrl(card) {
   if (card?.image_uris?.normal) return card.image_uris.normal
   if (card?.image_uris?.large) return card.image_uris.large
@@ -60,6 +71,22 @@ async function fetchFromScryfall(cardName) {
     oracle_text: data.oracle_text || '',
     image_url: pickImageUrl(data),
     source: 'scryfall',
+  }
+}
+
+async function fetchFromScryfallSetCollector(setCode, collectorNumber) {
+  if (!setCode || !collectorNumber) throw new Error('missing_set_collector')
+  const url = `https://api.scryfall.com/cards/${encodeURIComponent(setCode)}/${encodeURIComponent(collectorNumber)}`
+  const res = await fetch(url)
+  if (!res.ok) throw new Error('scryfall_set_collector_not_found')
+  const data = await res.json()
+  return {
+    name: data.name || `${setCode.toUpperCase()} ${collectorNumber}`,
+    mana_cost: data.mana_cost || '',
+    type_line: data.type_line || '',
+    oracle_text: data.oracle_text || '',
+    image_url: pickImageUrl(data),
+    source: 'scryfall_set_collector',
   }
 }
 
@@ -103,6 +130,15 @@ async function fetchFromBackend(cardName, token) {
 
 async function resolvePreview(cardName, token) {
   const candidates = deriveCardNameCandidates(cardName)
+  const meta = extractSetCollector(cardName)
+
+  if (meta) {
+    try {
+      return await fetchFromScryfallSetCollector(meta.setCode, meta.collectorNumber)
+    } catch {
+      // Continue through fallbacks.
+    }
+  }
 
   for (const candidate of candidates) {
     try {
@@ -130,7 +166,16 @@ async function resolvePreview(cardName, token) {
     }
   }
 
-  throw new Error('preview_not_found')
+  // Final fallback: always return a minimal preview instead of hard error.
+  const bestName = candidates[0] || String(cardName || '').trim() || 'Unknown card'
+  return {
+    name: bestName,
+    mana_cost: '',
+    type_line: '',
+    oracle_text: '',
+    image_url: '',
+    source: 'fallback',
+  }
 }
 
 export default function CardHoverPreview({ cardName, token, messages, children }) {
@@ -140,6 +185,19 @@ export default function CardHoverPreview({ cardName, token, messages, children }
   const [preview, setPreview] = useState(null)
   const [error, setError] = useState('')
   const [position, setPosition] = useState({ x: 0, y: 0 })
+  const [pinned, setPinned] = useState(false)
+
+  useEffect(() => {
+    if (!open) return
+    function onKeyDown(e) {
+      if (e.key === 'Escape') {
+        setOpen(false)
+        setPinned(false)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [open])
 
   async function loadPreview() {
     if (!normalized) return
@@ -191,6 +249,11 @@ export default function CardHoverPreview({ cardName, token, messages, children }
     }
   }
 
+  function closePreview() {
+    setOpen(false)
+    setPinned(false)
+  }
+
   const trigger = children || cardName
 
   return (
@@ -198,9 +261,17 @@ export default function CardHoverPreview({ cardName, token, messages, children }
       style={{ cursor: 'help', textDecoration: 'underline dotted', textUnderlineOffset: 2 }}
       onMouseEnter={openPreview}
       onMouseMove={updatePosition}
-      onMouseLeave={() => setOpen(false)}
+      onMouseLeave={() => {
+        if (!pinned) setOpen(false)
+      }}
       onFocus={e => openPreview(e)}
-      onBlur={() => setOpen(false)}
+      onBlur={() => {
+        if (!pinned) setOpen(false)
+      }}
+      onClick={() => {
+        setOpen(true)
+        setPinned(true)
+      }}
       tabIndex={0}
       role="button"
       aria-label={messages?.cardPreviewAria ? messages.cardPreviewAria(cardName) : `Preview ${cardName}`}
@@ -221,9 +292,43 @@ export default function CardHoverPreview({ cardName, token, messages, children }
             boxShadow: '0 10px 30px rgba(0,0,0,0.35)',
             padding: 10,
             zIndex: 9999,
-            pointerEvents: 'none',
+            pointerEvents: 'auto',
           }}
+          onMouseEnter={() => setOpen(true)}
         >
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginBottom: 6 }}>
+            <button
+              type="button"
+              onClick={() => setPinned(v => !v)}
+              style={{
+                fontSize: '.72rem',
+                color: 'var(--muted)',
+                border: '1px solid var(--border)',
+                background: 'transparent',
+                borderRadius: 8,
+                padding: '2px 6px',
+                cursor: 'pointer',
+              }}
+            >
+              {pinned ? 'Unpin' : 'Pin'}
+            </button>
+            <button
+              type="button"
+              onClick={closePreview}
+              style={{
+                fontSize: '.72rem',
+                color: 'var(--muted)',
+                border: '1px solid var(--border)',
+                background: 'transparent',
+                borderRadius: 8,
+                padding: '2px 6px',
+                cursor: 'pointer',
+              }}
+            >
+              X
+            </button>
+          </div>
+
           {loading && (
             <div style={{ color: 'var(--muted)', fontSize: '.82rem' }}>
               {messages?.cardPreviewLoading || 'Loading card preview...'}
