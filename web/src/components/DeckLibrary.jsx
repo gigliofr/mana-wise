@@ -18,6 +18,7 @@ export default function DeckLibrary({
   const [saveStep, setSaveStep] = useState(0) // 0=hidden, 1=name, 2=confirm
   const [editedDecklist, setEditedDecklist] = useState('')
   const [page, setPage] = useState(0)
+  const [expandedDecks, setExpandedDecks] = useState({})
 
   const ITEMS_PER_PAGE = 3
   const paginatedDecks = decks.slice(page * ITEMS_PER_PAGE, (page + 1) * ITEMS_PER_PAGE)
@@ -76,6 +77,17 @@ export default function DeckLibrary({
   function mainDeckCards(deck) {
     const cards = Array.isArray(deck?.cards) ? deck.cards : []
     return cards.filter(c => !c.is_sideboard)
+  }
+
+  function isDeckExpanded(deckID) {
+    return Boolean(expandedDecks[deckID])
+  }
+
+  function toggleDeckExpanded(deckID) {
+    setExpandedDecks(prev => ({
+      ...prev,
+      [deckID]: !prev[deckID],
+    }))
   }
 
   function parseDecklistToCards(decklist) {
@@ -306,7 +318,7 @@ export default function DeckLibrary({
                   <div className="decklib-name">{deck.name}</div>
                   <div className="decklib-sub">{deck.format}</div>
                   <div style={{ marginTop: 6, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                    {mainDeckCards(deck).slice(0, 6).map((c, idx) => {
+                    {(isDeckExpanded(deck.id) ? mainDeckCards(deck) : mainDeckCards(deck).slice(0, 6)).map((c, idx) => {
                       const label = `${c.quantity || 1}x ${c.card_name || c.name || ''}`.trim()
                       const cardName = (c.card_name || c.name || '').trim()
                       if (!cardName) return null
@@ -329,7 +341,21 @@ export default function DeckLibrary({
                       )
                     })}
                     {mainDeckCards(deck).length > 6 && (
-                      <span style={{ fontSize: '.74rem', color: 'var(--muted)' }}>+{mainDeckCards(deck).length - 6}</span>
+                      <button
+                        type="button"
+                        className="btn-ghost"
+                        onClick={() => toggleDeckExpanded(deck.id)}
+                        style={{
+                          fontSize: '.74rem',
+                          lineHeight: 1,
+                          padding: '4px 8px',
+                          borderRadius: 999,
+                        }}
+                      >
+                        {isDeckExpanded(deck.id)
+                          ? (messages.showLessCards || 'Mostra meno')
+                          : `+${mainDeckCards(deck).length - 6}`}
+                      </button>
                     )}
                   </div>
                 </div>
