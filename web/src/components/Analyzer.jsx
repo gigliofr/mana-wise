@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import ManaCurveChart from './ManaCurveChart'
 import InteractionPanel from './InteractionPanel'
+import { ManaSymbol, ManaSymbolGroup, isManaColorCode } from './ManaSymbol'
 
 const API = '/api/v1'
 const FORMATS = ['standard', 'pioneer', 'modern', 'legacy', 'vintage', 'commander', 'pauper']
@@ -267,7 +268,9 @@ export default function Analyzer({ token, user, locale, messages, decklist: deck
             {fingerprint && (
               <div className="stat-item">
                 <div className="stat-value" style={{ color: 'var(--primary-h)' }}>
-                  {fingerprint.color_identity?.length ? fingerprint.color_identity.join('/') : messages.unknownLabel}
+                  {fingerprint.color_identity?.length
+                    ? <ManaSymbolGroup colors={fingerprint.color_identity} size={20} gap={4} />
+                    : messages.unknownLabel}
                 </div>
                 <div className="stat-label">{messages.colorIdentity}</div>
               </div>
@@ -454,7 +457,9 @@ function FingerprintPanel({ data, messages }) {
           <div className="fingerprint-card-label">{messages.colorIdentity}</div>
           <div className="fingerprint-chip-row">
             {(data.color_identity?.length ? data.color_identity : [messages.unknownLabel]).map(item => (
-              <span key={item} className="fingerprint-chip">{item}</span>
+              <span key={item} className="fingerprint-chip" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                {isManaColorCode(item) ? <ManaSymbol code={item} size={18} /> : item}
+              </span>
             ))}
           </div>
         </div>
