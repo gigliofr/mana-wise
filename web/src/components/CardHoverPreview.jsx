@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react'
 
 const API = '/api/v1'
 const previewCache = new Map()
-const FAILED_CACHE_TTL_MS = 90 * 1000
 const STICKY_PREF_KEY = 'mw_card_preview_sticky_default'
 
 function normalizeCardName(name) {
@@ -212,14 +211,9 @@ export default function CardHoverPreview({ cardName, token, messages, children }
 
     if (previewCache.has(normalized)) {
       const cached = previewCache.get(normalized)
-      if (cached?.ok) {
-        setPreview(cached.data)
+      if (cached) {
+        setPreview(cached)
         setError('')
-        return
-      }
-      if (cached?.failedAt && Date.now()-cached.failedAt < FAILED_CACHE_TTL_MS) {
-        setPreview(null)
-        setError('not_found')
         return
       }
     }
@@ -228,12 +222,21 @@ export default function CardHoverPreview({ cardName, token, messages, children }
     setError('')
     try {
       const data = await resolvePreview(cardName, token)
-      previewCache.set(normalized, { ok: true, data })
+      previewCache.set(normalized, data)
       setPreview(data)
     } catch {
-      previewCache.set(normalized, { ok: false, failedAt: Date.now() })
-      setError('not_found')
-      setPreview(null)
+      // Last-resort UI-safe fallback: never leave the user without a preview shell.
+      const fallback = {
+        name: String(cardName || '').trim() || 'Unknown card',
+        mana_cost: '',
+        type_line: '',
+        oracle_text: '',
+        image_url: '',
+        source: 'fallback_runtime',
+      }
+      previewCache.set(normalized, fallback)
+      setPreview(fallback)
+      setError('')
     } finally {
       setLoading(false)
     }
