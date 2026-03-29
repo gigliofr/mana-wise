@@ -310,6 +310,22 @@ function scoreColor(score) {
   return 'var(--red)'
 }
 
+function renderManaSymbolsInText(text, size = 14) {
+  const raw = String(text || '')
+  if (!raw) return raw
+
+  const symbolPattern = /(\{?[WUBRGC]\}?)(?=[^A-Za-z]|$)/g
+  const parts = raw.split(symbolPattern)
+
+  return parts.map((part, idx) => {
+    const normalized = part.replace(/[{}]/g, '').toUpperCase()
+    if (isManaColorCode(normalized)) {
+      return <ManaSymbol key={`mana-${normalized}-${idx}`} code={normalized} size={size} />
+    }
+    return <span key={`txt-${idx}`}>{part}</span>
+  })
+}
+
 function ManaCurvePanel({ data, messages }) {
   const maxCount = Math.max(...data.distribution.map(b => b.count), 1)
   const totalSourceRow = {
@@ -412,7 +428,9 @@ function ManaCurvePanel({ data, messages }) {
           <p style={{ fontSize: '.85rem', color: 'var(--muted)', margin: '16px 0 8px' }}>{messages.suggestions}</p>
           <ul className="suggestion-list">
             {data.suggestions.map((s, i) => (
-              <li key={i} className={s.urgency}>{s.reason}</li>
+              <li key={i} className={s.urgency}>
+                {renderManaSymbolsInText(s.reason, 14)}
+              </li>
             ))}
           </ul>
         </>
