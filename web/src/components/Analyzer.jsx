@@ -383,7 +383,7 @@ export default function Analyzer({ token, user, locale, messages, decklist: deck
             ))}
           </div>
 
-          {tab === 'mana' && <ManaCurvePanel data={result.deterministic.mana} detectedArchetype={result.deterministic.interaction?.archetype} decklist={decklist} messages={messages} />}
+          {tab === 'mana' && <ManaCurvePanel data={result.deterministic.mana} detectedArchetype={result.deterministic.interaction?.archetype} fingerprint={fingerprint} decklist={decklist} messages={messages} />}
           {tab === 'interaction' && <InteractionPanel data={{ ...result.deterministic.interaction, messages }} />}
           {tab === 'fingerprint' && <FingerprintPanel data={fingerprint} messages={messages} />} 
           {tab === 'ai' && <AIPanel text={result.ai_suggestions} error={result.ai_error} source={result.ai_source} result={result} messages={messages} locale={locale} />}
@@ -423,6 +423,16 @@ const MOCK_ARCHETYPE_PROFILES = {
   ramp: { idealCmc: 3.3, idealLandRatio: 0.44, creature12: 38, fastSpells: 48, curveLe2: 46, finisher4: 48 },
 }
 
+const ARCHETYPE_CURVE_TARGETS = {
+  aggro: [8, 28, 34, 18, 8, 3, 1],
+  midrange: [4, 18, 30, 24, 14, 7, 3],
+  control: [3, 12, 24, 26, 20, 10, 5],
+  combo: [6, 22, 31, 21, 12, 6, 2],
+  ramp: [3, 12, 20, 24, 22, 12, 7],
+}
+
+const CMC_BUCKET_LABELS = ['0', '1', '2', '3', '4', '5', '6+']
+
 const KNOWN_LAND_TERMS = ['plains', 'island', 'swamp', 'mountain', 'forest', 'wastes', 'tower', 'temple', 'cavern', 'sanctuary', 'tomb', 'wilds', 'fetch', 'marsh', 'shore', 'garden', 'catacomb', 'citadel']
 
 function normalizeMockArchetype(archetype) {
@@ -446,6 +456,46 @@ function calcMetaMatch(profile, avgCmc, landRatio, curveLe2, finisher4) {
   const curveFit = Math.max(0, 100 - Math.abs(curveLe2 - profile.curveLe2) * 1.8)
   const finisherFit = Math.max(0, 100 - Math.abs(finisher4 - profile.finisher4) * 1.8)
   return Math.round((cmcFit + landFit + curveFit + finisherFit) / 4)
+}
+
+function getCurveShares(distribution, nonLandCards) {
+  return (distribution || []).map(bucket => {
+    if (nonLandCards <= 0) return 0
+    return ((bucket.count || 0) / nonLandCards) * 100
+  })
+}
+
+function calcCurveBenchmark(archetypeKey, distribution, nonLandCards) {
+  const target = ARCHETYPE_CURVE_TARGETS[archetypeKey] || ARCHETYPE_CURVE_TARGETS.aggro
+  const actual = getCurveShares(distribution, nonLandCards)
+  const deltas = target.map((t, idx) => ({
+    idx,
+    label: CMC_BUCKET_LABELS[idx] || String(idx),
+    target: t,
+    actual: Math.round((actual[idx] || 0) * 10) / 10,
+    delta: Math.round(((actual[idx] || 0) - t) * 10) / 10,
+  }))
+  const meanAbs = deltas.reduce((sum, row) => sum + Math.abs(row.delta), 0) / Math.max(1, deltas.length)
+  const score = Math.max(0, Math.round(100 - (meanAbs * 3.2)))
+  return { score, deltas }
+}
+
+function buildCurveDeltaSuggestions(benchmark, messages) {
+  const rows = benchmark?.deltas || []
+  if (rows.length === 0) return []
+
+  const over = [...rows].sort((a, b) => b.delta - a.delta).filter(r => r.delta >= 6).slice(0, 2)
+  const under = [...rows].sort((a, b) => a.delta - b.delta).filter(r => r.delta <= -6).slice(0, 2)
+  const out = []
+
+  over.forEach(row => {
+    out.push(messages.manaMockCurveCutSuggestion(row.label, row.delta.toFixed(1), row.target.toFixed(0), row.actual.toFixed(1)))
+  })
+  under.forEach(row => {
+    out.push(messages.manaMockCurveAddSuggestion(row.label, Math.abs(row.delta).toFixed(1), row.target.toFixed(0), row.actual.toFixed(1)))
+  })
+
+  return out.slice(0, 4)
 }
 
 function estimateTypeDistribution(nonLandCards, archetypeKey) {
@@ -521,7 +571,7 @@ function evaluateOpeningHand(hand, archetypeKey, messages) {
   }
 }
 
-function ManaCurvePanel({ data, detectedArchetype, decklist, messages }) {
+function ManaCurvePanel({ data, detectedArchetype, fingerprint, decklist, messages }) {
   const [selectedArchetype, setSelectedArchetype] = useState(normalizeMockArchetype(detectedArchetype))
   const [openingHand, setOpeningHand] = useState([])
   const [handSize, setHandSize] = useState(7)
@@ -568,6 +618,11 @@ function ManaCurvePanel({ data, detectedArchetype, decklist, messages }) {
     { label: messages.manaMockCurveLe2Label, value: Math.round(curveLe2), target: profile.curveLe2 },
     { label: messages.manaMockFinisher4Label, value: Math.round(finisher4), target: profile.finisher4 },
   ]
+
+  const curveBenchmark = calcCurveBenchmark(selectedArchetype, data.distribution || [], nonLandCards)
+  const curveFitScore = curveBenchmark.score
+  const curveDeltaSuggestions = buildCurveDeltaSuggestions(curveBenchmark, messages)
+  const classifierConfidencePct = Math.round((fingerprint?.confidence || 0) * 100)
 
   const handEval = evaluateOpeningHand(openingHand, selectedArchetype, messages)
 
@@ -636,6 +691,44 @@ function ManaCurvePanel({ data, detectedArchetype, decklist, messages }) {
           <div className="stat-item"><div className="stat-value">{nonLandCards}</div><div className="stat-label">{messages.manaMockNonLandLabel}</div></div>
           <div className="stat-item"><div className="stat-value">{data.land_count || 0}</div><div className="stat-label">{messages.manaMockLandsLabel}</div></div>
           <div className="stat-item"><div className="stat-value" style={{ color: scoreColor(metaMatch) }}>{metaMatch}%</div><div className="stat-label">{messages.manaMockMetaMatchLabel}</div></div>
+          <div className="stat-item"><div className="stat-value" style={{ color: scoreColor(curveFitScore) }}>{curveFitScore}%</div><div className="stat-label">{messages.manaMockCurveFitLabel}</div></div>
+          <div className="stat-item"><div className="stat-value">{classifierConfidencePct}%</div><div className="stat-label">{messages.manaMockClassifierConfidenceLabel}</div></div>
+        </div>
+
+        <div style={{ marginTop: 12 }}>
+          <p style={{ margin: 0, fontSize: '.82rem', color: 'var(--muted)' }}>{messages.manaMockCurveBenchmarkLabel}</p>
+          <div style={{ overflowX: 'auto', marginTop: 8 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '.82rem' }}>
+              <thead>
+                <tr>
+                  <th style={thStyle}>{messages.manaMockCurveBucketLabel}</th>
+                  <th style={thStyle}>{messages.manaMockCurveActualLabel}</th>
+                  <th style={thStyle}>{messages.manaMockCurveTargetLabel}</th>
+                  <th style={thStyle}>{messages.manaMockCurveDeltaLabel}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {curveBenchmark.deltas.map(row => (
+                  <tr key={`benchmark-${row.label}`}>
+                    <td style={tdStyle}>CMC {row.label}</td>
+                    <td style={tdStyle}>{row.actual.toFixed(1)}%</td>
+                    <td style={tdStyle}>{row.target.toFixed(0)}%</td>
+                    <td style={{ ...tdStyle, color: Math.abs(row.delta) >= 6 ? 'var(--orange)' : 'var(--muted)', fontWeight: Math.abs(row.delta) >= 6 ? 700 : 500 }}>
+                      {row.delta > 0 ? '+' : ''}{row.delta.toFixed(1)}%
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {curveDeltaSuggestions.length > 0 && (
+            <ul className="suggestion-list" style={{ marginTop: 10 }}>
+              {curveDeltaSuggestions.map((line, idx) => (
+                <li key={`curve-delta-suggestion-${idx}`} className="moderate">{line}</li>
+              ))}
+            </ul>
+          )}
         </div>
 
         <div style={{ marginTop: 12 }}>
