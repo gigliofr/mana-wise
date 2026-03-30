@@ -383,7 +383,7 @@ export default function Analyzer({ token, user, locale, messages, decklist: deck
             ))}
           </div>
 
-          {tab === 'mana' && <ManaCurvePanel data={result.deterministic.mana} messages={messages} />}
+          {tab === 'mana' && <ManaCurvePanel data={result.deterministic.mana} detectedArchetype={result.deterministic.interaction?.archetype} decklist={decklist} messages={messages} />}
           {tab === 'interaction' && <InteractionPanel data={{ ...result.deterministic.interaction, messages }} />}
           {tab === 'fingerprint' && <FingerprintPanel data={fingerprint} messages={messages} />} 
           {tab === 'ai' && <AIPanel text={result.ai_suggestions} error={result.ai_error} source={result.ai_source} result={result} messages={messages} locale={locale} />}
@@ -415,7 +415,152 @@ function renderManaSymbolsInText(text, size = 14) {
   })
 }
 
-function ManaCurvePanel({ data, messages }) {
+const MOCK_ARCHETYPE_PROFILES = {
+  aggro: { idealCmc: 1.8, idealLandRatio: 0.40, creature12: 78, fastSpells: 65, curveLe2: 80, finisher4: 22 },
+  midrange: { idealCmc: 2.9, idealLandRatio: 0.42, creature12: 55, fastSpells: 52, curveLe2: 60, finisher4: 35 },
+  control: { idealCmc: 3.2, idealLandRatio: 0.45, creature12: 35, fastSpells: 58, curveLe2: 45, finisher4: 42 },
+  combo: { idealCmc: 2.4, idealLandRatio: 0.41, creature12: 42, fastSpells: 68, curveLe2: 62, finisher4: 28 },
+  ramp: { idealCmc: 3.3, idealLandRatio: 0.44, creature12: 38, fastSpells: 48, curveLe2: 46, finisher4: 48 },
+}
+
+const KNOWN_LAND_TERMS = ['plains', 'island', 'swamp', 'mountain', 'forest', 'wastes', 'tower', 'temple', 'cavern', 'sanctuary', 'tomb', 'wilds', 'fetch', 'marsh', 'shore', 'garden', 'catacomb', 'citadel']
+
+function normalizeMockArchetype(archetype) {
+  const key = String(archetype || '').toLowerCase().trim()
+  return MOCK_ARCHETYPE_PROFILES[key] ? key : 'aggro'
+}
+
+function clampPercent(value) {
+  return Math.max(0, Math.min(100, value))
+}
+
+function scoreByTarget(value, target) {
+  if (value >= target + 10) return 'great'
+  if (value >= target) return 'good'
+  return 'low'
+}
+
+function calcMetaMatch(profile, avgCmc, landRatio, curveLe2, finisher4) {
+  const cmcFit = Math.max(0, 100 - Math.abs(avgCmc - profile.idealCmc) * 35)
+  const landFit = Math.max(0, 100 - Math.abs(landRatio - profile.idealLandRatio) * 220)
+  const curveFit = Math.max(0, 100 - Math.abs(curveLe2 - profile.curveLe2) * 1.8)
+  const finisherFit = Math.max(0, 100 - Math.abs(finisher4 - profile.finisher4) * 1.8)
+  return Math.round((cmcFit + landFit + curveFit + finisherFit) / 4)
+}
+
+function estimateTypeDistribution(nonLandCards, archetypeKey) {
+  const shares = {
+    aggro: { creature: 0.52, spell: 0.33, enchantArtifact: 0.10, planeswalker: 0.05 },
+    midrange: { creature: 0.45, spell: 0.30, enchantArtifact: 0.15, planeswalker: 0.10 },
+    control: { creature: 0.18, spell: 0.54, enchantArtifact: 0.16, planeswalker: 0.12 },
+    combo: { creature: 0.30, spell: 0.48, enchantArtifact: 0.17, planeswalker: 0.05 },
+    ramp: { creature: 0.33, spell: 0.34, enchantArtifact: 0.18, planeswalker: 0.15 },
+  }[archetypeKey] || { creature: 0.40, spell: 0.38, enchantArtifact: 0.14, planeswalker: 0.08 }
+
+  const creature = Math.round(nonLandCards * shares.creature)
+  const spell = Math.round(nonLandCards * shares.spell)
+  const enchantArtifact = Math.round(nonLandCards * shares.enchantArtifact)
+  const planeswalker = Math.max(0, nonLandCards - creature - spell - enchantArtifact)
+  return { creature, spell, enchantArtifact, planeswalker }
+}
+
+function parseDeckPool(decklistText) {
+  const pool = []
+  const lines = String(decklistText || '').split(/\r?\n/)
+  for (const line of lines) {
+    const trimmed = line.trim()
+    if (!trimmed || trimmed.startsWith('//')) continue
+    const match = trimmed.match(/^(\d+)\s+(.+)$/)
+    if (!match) continue
+    const qty = Number.parseInt(match[1], 10)
+    const name = match[2].trim()
+    if (!name || Number.isNaN(qty) || qty <= 0) continue
+    const lower = name.toLowerCase()
+    const isLand = KNOWN_LAND_TERMS.some(term => lower.includes(term))
+    for (let i = 0; i < qty; i++) {
+      pool.push({ name, isLand })
+    }
+  }
+  return pool
+}
+
+function randomHand(pool, size) {
+  if (!Array.isArray(pool) || pool.length === 0 || size <= 0) return []
+  const copy = [...pool]
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    const tmp = copy[i]
+    copy[i] = copy[j]
+    copy[j] = tmp
+  }
+  return copy.slice(0, Math.min(size, copy.length))
+}
+
+function evaluateOpeningHand(hand, archetypeKey, messages) {
+  const lands = hand.filter(card => card.isLand).length
+  const limits = {
+    aggro: { min: 2, max: 4 },
+    midrange: { min: 2, max: 4 },
+    control: { min: 2, max: 5 },
+    combo: { min: 2, max: 4 },
+    ramp: { min: 3, max: 5 },
+  }[archetypeKey] || { min: 2, max: 4 }
+
+  if (lands < limits.min || lands > limits.max) {
+    return {
+      tone: 'var(--orange)',
+      text: messages.manaMockMulliganAdvice(lands, limits.min, limits.max),
+      shouldMulligan: true,
+    }
+  }
+
+  return {
+    tone: 'var(--green)',
+    text: messages.manaMockKeepAdvice(lands),
+    shouldMulligan: false,
+  }
+}
+
+function ManaCurvePanel({ data, detectedArchetype, decklist, messages }) {
+  const [selectedArchetype, setSelectedArchetype] = useState(normalizeMockArchetype(detectedArchetype))
+  const [openingHand, setOpeningHand] = useState([])
+  const [handSize, setHandSize] = useState(7)
+
+  useEffect(() => {
+    setSelectedArchetype(normalizeMockArchetype(detectedArchetype))
+  }, [detectedArchetype])
+
+  const pool = parseDeckPool(decklist)
+
+  useEffect(() => {
+    setHandSize(7)
+    setOpeningHand(randomHand(pool, 7))
+  }, [decklist])
+
+  const totalCards = data.total_cards || 0
+  const nonLandCards = Math.max(0, totalCards - (data.land_count || 0))
+  const curveLe2 = clampPercent((nonLandCards > 0
+    ? ((data.distribution?.filter(b => (b.cmc || 0) <= 2).reduce((sum, b) => sum + (b.count || 0), 0) / nonLandCards) * 100)
+    : 0))
+  const finisher4 = clampPercent((nonLandCards > 0
+    ? ((data.distribution?.filter(b => (b.cmc || 0) >= 4).reduce((sum, b) => sum + (b.count || 0), 0) / nonLandCards) * 100)
+    : 0))
+  const profile = MOCK_ARCHETYPE_PROFILES[selectedArchetype] || MOCK_ARCHETYPE_PROFILES.aggro
+  const landRatio = totalCards > 0 ? (data.land_count || 0) / totalCards : 0
+  const metaMatch = calcMetaMatch(profile, data.average_cmc || 0, landRatio, curveLe2, finisher4)
+  const typeDist = estimateTypeDistribution(nonLandCards, selectedArchetype)
+
+  const creature12 = clampPercent(curveLe2 + (selectedArchetype === 'aggro' ? 8 : selectedArchetype === 'control' ? -10 : 0))
+  const fastSpells = clampPercent(100 - ((data.average_cmc || 0) * 16) + (selectedArchetype === 'combo' ? 10 : 0))
+  const qualityRows = [
+    { label: messages.manaMockCreature12Label, value: Math.round(creature12), target: profile.creature12 },
+    { label: messages.manaMockFastSpellsLabel, value: Math.round(fastSpells), target: profile.fastSpells },
+    { label: messages.manaMockCurveLe2Label, value: Math.round(curveLe2), target: profile.curveLe2 },
+    { label: messages.manaMockFinisher4Label, value: Math.round(finisher4), target: profile.finisher4 },
+  ]
+
+  const handEval = evaluateOpeningHand(openingHand, selectedArchetype, messages)
+
   const maxCount = Math.max(...data.distribution.map(b => b.count), 1)
   const totalSourceRow = {
     label: messages.sourceTotalLabel,
@@ -455,6 +600,81 @@ function ManaCurvePanel({ data, messages }) {
 
   return (
     <div>
+      <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 12, background: 'rgba(255,255,255,0.02)', marginBottom: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <div>
+            <p style={{ margin: 0, fontSize: '.9rem', fontWeight: 700 }}>{messages.manaMockTitle}</p>
+            <p style={{ margin: '4px 0 0', fontSize: '.8rem', color: 'var(--muted)' }}>{messages.manaMockSubtitle}</p>
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {['aggro', 'midrange', 'control', 'combo', 'ramp'].map(arch => (
+              <button
+                key={arch}
+                type="button"
+                className={`tab-btn${selectedArchetype === arch ? ' active' : ''}`}
+                style={{ borderBottom: 'none', padding: '6px 10px', fontSize: '.8rem' }}
+                onClick={() => setSelectedArchetype(arch)}
+              >
+                {messages.archetypeLabel(arch)}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10, marginTop: 12 }}>
+          <div className="stat-item"><div className="stat-value">{(data.average_cmc || 0).toFixed(1)}</div><div className="stat-label">{messages.avgCmc}</div></div>
+          <div className="stat-item"><div className="stat-value">{nonLandCards}</div><div className="stat-label">{messages.manaMockNonLandLabel}</div></div>
+          <div className="stat-item"><div className="stat-value">{data.land_count || 0}</div><div className="stat-label">{messages.manaMockLandsLabel}</div></div>
+          <div className="stat-item"><div className="stat-value" style={{ color: scoreColor(metaMatch) }}>{metaMatch}%</div><div className="stat-label">{messages.manaMockMetaMatchLabel}</div></div>
+        </div>
+
+        <div style={{ marginTop: 12 }}>
+          <p style={{ margin: 0, fontSize: '.82rem', color: 'var(--muted)' }}>{messages.manaMockTypeDistLabel}</p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(110px, 1fr))', gap: 8, marginTop: 8 }}>
+            <div className="stat-item"><div className="stat-value" style={{ fontSize: '1rem' }}>{typeDist.creature}</div><div className="stat-label">{messages.manaMockTypeCreature}</div></div>
+            <div className="stat-item"><div className="stat-value" style={{ fontSize: '1rem' }}>{typeDist.spell}</div><div className="stat-label">{messages.manaMockTypeSpell}</div></div>
+            <div className="stat-item"><div className="stat-value" style={{ fontSize: '1rem' }}>{typeDist.enchantArtifact}</div><div className="stat-label">{messages.manaMockTypeEnchantArtifact}</div></div>
+            <div className="stat-item"><div className="stat-value" style={{ fontSize: '1rem' }}>{typeDist.planeswalker}</div><div className="stat-label">{messages.manaMockTypePlaneswalker}</div></div>
+          </div>
+        </div>
+
+        <div style={{ marginTop: 14 }}>
+          <p style={{ margin: 0, fontSize: '.82rem', color: 'var(--muted)' }}>{messages.manaMockVsMetaLabel}</p>
+          <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
+            {qualityRows.map(row => {
+              const status = scoreByTarget(row.value, row.target)
+              const statusColor = status === 'great' ? 'var(--green)' : status === 'good' ? 'var(--orange)' : 'var(--red)'
+              const statusLabel = status === 'great' ? messages.manaMockStatusGreat : status === 'good' ? messages.manaMockStatusGood : messages.manaMockStatusLow
+              return (
+                <div key={row.label} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', alignItems: 'center', gap: 8, fontSize: '.84rem' }}>
+                  <span>{row.label}</span>
+                  <strong>{row.value}%</strong>
+                  <span style={{ color: statusColor, fontWeight: 700 }}>{statusLabel}</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        <div style={{ marginTop: 14 }}>
+          <p style={{ margin: 0, fontSize: '.82rem', color: 'var(--muted)' }}>{messages.manaMockOpeningLabel(handSize)}</p>
+          <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8 }}>
+            {openingHand.length > 0 ? openingHand.map((card, idx) => (
+              <div key={`open-hand-${idx}`} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '6px 8px', fontSize: '.82rem', background: 'var(--bg)' }}>
+                {card.name}
+              </div>
+            )) : (
+              <div style={{ color: 'var(--muted)', fontSize: '.82rem' }}>{messages.manaMockNoCards}</div>
+            )}
+          </div>
+          <p style={{ margin: '8px 0 0', color: handEval.tone, fontSize: '.82rem', fontWeight: 600 }}>{handEval.text}</p>
+          <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+            <button type="button" className="btn-ghost" onClick={() => { setHandSize(7); setOpeningHand(randomHand(pool, 7)) }}>{messages.manaMockRedraw7}</button>
+            <button type="button" className="btn-ghost" onClick={() => { setHandSize(6); setOpeningHand(randomHand(pool, 6)) }}>{messages.manaMockRedraw6}</button>
+          </div>
+        </div>
+      </div>
+
       <ManaCurveChart distribution={data.distribution} maxCount={maxCount} messages={messages} />
 
       {(data.land_sample_draws || 0) > 0 && (
