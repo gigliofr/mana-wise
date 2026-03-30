@@ -6,7 +6,7 @@ import { ManaSymbol, ManaSymbolGroup, isManaColorCode } from './ManaSymbol'
 const API = '/api/v1'
 const FORMATS = ['standard', 'pioneer', 'modern', 'legacy', 'vintage', 'commander', 'pauper']
 
-const SAMPLE_DECK = `// Sample Modern Burn deck
+const SAMPLE_DECK_STANDARD = `// Sample Modern Burn deck
 4 Lightning Bolt
 4 Rift Bolt
 4 Lava Spike
@@ -23,6 +23,95 @@ const SAMPLE_DECK = `// Sample Modern Burn deck
 8 Mountain
 4 Sunbaked Canyon
 `
+
+const SAMPLE_DECK_COMMANDER = `// Sample Commander: Meren of Clan Nel Toth
+1 Meren of Clan Nel Toth
+1 Aatchik, Emerald Radian
+1 Accursed Marauder
+1 Aftermath Analyst
+1 Archfiend of Sorrows
+1 Armored Scrapgorger
+1 Circle of the Land Druid
+1 Erebos, Bleak-Hearted
+1 Eternal Witness
+1 Fiend Artisan
+1 Golgari Grave-Troll
+1 Golgari Thug
+1 Gravelighter
+1 Haywire Mite
+1 Honest Rutstein
+1 Izoni, Thousand-Eyed
+1 Massacre Girl
+1 Mirkwood Bats
+1 Pharika, God of Affliction
+1 Plaguecrafter
+1 Priest of Forgotten Gods
+1 Reclamation Sage
+1 Sakura-Tribe Elder
+1 Scavenging Ooze
+1 Six
+1 Skeleton Crew
+1 Skull Prophet
+1 Syr Konrad, the Grim
+1 Teysa Karlov
+1 Void Attendant
+1 Ashnod's Altar
+1 Skullclamp
+1 Battlemage Bracers
+1 Liliana, Death's Majesty
+1 Vraska, Golgari Queen
+1 Bala Ged Recovery
+1 Blight Grenade
+1 Buried Alive
+1 Collective Resistance
+1 Golgari Charm
+1 Harrow
+1 Temporary Lockdown
+1 Chalk Outline
+1 Chthonian Nightmare
+1 Insidious Roots
+1 Torment of Hailfire
+1 Ash Barrens
+1 Barren Moor
+1 Command Tower
+1 Cryptic Caves
+1 Deadwood Enclave
+1 Deathcap Glade
+1 Duress
+1 Evolving Wilds
+1 Fetid Heath
+1 Golgari Rot Farm
+1 Jungle Hollow
+1 Mortuary Mire
+1 Overgrown Tomb
+1 Phantasmal Image
+1 Polluted Mire
+1 Putrid Swamp
+1 Reliquary Tower
+1 Revitalize
+1 Sandsteppe Citadel
+1 Scoured Barrens
+1 Suffocating Pit
+1 Swamp
+1 Swamp
+1 Swamp
+1 Swamp
+1 Swamp
+1 Swamp
+1 Swamp
+1 Swamp
+1 Tainted Wood
+1 Temple of Malady
+1 Temple of the False God
+1 The Ozolith
+1 Urborg Tomb of Yawgmoth
+1 Verdant Catacombs
+1 Veinwitch Concoction
+1 Wasteland
+1 Woodland Cemetery
+`
+
+const SAMPLE_DECK = SAMPLE_DECK_STANDARD
 
 export default function Analyzer({ token, user, locale, messages, decklist: decklistProp, format: formatProp, onDeckChange, onFormatChange }) {
   const [decklist, setDecklist] = useState('')
@@ -188,7 +277,7 @@ export default function Analyzer({ token, user, locale, messages, decklist: deck
             <textarea
               value={decklist}
               onChange={e => handleDecklistChange(e.target.value)}
-              placeholder={SAMPLE_DECK}
+              placeholder={format === 'commander' ? SAMPLE_DECK_COMMANDER : SAMPLE_DECK_STANDARD}
               required
             />
 
