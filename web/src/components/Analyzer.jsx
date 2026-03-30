@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import ManaCurveChart from './ManaCurveChart'
 import InteractionPanel from './InteractionPanel'
 import { ManaSymbol, ManaSymbolGroup, isManaColorCode } from './ManaSymbol'
@@ -688,6 +688,7 @@ function AnalysisLegend({ result, messages }) {
 }
 
 function LegalityLegend({ legality, messages }) {
+  const [expandedFormat, setExpandedFormat] = useState(null)
   const rows = ['standard', 'pioneer', 'modern', 'legacy', 'vintage', 'commander', 'pauper']
     .map(format => ({ format, data: legality?.[format] }))
     .filter(item => item.data)
@@ -719,17 +720,64 @@ function LegalityLegend({ legality, messages }) {
           <tbody>
             {rows.map(({ format, data }) => {
               const issueCount = (data.issues?.length || 0) + (data.illegal_cards?.length || 0)
+              const isExpanded = expandedFormat === format
               return (
-                <tr key={format}>
-                  <td style={{ textTransform: 'capitalize', fontWeight: 600 }}>{format}</td>
-                  <td>
-                    <span className={`legality-chip ${data.is_legal ? 'legal' : 'illegal'}`}>
-                      {data.is_legal ? messages.legalityLegalLabel : messages.legalityIllegalLabel}
-                    </span>
-                  </td>
-                  <td>{data.deck_size}</td>
-                  <td>{issueCount}</td>
-                </tr>
+                <Fragment key={format}>
+                  <tr>
+                    <td style={{ textTransform: 'capitalize', fontWeight: 600 }}>{format}</td>
+                    <td>
+                      <span className={`legality-chip ${data.is_legal ? 'legal' : 'illegal'}`}>
+                        {data.is_legal ? messages.legalityLegalLabel : messages.legalityIllegalLabel}
+                      </span>
+                    </td>
+                    <td>{data.deck_size}</td>
+                    <td>
+                      {issueCount > 0 ? (
+                        <button
+                          type="button"
+                          className="tab-btn"
+                          style={{ padding: '2px 10px', fontSize: '.8rem', borderBottom: 'none' }}
+                          onClick={() => setExpandedFormat(isExpanded ? null : format)}
+                        >
+                          {issueCount} {isExpanded ? messages.hideDetailsLabel : messages.showDetailsLabel}
+                        </button>
+                      ) : (
+                        issueCount
+                      )}
+                    </td>
+                  </tr>
+                  {isExpanded && issueCount > 0 && (
+                    <tr>
+                      <td colSpan={4} style={{ padding: '10px 12px', background: 'rgba(255,255,255,0.02)' }}>
+                        <div style={{ fontSize: '.82rem', color: 'var(--muted)' }}>
+                          {data.issues?.length > 0 && (
+                            <div style={{ marginBottom: 8 }}>
+                              <strong style={{ color: 'var(--text)' }}>{messages.legalityGeneralIssuesLabel}</strong>
+                              <ul style={{ margin: '6px 0 0 18px' }}>
+                                {data.issues.map((issue, idx) => (
+                                  <li key={`issue-${format}-${idx}`}>{issue}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+
+                          {data.illegal_cards?.length > 0 && (
+                            <div>
+                              <strong style={{ color: 'var(--text)' }}>{messages.legalityCardIssuesLabel}</strong>
+                              <ul style={{ margin: '6px 0 0 18px' }}>
+                                {data.illegal_cards.map((item, idx) => (
+                                  <li key={`illegal-${format}-${idx}`}>
+                                    {item.card_name} x{item.quantity}: {item.reason}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               )
             })}
           </tbody>
