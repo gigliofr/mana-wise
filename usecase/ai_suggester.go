@@ -57,12 +57,14 @@ func (s *AISuggester) Suggest(ctx context.Context, decklist, format, locale stri
 		text, source, err = s.tryExternalChain(ctx, hash, decklist, format, locale, analysis, cards)
 		if err == nil {
 			text, source = s.enforceLocale(format, locale, analysis, cards, text, source)
+			text = appendDeterministicCoachingFooter(text, locale, analysis, source)
 		}
 		return
 	case AIModeExternalOnly:
 		text, source, err = s.tryExternalChain(ctx, hash, decklist, format, locale, analysis, cards)
 		if err == nil {
 			text, source = s.enforceLocale(format, locale, analysis, cards, text, source)
+			text = appendDeterministicCoachingFooter(text, locale, analysis, source)
 		}
 		return
 	default: // hybrid_prefer_external
@@ -70,6 +72,7 @@ func (s *AISuggester) Suggest(ctx context.Context, decklist, format, locale stri
 		text, source, extErr = s.tryExternalChain(ctx, hash, decklist, format, locale, analysis, cards)
 		if extErr == nil {
 			text, source = s.enforceLocale(format, locale, analysis, cards, text, source)
+			text = appendDeterministicCoachingFooter(text, locale, analysis, source)
 			return
 		}
 		if !s.internalEnable {
@@ -171,4 +174,55 @@ func seemsEnglishSuggestion(text string) bool {
 		}
 	}
 	return hits >= 2
+}
+
+func appendDeterministicCoachingFooter(text, locale string, analysis *domain.AnalysisResult, source string) string {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" || analysis == nil {
+		return text
+	}
+	if strings.TrimSpace(source) == "internal_rules" {
+		return text
+	}
+	if strings.Contains(trimmed, "Rule-check:") || strings.Contains(trimmed, "Controllo regole:") {
+		return text
+	}
+
+	footer := buildDeterministicCoachingFooter(locale, analysis)
+	if footer == "" {
+		return text
+	}
+	return trimmed + "\n\n" + footer
+}
+
+func buildDeterministicCoachingFooter(locale string, analysis *domain.AnalysisResult) string {
+	if analysis == nil {
+		return ""
+	}
+
+	it := strings.HasPrefix(strings.ToLower(strings.TrimSpace(locale)), "it")
+	mana := analysis.Mana
+	interaction := analysis.Interaction
+	colors := 0
+	for _, req := range mana.SourceRequirements {
+		if req.Required > 0 {
+			colors++
+		}
+	}
+
+	if it {
+		return fmt.Sprintf(
+			"Controllo regole:\n- Terre %d/%d, fonti totali %d/%d.\n- Consistenza: screw %.1f%%, flood %.1f%%, sweet spot %.1f%%.\n- Piano %s con %d colori: verifica che i primi turni non siano rallentati da troppe terre tappate.\n- Iterazione consigliata: 5-10 partite, poi aggiusta quantita (4x core, 2-3x situazionali, 1x silver bullet).",
+			mana.LandCount, mana.IdealLandCount, mana.CurrentTotalSources, mana.TargetTotalSources,
+			mana.ManaScrewChance, mana.ManaFloodChance, mana.SweetSpotChance,
+			interaction.Archetype, colors,
+		)
+	}
+
+	return fmt.Sprintf(
+		"Rule-check:\n- Lands %d/%d, total sources %d/%d.\n- Consistency: screw %.1f%%, flood %.1f%%, sweet spot %.1f%%.\n- %s plan with %d colors: verify early turns are not slowed by too many tapped lands.\n- Suggested loop: play 5-10 matches, then tune quantities (4x core, 2-3x situational, 1x silver bullet).",
+		mana.LandCount, mana.IdealLandCount, mana.CurrentTotalSources, mana.TargetTotalSources,
+		mana.ManaScrewChance, mana.ManaFloodChance, mana.SweetSpotChance,
+		interaction.Archetype, colors,
+	)
 }

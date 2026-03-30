@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/manawise/api/domain"
@@ -134,5 +135,42 @@ func TestAISuggester_InternalOnly_NilAnalysis_ReturnsError(t *testing.T) {
 	// BuildInternalSuggestions returns "" for nil → tryInternal returns error
 	if err == nil {
 		t.Error("expected error for nil analysis input")
+	}
+}
+
+func TestAppendDeterministicCoachingFooter_AppendsForExternalSource(t *testing.T) {
+	a := minimalAnalysis()
+	a.Mana.CurrentTotalSources = 35
+	a.Mana.TargetTotalSources = 37
+	a.Mana.ManaScrewChance = 21.3
+	a.Mana.ManaFloodChance = 12.7
+	a.Mana.SweetSpotChance = 66.0
+	a.Mana.SourceRequirements = []domain.ColorSourceRequirement{{Color: "R", Required: 12, Current: 10, Gap: 2}}
+	a.Interaction.Archetype = "aggro"
+
+	base := "1) Keep pressure high."
+	out := appendDeterministicCoachingFooter(base, "en", a, "gemini:gemini-pro-latest")
+
+	if !strings.Contains(out, "Rule-check:") {
+		t.Fatalf("expected Rule-check footer, got: %s", out)
+	}
+	if !strings.Contains(out, "Lands 37/37") {
+		t.Fatalf("expected lands summary in footer, got: %s", out)
+	}
+}
+
+func TestAppendDeterministicCoachingFooter_DoesNotAppendForInternalSource(t *testing.T) {
+	out := appendDeterministicCoachingFooter("1) Internal suggestion", "it", minimalAnalysis(), "internal_rules")
+	if strings.Contains(out, "Controllo regole:") || strings.Contains(out, "Rule-check:") {
+		t.Fatalf("did not expect coaching footer for internal source, got: %s", out)
+	}
+}
+
+func TestBuildDeterministicCoachingFooter_ItalianLocale(t *testing.T) {
+	a := minimalAnalysis()
+	a.Interaction.Archetype = "control"
+	footer := buildDeterministicCoachingFooter("it", a)
+	if !strings.Contains(footer, "Controllo regole:") {
+		t.Fatalf("expected italian footer label, got: %s", footer)
 	}
 }
