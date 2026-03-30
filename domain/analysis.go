@@ -22,12 +22,21 @@ type ColorSourceRequirement struct {
 	Gap      int    `json:"gap"`
 }
 
+// CardTypeDistribution summarizes non-land card counts by macro type buckets.
+type CardTypeDistribution struct {
+	Creature       int `json:"creature"`
+	Spell          int `json:"spell"`
+	EnchantArtifact int `json:"enchant_artifact"`
+	Planeswalker   int `json:"planeswalker"`
+}
+
 // ManaAnalysis is the output of the deterministic mana-curve analysis.
 type ManaAnalysis struct {
 	Format            string                `json:"format"`
 	TotalCards        int                   `json:"total_cards"`
 	AverageCMC        float64               `json:"average_cmc"`
 	Distribution      []CMCBucket           `json:"distribution"`
+	TypeDistribution  CardTypeDistribution  `json:"type_distribution"`
 	LandCount         int                   `json:"land_count"`
 	IdealLandCount    int                   `json:"ideal_land_count"`
 	ManaProducerCount int                   `json:"mana_producer_count,omitempty"`

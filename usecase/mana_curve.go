@@ -49,6 +49,7 @@ func AnalyzeManaCurve(cards []*domain.Card, quantities map[string]int, format st
 		ColorDistribution: make(map[string]int),
 		PipDistribution:   make(map[string]int),
 		SourceRequirements: []domain.ColorSourceRequirement{},
+		TypeDistribution:  domain.CardTypeDistribution{},
 	}
 
 	// Build CMC buckets (0-6+) and count lands.
@@ -78,6 +79,7 @@ func AnalyzeManaCurve(cards []*domain.Card, quantities map[string]int, format st
 			landCount += qty
 			landEntries = append(landEntries, landEntry{card: card, qty: qty})
 		} else {
+			addToTypeDistribution(&result.TypeDistribution, card, qty)
 			bucketKey := cardCMC
 			if bucketKey > 6 {
 				bucketKey = 6
@@ -195,6 +197,36 @@ func isPermanentManaSourceCandidate(card *domain.Card) bool {
 		strings.Contains(tl, "artifact") || strings.Contains(tl, "artefatto") ||
 		strings.Contains(tl, "enchantment") || strings.Contains(tl, "incantesimo") ||
 		strings.Contains(tl, "planeswalker") || strings.Contains(tl, "battle")
+}
+
+func addToTypeDistribution(dist *domain.CardTypeDistribution, card *domain.Card, qty int) {
+	if dist == nil || card == nil || qty <= 0 {
+		return
+	}
+	tl := strings.ToLower(strings.TrimSpace(card.TypeLine))
+
+	if strings.Contains(tl, "creature") || strings.Contains(tl, "creatura") {
+		dist.Creature += qty
+		return
+	}
+
+	if strings.Contains(tl, "planeswalker") {
+		dist.Planeswalker += qty
+		return
+	}
+
+	if strings.Contains(tl, "instant") || strings.Contains(tl, "sorcery") || strings.Contains(tl, "stregoneria") || strings.Contains(tl, "istantaneo") {
+		dist.Spell += qty
+		return
+	}
+
+	if strings.Contains(tl, "enchantment") || strings.Contains(tl, "artifact") || strings.Contains(tl, "incantesimo") || strings.Contains(tl, "artefatto") {
+		dist.EnchantArtifact += qty
+		return
+	}
+
+	// Fallback: unknown non-land card types are grouped into spell bucket.
+	dist.Spell += qty
 }
 
 func landSourceColors(card *domain.Card, deckDemandColors map[string]bool) []string {

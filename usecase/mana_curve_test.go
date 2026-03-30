@@ -282,6 +282,41 @@ func TestAnalyzeManaCurve_IncludesManaProducingCreaturesInCurrentSources(t *test
 	}
 }
 
+func TestAnalyzeManaCurve_ComputesTypeDistribution(t *testing.T) {
+	cards := []*domain.Card{
+		{ID: "land", Name: "Mountain", TypeLine: "Basic Land - Mountain"},
+		{ID: "creature", Name: "Goblin Guide", CMC: 1, TypeLine: "Creature - Goblin"},
+		{ID: "instant", Name: "Lightning Bolt", CMC: 1, TypeLine: "Instant"},
+		{ID: "sorcery", Name: "Lava Spike", CMC: 1, TypeLine: "Sorcery"},
+		{ID: "artifact", Name: "Skullclamp", CMC: 1, TypeLine: "Artifact"},
+		{ID: "planeswalker", Name: "Chandra", CMC: 4, TypeLine: "Planeswalker - Chandra"},
+	}
+
+	q := map[string]int{
+		"land":        2,
+		"creature":    4,
+		"instant":     4,
+		"sorcery":     2,
+		"artifact":    1,
+		"planeswalker": 1,
+	}
+
+	result := usecase.AnalyzeManaCurve(cards, q, "modern")
+
+	if result.TypeDistribution.Creature != 4 {
+		t.Fatalf("expected creature count 4, got %d", result.TypeDistribution.Creature)
+	}
+	if result.TypeDistribution.Spell != 6 {
+		t.Fatalf("expected spell count 6 (instant+sorcery), got %d", result.TypeDistribution.Spell)
+	}
+	if result.TypeDistribution.EnchantArtifact != 1 {
+		t.Fatalf("expected enchant/artifact count 1, got %d", result.TypeDistribution.EnchantArtifact)
+	}
+	if result.TypeDistribution.Planeswalker != 1 {
+		t.Fatalf("expected planeswalker count 1, got %d", result.TypeDistribution.Planeswalker)
+	}
+}
+
 func TestAnalyzeManaCurve_LandConsistencyPercentagesBounded(t *testing.T) {
 	cards := []*domain.Card{
 		{ID: "forest", Name: "Forest", TypeLine: "Basic Land - Forest"},

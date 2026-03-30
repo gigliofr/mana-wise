@@ -548,7 +548,17 @@ function ManaCurvePanel({ data, detectedArchetype, decklist, messages }) {
   const profile = MOCK_ARCHETYPE_PROFILES[selectedArchetype] || MOCK_ARCHETYPE_PROFILES.aggro
   const landRatio = totalCards > 0 ? (data.land_count || 0) / totalCards : 0
   const metaMatch = calcMetaMatch(profile, data.average_cmc || 0, landRatio, curveLe2, finisher4)
-  const typeDist = estimateTypeDistribution(nonLandCards, selectedArchetype)
+  const backendTypeDist = data.type_distribution || {}
+  const hasBackendTypeDist = (backendTypeDist.creature || 0) + (backendTypeDist.spell || 0) + (backendTypeDist.enchant_artifact || 0) + (backendTypeDist.planeswalker || 0) > 0
+  const estimatedTypeDist = estimateTypeDistribution(nonLandCards, selectedArchetype)
+  const typeDist = hasBackendTypeDist
+    ? {
+      creature: backendTypeDist.creature || 0,
+      spell: backendTypeDist.spell || 0,
+      enchantArtifact: backendTypeDist.enchant_artifact || 0,
+      planeswalker: backendTypeDist.planeswalker || 0,
+    }
+    : estimatedTypeDist
 
   const creature12 = clampPercent(curveLe2 + (selectedArchetype === 'aggro' ? 8 : selectedArchetype === 'control' ? -10 : 0))
   const fastSpells = clampPercent(100 - ((data.average_cmc || 0) * 16) + (selectedArchetype === 'combo' ? 10 : 0))
