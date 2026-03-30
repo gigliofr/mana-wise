@@ -119,14 +119,28 @@ export const translations = {
     },
     localSummaryLines: {
       archetype: archetype => `Il mazzo è classificato come ${archetype}.`,
+      colorSpeed: (archetype, colors, risk) => {
+        if (risk === 'high') return `Profilo colori: ${colors} colori su piano ${archetype}. Rischio alto di partenze lente: riduci tapland o valuta una base più lineare.`
+        if (risk === 'medium') return `Profilo colori: ${colors} colori su piano ${archetype}. Rischio medio: tieni sotto controllo le terre che entrano tappate nei primi turni.`
+        return `Profilo colori: ${colors} colori su piano ${archetype}. Rischio velocita basso.`
+      },
+      landRange: (lands, min, max) => lands < min
+        ? `Range terre consigliato per questo piano: ${min}-${max}. Attualmente sei sotto (${lands}).`
+        : lands > max
+          ? `Range terre consigliato per questo piano: ${min}-${max}. Attualmente sei sopra (${lands}).`
+          : `Range terre consigliato per questo piano: ${min}-${max}. Sei dentro il range (${lands}).`,
       lands: (lands, ideal) => lands === ideal
         ? `Il numero di terre è centrato sul benchmark del formato (${lands}/${ideal}).`
         : lands < ideal
           ? `Le terre sono sotto il benchmark del formato (${lands}/${ideal}), quindi la consistenza iniziale può calare.`
           : `Le terre sono sopra il benchmark del formato (${lands}/${ideal}), quindi potresti avere pescate troppo passive.`,
+      consistency: (screw, flood, sweet) => `Consistenza pescate: screw ${screw.toFixed(1)}%, flood ${flood.toFixed(1)}%, sweet spot ${sweet.toFixed(1)}%.`,
       cmc: avg => `Il CMC medio è ${avg.toFixed(2)}: descrive quanto il mazzo parte veloce o lenta.`,
       peak: label => `Il picco della curva è su costo ${label}.`,
       interaction: (score, band) => `Il punteggio interazioni è ${score.toFixed(1)}/100, quindi il livello è ${band}.`,
+      topGap: (category, gap) => `Gap principale: ${category} sotto target di ${gap}. Priorità alta nel prossimo tuning.`,
+      topGapNone: () => 'Nessun gap evidente nelle macro-categorie di interazione.',
+      playtestingLoop: () => 'Loop consigliato: gioca 5-10 partite, traccia carte underperforming, poi regola quantità (4x core, 2-3x situazionali, 1x silver bullet).',
     },
     translateSuggestion: (category, count, archetype, ideal) => {
       const cat = ({
@@ -440,14 +454,28 @@ export const translations = {
     },
     localSummaryLines: {
       archetype: archetype => `The deck is classified as ${archetype}.`,
+      colorSpeed: (archetype, colors, risk) => {
+        if (risk === 'high') return `Color profile: ${colors} colors on a ${archetype} plan. High risk of slow starts: cut taplands or simplify the mana base.`
+        if (risk === 'medium') return `Color profile: ${colors} colors on a ${archetype} plan. Medium risk: monitor early tapped lands closely.`
+        return `Color profile: ${colors} colors on a ${archetype} plan. Low speed risk.`
+      },
+      landRange: (lands, min, max) => lands < min
+        ? `Suggested land range for this plan: ${min}-${max}. You are currently below it (${lands}).`
+        : lands > max
+          ? `Suggested land range for this plan: ${min}-${max}. You are currently above it (${lands}).`
+          : `Suggested land range for this plan: ${min}-${max}. You are inside the range (${lands}).`,
       lands: (lands, ideal) => lands === ideal
         ? `Your land count is right on the format benchmark (${lands}/${ideal}).`
         : lands < ideal
           ? `Your land count is below the format benchmark (${lands}/${ideal}), so early consistency may suffer.`
           : `Your land count is above the format benchmark (${lands}/${ideal}), so you may draw too many passive cards.`,
+      consistency: (screw, flood, sweet) => `Draw consistency: screw ${screw.toFixed(1)}%, flood ${flood.toFixed(1)}%, sweet spot ${sweet.toFixed(1)}%.`,
       cmc: avg => `Average CMC is ${avg.toFixed(2)}, which describes how quickly the deck starts operating.`,
       peak: label => `The main mana-curve peak sits at cost ${label}.`,
       interaction: (score, band) => `Interaction score is ${score.toFixed(1)}/100, which puts the deck in the ${band.toLowerCase()} band.`,
+      topGap: (category, gap) => `Primary gap: ${category} is ${gap} below target. High priority for the next tuning pass.`,
+      topGapNone: () => 'No major gap detected in core interaction categories.',
+      playtestingLoop: () => 'Suggested loop: play 5-10 matches, track underperforming cards, then adjust quantities (4x core, 2-3x situational, 1x silver bullets).',
     },
     translateSuggestion: (category, count, archetype, ideal) => {
       if (archetype) {

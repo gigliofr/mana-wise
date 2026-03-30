@@ -529,17 +529,23 @@ function AIPanel({ text, error, source, result, messages }) {
         <div className="ai-box">
           <strong>{messages.localSummaryTitle}</strong>
           <ul className="suggestion-list" style={{ marginTop: 12 }}>
-            {fallbackLines.map((line, index) => <li key={index}>{line}</li>)}
+            {fallbackLines.map((line, index) => <li key={index}>{renderManaSymbolsInText(line, 14)}</li>)}
           </ul>
         </div>
       </div>
     )
   }
+
+  const aiTextLines = String(text || '').split('\n')
   return (
     <div>
       <span className="ai-badge">{messages.aiBadge}</span>
       <div className="ai-source-label">{sourceLabel}</div>
-      <div className="ai-box">{text}</div>
+      <div className="ai-box">
+        {aiTextLines.map((line, idx) => (
+          <div key={`ai-line-${idx}`}>{renderManaSymbolsInText(line, 14)}</div>
+        ))}
+      </div>
     </div>
   )
 }
@@ -651,6 +657,7 @@ function buildLocalSummary(result, messages) {
 
   const mana = result.deterministic.mana
   const interaction = result.deterministic.interaction
+  const categories = interaction?.categories || []
   const scoreBand = interaction.total_score >= 70
     ? messages.scoreBandGood
     : interaction.total_score >= 40
@@ -658,12 +665,73 @@ function buildLocalSummary(result, messages) {
       : messages.scoreBandLow
   const peakBucket = [...mana.distribution].sort((a, b) => b.count - a.count)[0]
   const peakLabel = peakBucket?.cmc >= 6 ? '6+' : String(peakBucket?.cmc ?? 0)
+  const deckArchetype = interaction.archetype || 'unknown'
+  const colorCount = (mana.color_requirements || []).filter(req => (req?.required_sources || 0) > 0).length
+  const colorSpeedRisk = getColorSpeedRisk(deckArchetype, colorCount)
+  const [landMin, landMax] = getArchetypeLandRange(deckArchetype, mana.total_cards || 60, mana.ideal_land_count || mana.land_count)
+  const topDeficit = [...categories]
+    .map(cat => ({ ...cat, deficit: (cat.ideal || 0) - (cat.count || 0) }))
+    .filter(cat => cat.deficit > 0)
+    .sort((a, b) => b.deficit - a.deficit)[0]
+  const focusCategoryLabel = topDeficit?.category
+    ? (messages.categoryLabels?.[topDeficit.category] || topDeficit.category)
+    : null
 
   return [
-    messages.localSummaryLines.archetype(interaction.archetype || 'unknown'),
+    messages.localSummaryLines.archetype(deckArchetype),
+    messages.localSummaryLines.colorSpeed(deckArchetype, colorCount, colorSpeedRisk),
+    messages.localSummaryLines.landRange(mana.land_count, landMin, landMax),
     messages.localSummaryLines.lands(mana.land_count, mana.ideal_land_count),
+    messages.localSummaryLines.consistency(mana.mana_screw_chance || 0, mana.mana_flood_chance || 0, mana.sweet_spot_chance || 0),
     messages.localSummaryLines.cmc(mana.average_cmc),
     messages.localSummaryLines.peak(peakLabel),
     messages.localSummaryLines.interaction(interaction.total_score, scoreBand),
+    focusCategoryLabel
+      ? messages.localSummaryLines.topGap(focusCategoryLabel, topDeficit.deficit)
+      : messages.localSummaryLines.topGapNone(),
+    messages.localSummaryLines.playtestingLoop(),
   ]
+}
+
+function getColorSpeedRisk(archetype, colorCount) {
+  if (archetype === 'aggro') {
+    if (colorCount >= 3) return 'high'
+    if (colorCount === 2) return 'medium'
+    return 'low'
+  }
+  if (archetype === 'combo') {
+    if (colorCount >= 4) return 'high'
+    if (colorCount === 3) return 'medium'
+    return 'low'
+  }
+  if (archetype === 'midrange') {
+    if (colorCount >= 4) return 'high'
+    if (colorCount === 3) return 'medium'
+    return 'low'
+  }
+  if (archetype === 'control' || archetype === 'ramp') {
+    if (colorCount >= 5) return 'high'
+    if (colorCount === 4) return 'medium'
+    return 'low'
+  }
+  if (colorCount >= 4) return 'medium'
+  return 'low'
+}
+
+function getArchetypeLandRange(archetype, totalCards, idealLandCount) {
+  if (totalCards >= 80) {
+    if (archetype === 'aggro') return [34, 37]
+    if (archetype === 'control') return [36, 39]
+    if (archetype === 'midrange') return [35, 38]
+    if (archetype === 'ramp') return [37, 40]
+    if (archetype === 'combo') return [34, 38]
+    return [Math.max(32, idealLandCount - 1), Math.max(34, idealLandCount + 2)]
+  }
+
+  if (archetype === 'aggro') return [20, 24]
+  if (archetype === 'control') return [26, 28]
+  if (archetype === 'midrange') return [24, 26]
+  if (archetype === 'ramp') return [25, 28]
+  if (archetype === 'combo') return [22, 25]
+  return [Math.max(20, idealLandCount - 1), idealLandCount + 1]
 }
