@@ -111,6 +111,7 @@ type deckSideboardSuggestResponse struct {
 	MetaSnapshot string                     `json:"meta_snapshot,omitempty"`
 	Suggestions  []sideboardSuggestion      `json:"suggestions"`
 	TotalCards   int                        `json:"total_cards"`
+	GenerationMode string                   `json:"generation_mode"`
 	Plan         usecase.SideboardPlanResult `json:"plan"`
 	CheckedAtUTC string                     `json:"checked_at"`
 }
@@ -127,6 +128,8 @@ type deckSimulateResponse struct {
 	Raw             usecase.MulliganSimulationResult `json:"raw"`
 	CheckedAtUTC    string                      `json:"checked_at"`
 }
+
+const targetSideboardSize = 15
 
 // saveDeckRequest is the JSON body for deck save/update.
 type saveDeckRequest struct {
@@ -452,35 +455,38 @@ func (h *DeckHandler) SideboardSuggest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sideboardDecklist := deckToSideboardDecklist(deck)
-	if strings.TrimSpace(sideboardDecklist) == "" {
-		jsonError(w, "deck has no sideboard cards", http.StatusUnprocessableEntity)
-		return
-	}
 
 	format := strings.TrimSpace(req.Format)
 	if format == "" {
 		format = deck.Format
 	}
 
-	uc := usecase.NewSideboardCoachUseCase(h.cardRepo)
-	plan, err := uc.Execute(r.Context(), usecase.SideboardPlanRequest{
-		MainDecklist:      mainDecklist,
-		SideboardDecklist: sideboardDecklist,
-		OpponentArchetype: req.OpponentArchetype,
-		Format:            format,
-	})
-	if err != nil {
-		jsonError(w, err.Error(), http.StatusUnprocessableEntity)
-		return
+	plan := usecase.SideboardPlanResult{Matchup: req.OpponentArchetype}
+	generationMode := "meta_fallback"
+	if strings.TrimSpace(sideboardDecklist) != "" {
+		uc := usecase.NewSideboardCoachUseCase(h.cardRepo)
+		if p, err := uc.Execute(r.Context(), usecase.SideboardPlanRequest{
+			MainDecklist:      mainDecklist,
+			SideboardDecklist: sideboardDecklist,
+			OpponentArchetype: req.OpponentArchetype,
+			Format:            format,
+		}); err == nil {
+			plan = p
+			generationMode = "hybrid_saved_sideboard_plus_meta"
+		} else {
+			plan.Notes = append(plan.Notes, "Sideboard plan fallback enabled: using matchup-oriented meta template.")
+		}
+	} else {
+		plan.Notes = append(plan.Notes, "No saved sideboard found: generated full 15-card board from matchup-oriented template.")
 	}
 
-	suggestions := make([]sideboardSuggestion, 0, len(plan.Ins))
-	totalCards := 0
+	suggestions := make([]sideboardSuggestion, 0, targetSideboardSize)
+	slotByCard := map[string]int{}
 	for _, in := range plan.Ins {
 		if in.Qty <= 0 {
 			continue
 		}
-		totalCards += in.Qty
+		slotByCard[strings.ToLower(strings.TrimSpace(in.Card))] = len(suggestions)
 		suggestions = append(suggestions, sideboardSuggestion{
 			Card:     in.Card,
 			Qty:      in.Qty,
@@ -489,15 +495,119 @@ func (h *DeckHandler) SideboardSuggest(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
+	templates := metaSideboardTemplate(req.OpponentArchetype, strings.TrimSpace(req.MetaSnapshot))
+	for _, cand := range templates {
+		if cand.Qty <= 0 {
+			continue
+		}
+		key := strings.ToLower(strings.TrimSpace(cand.Card))
+		if idx, ok := slotByCard[key]; ok {
+			suggestions[idx].Qty += cand.Qty
+			if strings.TrimSpace(suggestions[idx].Reason) == "" {
+				suggestions[idx].Reason = cand.Reason
+			}
+			continue
+		}
+		slotByCard[key] = len(suggestions)
+		suggestions = append(suggestions, cand)
+	}
+
+	totalCards := 0
+	for i := range suggestions {
+		if suggestions[i].Qty < 0 {
+			suggestions[i].Qty = 0
+		}
+		totalCards += suggestions[i].Qty
+	}
+
+	if totalCards > targetSideboardSize {
+		extra := totalCards - targetSideboardSize
+		for i := len(suggestions) - 1; i >= 0 && extra > 0; i-- {
+			take := suggestions[i].Qty
+			if take > extra {
+				take = extra
+			}
+			suggestions[i].Qty -= take
+			extra -= take
+		}
+	}
+
+	totalCards = 0
+	trimmed := make([]sideboardSuggestion, 0, len(suggestions))
+	for _, s := range suggestions {
+		if s.Qty <= 0 {
+			continue
+		}
+		trimmed = append(trimmed, s)
+		totalCards += s.Qty
+	}
+	suggestions = trimmed
+
 	jsonOK(w, deckSideboardSuggestResponse{
 		DeckID:       deck.ID,
 		Format:       format,
 		MetaSnapshot: strings.TrimSpace(req.MetaSnapshot),
 		Suggestions:  suggestions,
 		TotalCards:   totalCards,
+		GenerationMode: generationMode,
 		Plan:         plan,
 		CheckedAtUTC: time.Now().UTC().Format(time.RFC3339),
 	})
+}
+
+func metaSideboardTemplate(opponentArchetype, metaSnapshot string) []sideboardSuggestion {
+	opponent := normalizeArchetypeInput(opponentArchetype)
+	base := []sideboardSuggestion{}
+	snapshot := strings.ToLower(strings.TrimSpace(metaSnapshot))
+
+	switch opponent {
+	case "combo":
+		base = []sideboardSuggestion{
+			{Card: "Damping Sphere", Qty: 3, Reason: "Slows mana engines and storm turns.", Matchups: []string{"combo", "ramp"}},
+			{Card: "Thoughtseize", Qty: 2, Reason: "Pre-emptively strip key combo pieces.", Matchups: []string{"combo", "control"}},
+			{Card: "Negate", Qty: 2, Reason: "Protect tempo while interacting on stack.", Matchups: []string{"combo", "control"}},
+			{Card: "Unlicensed Hearse", Qty: 2, Reason: "Graveyard denial against recursion loops.", Matchups: []string{"combo", "graveyard"}},
+			{Card: "Pithing Needle", Qty: 2, Reason: "Shuts down activated win enablers.", Matchups: []string{"combo", "artifacts"}},
+			{Card: "Surgical Extraction", Qty: 2, Reason: "Removes deterministic line pieces from game.", Matchups: []string{"combo", "graveyard"}},
+			{Card: "Flusterstorm", Qty: 2, Reason: "Stack-efficient answer in spell-heavy fights.", Matchups: []string{"combo", "control"}},
+		}
+	case "aggro":
+		base = []sideboardSuggestion{
+			{Card: "Anger of the Gods", Qty: 2, Reason: "Resets wide boards and exiles recursive threats.", Matchups: []string{"aggro", "graveyard"}},
+			{Card: "Temporary Lockdown", Qty: 2, Reason: "Sweeps low-curve permanents efficiently.", Matchups: []string{"aggro", "artifacts", "enchantments"}},
+			{Card: "Fatal Push", Qty: 3, Reason: "Cheap interaction for early pressure.", Matchups: []string{"aggro", "midrange"}},
+			{Card: "Sunset Revelry", Qty: 2, Reason: "Stabilizes life total and board presence.", Matchups: []string{"aggro"}},
+			{Card: "Path to Exile", Qty: 2, Reason: "Efficient creature answer at instant speed.", Matchups: []string{"aggro", "midrange"}},
+			{Card: "Engineered Explosives", Qty: 2, Reason: "Flexible sweeper against token and low-CMC swarms.", Matchups: []string{"aggro", "artifacts"}},
+			{Card: "Aether Gust", Qty: 2, Reason: "Tempo-positive answer versus red/green threats.", Matchups: []string{"aggro", "ramp"}},
+		}
+	case "control":
+		base = []sideboardSuggestion{
+			{Card: "Mystical Dispute", Qty: 3, Reason: "Mana-efficient counter war edge.", Matchups: []string{"control", "combo"}},
+			{Card: "Thoughtseize", Qty: 2, Reason: "Disrupts reactive hands before big turns.", Matchups: []string{"control", "combo"}},
+			{Card: "Teferi, Time Raveler", Qty: 2, Reason: "Forces sorcery-speed windows.", Matchups: []string{"control"}},
+			{Card: "Duress", Qty: 2, Reason: "Low-cost interaction for non-creature spells.", Matchups: []string{"control", "combo"}},
+			{Card: "Narset, Parter of Veils", Qty: 2, Reason: "Punishes cantrip/card-draw engines.", Matchups: []string{"control", "combo"}},
+			{Card: "Negate", Qty: 2, Reason: "High coverage in non-creature exchanges.", Matchups: []string{"control", "combo"}},
+			{Card: "Shark Typhoon", Qty: 2, Reason: "Uncounterable pressure in long games.", Matchups: []string{"control", "midrange"}},
+		}
+	default:
+		base = []sideboardSuggestion{
+			{Card: "Unlicensed Hearse", Qty: 2, Reason: "Graveyard interaction with board presence.", Matchups: []string{"graveyard", "midrange"}},
+			{Card: "Negate", Qty: 2, Reason: "Stack interaction for spell-based plans.", Matchups: []string{"control", "combo"}},
+			{Card: "Damping Sphere", Qty: 2, Reason: "Slows explosive mana curves.", Matchups: []string{"combo", "ramp"}},
+			{Card: "Aether Gust", Qty: 2, Reason: "Tempo tool against red/green strategies.", Matchups: []string{"aggro", "ramp"}},
+			{Card: "Disdainful Stroke", Qty: 2, Reason: "Catches expensive threats efficiently.", Matchups: []string{"ramp", "control"}},
+			{Card: "Path to Exile", Qty: 3, Reason: "Efficient creature answer in broad metas.", Matchups: []string{"aggro", "midrange"}},
+			{Card: "Pithing Needle", Qty: 2, Reason: "Versatile answer to planeswalker/engine activations.", Matchups: []string{"control", "artifacts"}},
+		}
+	}
+
+	if strings.Contains(snapshot, "q1") && len(base) > 0 {
+		base[0].Reason = base[0].Reason + " Tuned for early-season volatility."
+	}
+
+	return base
 }
 
 func (h *DeckHandler) resolveDeckCards(r *http.Request, deck *domain.Deck) ([]*domain.Card, map[string]int, error) {

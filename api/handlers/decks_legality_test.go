@@ -556,9 +556,15 @@ func TestDeckSideboardSuggestHandler_OK(t *testing.T) {
 	if _, ok := resp["plan"]; !ok {
 		t.Fatalf("expected plan field")
 	}
+	if _, ok := resp["generation_mode"]; !ok {
+		t.Fatalf("expected generation_mode field")
+	}
+	if got, ok := resp["total_cards"].(float64); !ok || int(got) != 15 {
+		t.Fatalf("expected total_cards=15, got %v", resp["total_cards"])
+	}
 }
 
-func TestDeckSideboardSuggestHandler_RequiresSideboard(t *testing.T) {
+func TestDeckSideboardSuggestHandler_GeneratesWhenNoSavedSideboard(t *testing.T) {
 	deck := &domain.Deck{
 		ID:     "d-sb-2",
 		UserID: "u-1",
@@ -568,7 +574,15 @@ func TestDeckSideboardSuggestHandler_RequiresSideboard(t *testing.T) {
 
 	h := NewDeckHandler(&legalityMockDeckRepo{deck: deck}, nil, &legalityMockCardRepo{byName: map[string]*domain.Card{}}, nil, nil, nil)
 	rr := runSideboardSuggestRequest(t, h, "/api/v1/decks/d-sb-2/sideboard/suggest", strings.NewReader(`{"opponent_archetype":"aggro"}`))
-	if rr.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("expected 422, got %d body=%s", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got, ok := resp["total_cards"].(float64); !ok || int(got) != 15 {
+		t.Fatalf("expected total_cards=15, got %v", resp["total_cards"])
 	}
 }

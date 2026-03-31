@@ -254,7 +254,9 @@ Risposta 200:
 
 Stato implementazione corrente:
 - endpoint deck-centric `POST /api/v1/decks/{id}/sideboard/suggest` disponibile
-- usa mainboard + sideboard salvati nel deck e produce `suggestions`, `total_cards`, `plan`
+- genera una sideboard completa da 15 carte orientata matchup/meta (`total_cards=15`)
+- funziona sia con sideboard salvata (modalita ibrida) sia senza sideboard (fallback meta template)
+- produce `suggestions`, `total_cards`, `generation_mode`, `plan`
 - supporta `opponent_archetype` e `meta_snapshot` nel payload
 
 ---
