@@ -5,6 +5,7 @@ import MatchupSimulator from './components/MatchupSimulator'
 import SideboardCoach from './components/SideboardCoach'
 import MulliganAssistant from './components/MulliganAssistant'
 import DeckLibrary from './components/DeckLibrary'
+import VisualDeckBuilder from './components/VisualDeckBuilder'
 import PlansSupport from './components/PlansSupport'
 import LegalFooter from './components/LegalFooter'
 import { LegalPage } from './components/LegalPages'
@@ -119,6 +120,7 @@ function App() {
 
   const tools = [
     { key: 'analyzer', label: messages.navAnalyzer },
+    { key: 'builder', label: messages.navBuilder || 'Builder' },
     { key: 'matchup', label: messages.navMatchup },
     { key: 'sideboard', label: messages.navSideboard },
     { key: 'mulligan', label: messages.navMulligan },
@@ -191,6 +193,14 @@ function App() {
               format={sharedFormat}
               onDeckChange={setSharedDecklist}
               onFormatChange={setSharedFormat}
+            />
+          )}
+          {activeTool === 'builder' && (
+            <VisualDeckBuilder
+              token={token}
+              messages={messages}
+              decklist={sharedDecklist}
+              onDeckChange={setSharedDecklist}
             />
           )}
           {activeTool === 'matchup' && (

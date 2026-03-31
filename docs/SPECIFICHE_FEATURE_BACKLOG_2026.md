@@ -466,7 +466,7 @@ Hover su nome carta mostra preview HD Scryfall, supporto DFC con flip animato, d
 
 ## 12) Visual Deck Builder Drag & Drop
 Priorita: UX  
-Stato: Mancante
+Stato: Parziale (v1 frontend disponibile con DnD Main/Side/Maybe e sync realtime deck text)
 
 ### Descrizione funzionale
 Builder visuale con tile immagini carta, DnD tra main/side/maybeboard, sync realtime con deck text view.
@@ -484,9 +484,12 @@ Body:
 ```
 
 ### Dipendenze tecniche
-- DnD Kit
-- Stato ottimistico + rollback su errore
-- Lazy loading immagini
+- DnD Kit (`@dnd-kit/core`, `@dnd-kit/sortable`, `@dnd-kit/utilities`) implementato
+- Componente: `web/src/components/VisualDeckBuilder.jsx`
+- Integrazione App: tab `Builder` con sync diretto su `sharedDecklist`
+- Hover preview su card tiles (riuso `CardHoverPreview`)
+- V1: sync realtime deck text; persistenza via endpoint save deck già esistente
+- Future v2: patch endpoint dedicato board-aware + reorder persistito per deck salvati
 
 ---
 
