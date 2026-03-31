@@ -186,7 +186,21 @@ type saveDeckRequest struct {
 	Format      string            `json:"format"`
 	Cards       []domain.DeckCard `json:"cards"`
 	Description string            `json:"description,omitempty"`
+	Note        string            `json:"note,omitempty"`
 	IsPublic    bool              `json:"is_public"`
+}
+
+type deckHistoryResponse struct {
+	DeckID   string               `json:"deck_id"`
+	Versions []domain.DeckVersion `json:"versions"`
+}
+
+type deckRestoreResponse struct {
+	DeckID         string             `json:"deck_id"`
+	RestoredFromV  int                `json:"restored_from_v"`
+	CurrentVersion int                `json:"current_version"`
+	Changes        []domain.DeckChange `json:"changes"`
+	Note           string             `json:"note,omitempty"`
 }
 
 // List handles GET /api/v1/decks — returns all decks owned by the authenticated user.
@@ -1468,12 +1482,21 @@ func (h *DeckHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := time.Now().UTC()
+	initialSnapshot := cloneDeckCards(req.Cards)
 	deck := &domain.Deck{
 		ID:          uuid.New().String(),
 		UserID:      userID,
 		Name:        req.Name,
 		Format:      req.Format,
 		Cards:       req.Cards,
+		Version:     1,
+		History: []domain.DeckVersion{{
+			V:        1,
+			Date:     now,
+			Changes:  nil,
+			Note:     "initial version",
+			Snapshot: initialSnapshot,
+		}},
 		Description: req.Description,
 		IsPublic:    req.IsPublic,
 		CreatedAt:   now,
@@ -1521,9 +1544,24 @@ func (h *DeckHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	changes := diffDeckCards(existing.Cards, req.Cards)
+	if existing.Version <= 0 {
+		existing.Version = 1
+	}
+	nextVersion := existing.Version + 1
+	historyEntry := domain.DeckVersion{
+		V:        nextVersion,
+		Date:     time.Now().UTC(),
+		Changes:  changes,
+		Note:     strings.TrimSpace(req.Note),
+		Snapshot: cloneDeckCards(req.Cards),
+	}
+
 	existing.Name = req.Name
 	existing.Format = req.Format
 	existing.Cards = req.Cards
+	existing.Version = nextVersion
+	existing.History = append(existing.History, historyEntry)
 	existing.Description = req.Description
 	existing.IsPublic = req.IsPublic
 	existing.UpdatedAt = time.Now().UTC()
@@ -1534,6 +1572,105 @@ func (h *DeckHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jsonOK(w, existing)
+}
+
+// History handles GET /api/v1/decks/{id}/history.
+func (h *DeckHandler) History(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.UserIDFromContext(r.Context())
+	id := chi.URLParam(r, "id")
+
+	deck, err := h.repo.FindByID(r.Context(), id)
+	if err != nil {
+		jsonError(w, "failed to retrieve deck", http.StatusInternalServerError)
+		return
+	}
+	if deck == nil || (deck.UserID != userID && !deck.IsPublic) {
+		jsonError(w, "deck not found", http.StatusNotFound)
+		return
+	}
+
+	versions := deck.History
+	if len(versions) == 0 {
+		v := deck.Version
+		if v <= 0 {
+			v = 1
+		}
+		versions = []domain.DeckVersion{{
+			V:        v,
+			Date:     deck.UpdatedAt,
+			Changes:  nil,
+			Note:     "history synthesized from current snapshot",
+			Snapshot: cloneDeckCards(deck.Cards),
+		}}
+	}
+
+	jsonOK(w, deckHistoryResponse{DeckID: deck.ID, Versions: versions})
+}
+
+// Restore handles POST /api/v1/decks/{id}/restore/{version}.
+func (h *DeckHandler) Restore(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.UserIDFromContext(r.Context())
+	id := chi.URLParam(r, "id")
+	vRaw := strings.TrimSpace(chi.URLParam(r, "version"))
+	v, err := strconv.Atoi(vRaw)
+	if err != nil || v <= 0 {
+		jsonError(w, "invalid version", http.StatusBadRequest)
+		return
+	}
+
+	deck, err := h.repo.FindByID(r.Context(), id)
+	if err != nil {
+		jsonError(w, "failed to retrieve deck", http.StatusInternalServerError)
+		return
+	}
+	if deck == nil || deck.UserID != userID {
+		jsonError(w, "deck not found", http.StatusNotFound)
+		return
+	}
+
+	var target *domain.DeckVersion
+	for i := range deck.History {
+		if deck.History[i].V == v {
+			target = &deck.History[i]
+			break
+		}
+	}
+	if target == nil {
+		jsonError(w, "version not found", http.StatusNotFound)
+		return
+	}
+
+	restoreSnapshot := cloneDeckCards(target.Snapshot)
+	changes := diffDeckCards(deck.Cards, restoreSnapshot)
+	if deck.Version <= 0 {
+		deck.Version = 1
+	}
+	nextVersion := deck.Version + 1
+	note := "restore from v" + strconv.Itoa(v)
+
+	deck.Cards = restoreSnapshot
+	deck.Version = nextVersion
+	deck.UpdatedAt = time.Now().UTC()
+	deck.History = append(deck.History, domain.DeckVersion{
+		V:        nextVersion,
+		Date:     deck.UpdatedAt,
+		Changes:  changes,
+		Note:     note,
+		Snapshot: cloneDeckCards(restoreSnapshot),
+	})
+
+	if err := h.repo.Update(r.Context(), deck); err != nil {
+		jsonError(w, "failed to restore version", http.StatusInternalServerError)
+		return
+	}
+
+	jsonOK(w, deckRestoreResponse{
+		DeckID:         deck.ID,
+		RestoredFromV:  v,
+		CurrentVersion: deck.Version,
+		Changes:        changes,
+		Note:           note,
+	})
 }
 
 // Delete handles DELETE /api/v1/decks/{id}.
@@ -1557,4 +1694,82 @@ func (h *DeckHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func cloneDeckCards(in []domain.DeckCard) []domain.DeckCard {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]domain.DeckCard, len(in))
+	copy(out, in)
+	return out
+}
+
+func diffDeckCards(before, after []domain.DeckCard) []domain.DeckChange {
+	beforeMap := map[string]int{}
+	afterMap := map[string]int{}
+	nameMap := map[string]string{}
+
+	buildKey := func(c domain.DeckCard) string {
+		n := strings.ToLower(strings.TrimSpace(c.CardName))
+		if c.IsSideboard {
+			return n + "|sb"
+		}
+		return n + "|mb"
+	}
+
+	for _, c := range before {
+		if strings.TrimSpace(c.CardName) == "" || c.Quantity <= 0 {
+			continue
+		}
+		k := buildKey(c)
+		beforeMap[k] += c.Quantity
+		if _, ok := nameMap[k]; !ok {
+			nameMap[k] = strings.TrimSpace(c.CardName)
+		}
+	}
+	for _, c := range after {
+		if strings.TrimSpace(c.CardName) == "" || c.Quantity <= 0 {
+			continue
+		}
+		k := buildKey(c)
+		afterMap[k] += c.Quantity
+		if _, ok := nameMap[k]; !ok {
+			nameMap[k] = strings.TrimSpace(c.CardName)
+		}
+	}
+
+	allKeys := map[string]bool{}
+	for k := range beforeMap {
+		allKeys[k] = true
+	}
+	for k := range afterMap {
+		allKeys[k] = true
+	}
+
+	changes := make([]domain.DeckChange, 0)
+	for k := range allKeys {
+		bq := beforeMap[k]
+		aq := afterMap[k]
+		delta := aq - bq
+		if delta == 0 {
+			continue
+		}
+		op := "add"
+		qty := delta
+		if delta < 0 {
+			op = "remove"
+			qty = -delta
+		}
+		changes = append(changes, domain.DeckChange{Op: op, Card: nameMap[k], Qty: qty})
+	}
+
+	sort.Slice(changes, func(i, j int) bool {
+		if changes[i].Card == changes[j].Card {
+			return changes[i].Op < changes[j].Op
+		}
+		return changes[i].Card < changes[j].Card
+	})
+
+	return changes
 }

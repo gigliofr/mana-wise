@@ -32,10 +32,12 @@ func (r *legalityMockDeckRepo) FindByUserID(ctx context.Context, userID string) 
 }
 
 func (r *legalityMockDeckRepo) Create(ctx context.Context, deck *domain.Deck) error {
+	r.deck = deck
 	return nil
 }
 
 func (r *legalityMockDeckRepo) Update(ctx context.Context, deck *domain.Deck) error {
+	r.deck = deck
 	return nil
 }
 
@@ -243,6 +245,42 @@ func runBudgetRequest(t *testing.T, h *DeckHandler, path string) *httptest.Respo
 	r.Get("/api/v1/decks/{id}/budget", h.Budget)
 
 	req := httptest.NewRequest(http.MethodGet, path, nil)
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+	return rr
+}
+
+func runHistoryRequest(t *testing.T, h *DeckHandler, path string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	r := chi.NewRouter()
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			ctx := context.WithValue(req.Context(), middleware.ContextKeyUserID, "u-1")
+			next.ServeHTTP(w, req.WithContext(ctx))
+		})
+	})
+	r.Get("/api/v1/decks/{id}/history", h.History)
+
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+	return rr
+}
+
+func runRestoreRequest(t *testing.T, h *DeckHandler, path string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	r := chi.NewRouter()
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			ctx := context.WithValue(req.Context(), middleware.ContextKeyUserID, "u-1")
+			next.ServeHTTP(w, req.WithContext(ctx))
+		})
+	})
+	r.Post("/api/v1/decks/{id}/restore/{version}", h.Restore)
+
+	req := httptest.NewRequest(http.MethodPost, path, nil)
 	rr := httptest.NewRecorder()
 	r.ServeHTTP(rr, req)
 	return rr
@@ -764,5 +802,75 @@ func TestDeckBudgetHandler_BadTarget(t *testing.T) {
 	rr := runBudgetRequest(t, h, "/api/v1/decks/d-b2/budget")
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestDeckHistoryHandler_OK(t *testing.T) {
+	deck := &domain.Deck{
+		ID:      "d-h1",
+		UserID:  "u-1",
+		Version: 2,
+		History: []domain.DeckVersion{
+			{V: 1, Date: time.Now().UTC().Add(-time.Hour), Note: "initial version", Snapshot: []domain.DeckCard{{CardName: "Mountain", Quantity: 24}}},
+			{V: 2, Date: time.Now().UTC(), Note: "swap package", Changes: []domain.DeckChange{{Op: "add", Card: "Lightning Bolt", Qty: 4}}, Snapshot: []domain.DeckCard{{CardName: "Mountain", Quantity: 20}, {CardName: "Lightning Bolt", Quantity: 4}}},
+		},
+	}
+
+	h := NewDeckHandler(&legalityMockDeckRepo{deck: deck}, nil, &legalityMockCardRepo{byName: map[string]*domain.Card{}}, nil, nil, nil)
+	rr := runHistoryRequest(t, h, "/api/v1/decks/d-h1/history")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if _, ok := resp["versions"]; !ok {
+		t.Fatalf("expected versions field")
+	}
+	versions, _ := resp["versions"].([]interface{})
+	if len(versions) != 2 {
+		t.Fatalf("expected 2 versions, got %d", len(versions))
+	}
+}
+
+func TestDeckRestoreHandler_OK(t *testing.T) {
+	deck := &domain.Deck{
+		ID:      "d-r1",
+		UserID:  "u-1",
+		Version: 2,
+		Cards:   []domain.DeckCard{{CardName: "Mountain", Quantity: 20}, {CardName: "Lightning Bolt", Quantity: 4}},
+		History: []domain.DeckVersion{
+			{V: 1, Date: time.Now().UTC().Add(-time.Hour), Note: "initial version", Snapshot: []domain.DeckCard{{CardName: "Mountain", Quantity: 24}}},
+			{V: 2, Date: time.Now().UTC(), Note: "burn package", Snapshot: []domain.DeckCard{{CardName: "Mountain", Quantity: 20}, {CardName: "Lightning Bolt", Quantity: 4}}},
+		},
+	}
+	repo := &legalityMockDeckRepo{deck: deck}
+	h := NewDeckHandler(repo, nil, &legalityMockCardRepo{byName: map[string]*domain.Card{}}, nil, nil, nil)
+
+	rr := runRestoreRequest(t, h, "/api/v1/decks/d-r1/restore/1")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	if repo.deck == nil {
+		t.Fatalf("expected deck persisted in repo mock")
+	}
+	if repo.deck.Version != 3 {
+		t.Fatalf("expected version 3 after restore, got %d", repo.deck.Version)
+	}
+	if len(repo.deck.Cards) != 1 || repo.deck.Cards[0].Quantity != 24 {
+		t.Fatalf("expected restored snapshot cards, got %+v", repo.deck.Cards)
+	}
+}
+
+func TestDeckRestoreHandler_NotFoundVersion(t *testing.T) {
+	deck := &domain.Deck{ID: "d-r2", UserID: "u-1", Version: 1, History: []domain.DeckVersion{{V: 1, Snapshot: []domain.DeckCard{{CardName: "Island", Quantity: 24}}}}}
+	h := NewDeckHandler(&legalityMockDeckRepo{deck: deck}, nil, &legalityMockCardRepo{byName: map[string]*domain.Card{}}, nil, nil, nil)
+
+	rr := runRestoreRequest(t, h, "/api/v1/decks/d-r2/restore/9")
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d body=%s", rr.Code, rr.Body.String())
 	}
 }

@@ -408,7 +408,7 @@ Risposta 200:
 
 ## 10) Deck Versioning & Changelog
 Priorita: Bassa  
-Stato: Mancante
+Stato: Parziale (v1 disponibile con versioning embedded nel deck document + restore endpoint)
 
 ### Descrizione funzionale
 Snapshot versioni deck, diff add/remove, restore versione precedente, note.
@@ -435,7 +435,12 @@ Risposta history:
 ```
 
 ### Dipendenze tecniche
-- Event sourcing leggero o snapshot diff-based in Mongo
+- Implementato v1 snapshot diff-based embedded in `domain.Deck`:
+  - `version` corrente
+  - `history[]` con `v`, `date`, `changes[]`, `note`, `snapshot[]`
+- Diff calcolato lato handler su update/restore (`add`/`remove` con qty)
+- Restore crea sempre una nuova versione append-only (audit trail)
+- Future v2: collection storica dedicata/event sourcing per deck molto grandi
 
 ---
 

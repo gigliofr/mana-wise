@@ -14,6 +14,22 @@ type DeckCard struct {
 	IsCommander bool   `bson:"is_commander" json:"is_commander"`
 }
 
+// DeckChange represents a card delta between two deck versions.
+type DeckChange struct {
+	Op   string `bson:"op"   json:"op"` // add|remove
+	Card string `bson:"card" json:"card"`
+	Qty  int    `bson:"qty"  json:"qty"`
+}
+
+// DeckVersion stores one historical snapshot and its summary diff.
+type DeckVersion struct {
+	V        int         `bson:"v" json:"v"`
+	Date     time.Time   `bson:"date" json:"date"`
+	Changes  []DeckChange `bson:"changes,omitempty" json:"changes,omitempty"`
+	Note     string      `bson:"note,omitempty" json:"note,omitempty"`
+	Snapshot []DeckCard  `bson:"snapshot" json:"snapshot"`
+}
+
 // Deck represents a player's deck.
 type Deck struct {
 	ID          string     `bson:"_id"       json:"id"`
@@ -21,6 +37,8 @@ type Deck struct {
 	Name        string     `bson:"name"      json:"name"`
 	Format      string     `bson:"format"    json:"format"`
 	Cards       []DeckCard `bson:"cards"   json:"cards"`
+	Version     int        `bson:"version,omitempty" json:"version,omitempty"`
+	History     []DeckVersion `bson:"history,omitempty" json:"history,omitempty"`
 	Description string     `bson:"description" json:"description"`
 	IsPublic    bool       `bson:"is_public" json:"is_public"`
 	CreatedAt   time.Time  `bson:"created_at" json:"created_at"`
