@@ -92,6 +92,29 @@ type deckSimulateRequest struct {
 	OnPlay      *bool  `json:"on_play,omitempty"`
 }
 
+type deckSideboardSuggestRequest struct {
+	Format           string `json:"format,omitempty"`
+	OpponentArchetype string `json:"opponent_archetype,omitempty"`
+	MetaSnapshot     string `json:"meta_snapshot,omitempty"`
+}
+
+type sideboardSuggestion struct {
+	Card     string   `json:"card"`
+	Qty      int      `json:"qty"`
+	Reason   string   `json:"reason"`
+	Matchups []string `json:"matchups"`
+}
+
+type deckSideboardSuggestResponse struct {
+	DeckID       string                     `json:"deck_id"`
+	Format       string                     `json:"format"`
+	MetaSnapshot string                     `json:"meta_snapshot,omitempty"`
+	Suggestions  []sideboardSuggestion      `json:"suggestions"`
+	TotalCards   int                        `json:"total_cards"`
+	Plan         usecase.SideboardPlanResult `json:"plan"`
+	CheckedAtUTC string                     `json:"checked_at"`
+}
+
 type deckSimulateResponse struct {
 	DeckID          string                      `json:"deck_id"`
 	KeepProbability float64                     `json:"keep_probability"`
@@ -383,6 +406,100 @@ func (h *DeckHandler) Simulate(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// SideboardSuggest handles POST /api/v1/decks/{id}/sideboard/suggest.
+func (h *DeckHandler) SideboardSuggest(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.UserIDFromContext(r.Context())
+	id := chi.URLParam(r, "id")
+
+	if h.cardRepo == nil {
+		jsonError(w, "card repository unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	deck, err := h.repo.FindByID(r.Context(), id)
+	if err != nil {
+		jsonError(w, "failed to retrieve deck", http.StatusInternalServerError)
+		return
+	}
+	if deck == nil {
+		jsonError(w, "deck not found", http.StatusNotFound)
+		return
+	}
+	if deck.UserID != userID && !deck.IsPublic {
+		jsonError(w, "deck not found", http.StatusNotFound)
+		return
+	}
+
+	var req deckSideboardSuggestRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err.Error() != "EOF" {
+		jsonError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	req.OpponentArchetype = normalizeArchetypeInput(req.OpponentArchetype)
+	if req.OpponentArchetype == "" {
+		req.OpponentArchetype = "midrange"
+	}
+	if !isValidSideboardOpponentArchetype(req.OpponentArchetype) {
+		jsonError(w, "invalid opponent_archetype: supported values are aggro, midrange, control, combo, ramp, graveyard, artifacts, enchantments", http.StatusBadRequest)
+		return
+	}
+
+	mainDecklist := deckToDecklist(deck)
+	if strings.TrimSpace(mainDecklist) == "" {
+		jsonError(w, "deck has no mainboard cards", http.StatusUnprocessableEntity)
+		return
+	}
+
+	sideboardDecklist := deckToSideboardDecklist(deck)
+	if strings.TrimSpace(sideboardDecklist) == "" {
+		jsonError(w, "deck has no sideboard cards", http.StatusUnprocessableEntity)
+		return
+	}
+
+	format := strings.TrimSpace(req.Format)
+	if format == "" {
+		format = deck.Format
+	}
+
+	uc := usecase.NewSideboardCoachUseCase(h.cardRepo)
+	plan, err := uc.Execute(r.Context(), usecase.SideboardPlanRequest{
+		MainDecklist:      mainDecklist,
+		SideboardDecklist: sideboardDecklist,
+		OpponentArchetype: req.OpponentArchetype,
+		Format:            format,
+	})
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusUnprocessableEntity)
+		return
+	}
+
+	suggestions := make([]sideboardSuggestion, 0, len(plan.Ins))
+	totalCards := 0
+	for _, in := range plan.Ins {
+		if in.Qty <= 0 {
+			continue
+		}
+		totalCards += in.Qty
+		suggestions = append(suggestions, sideboardSuggestion{
+			Card:     in.Card,
+			Qty:      in.Qty,
+			Reason:   in.Reason,
+			Matchups: []string{req.OpponentArchetype},
+		})
+	}
+
+	jsonOK(w, deckSideboardSuggestResponse{
+		DeckID:       deck.ID,
+		Format:       format,
+		MetaSnapshot: strings.TrimSpace(req.MetaSnapshot),
+		Suggestions:  suggestions,
+		TotalCards:   totalCards,
+		Plan:         plan,
+		CheckedAtUTC: time.Now().UTC().Format(time.RFC3339),
+	})
+}
+
 func (h *DeckHandler) resolveDeckCards(r *http.Request, deck *domain.Deck) ([]*domain.Card, map[string]int, error) {
 	mainCards := deck.MainboardCards()
 	cards := make([]*domain.Card, 0, len(mainCards))
@@ -437,6 +554,27 @@ func deckToDecklist(deck *domain.Deck) string {
 	var b strings.Builder
 	for _, c := range deck.MainboardCards() {
 		if c.Quantity <= 0 {
+			continue
+		}
+		name := strings.TrimSpace(c.CardName)
+		if name == "" {
+			continue
+		}
+		b.WriteString(strconv.Itoa(c.Quantity))
+		b.WriteString(" ")
+		b.WriteString(name)
+		b.WriteString("\n")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func deckToSideboardDecklist(deck *domain.Deck) string {
+	if deck == nil {
+		return ""
+	}
+	var b strings.Builder
+	for _, c := range deck.Cards {
+		if !c.IsSideboard || c.Quantity <= 0 {
 			continue
 		}
 		name := strings.TrimSpace(c.CardName)

@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -180,6 +181,25 @@ func runSynergiesRequest(t *testing.T, h *DeckHandler, path string) *httptest.Re
 	r.Get("/api/v1/decks/{id}/synergies", h.Synergies)
 
 	req := httptest.NewRequest(http.MethodGet, path, nil)
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+	return rr
+}
+
+func runSideboardSuggestRequest(t *testing.T, h *DeckHandler, path string, body io.Reader) *httptest.ResponseRecorder {
+	t.Helper()
+
+	r := chi.NewRouter()
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			ctx := context.WithValue(req.Context(), middleware.ContextKeyUserID, "u-1")
+			next.ServeHTTP(w, req.WithContext(ctx))
+		})
+	})
+	r.Post("/api/v1/decks/{id}/sideboard/suggest", h.SideboardSuggest)
+
+	req := httptest.NewRequest(http.MethodPost, path, body)
+	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
 	r.ServeHTTP(rr, req)
 	return rr
@@ -476,5 +496,79 @@ func TestDeckSynergiesHandler_UnavailableWhenCardRepoNil(t *testing.T) {
 	rr := runSynergiesRequest(t, h, "/api/v1/decks/d-syn-2/synergies")
 	if rr.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestDeckSideboardSuggestHandler_OK(t *testing.T) {
+	mountain := &domain.Card{ID: "c-mountain", Name: "Mountain", CMC: 0, TypeLine: "Basic Land - Mountain"}
+	bolt := &domain.Card{ID: "c-bolt", Name: "Lightning Bolt", CMC: 1, TypeLine: "Instant", OracleText: "Lightning Bolt deals 3 damage to any target."}
+	guide := &domain.Card{ID: "c-guide", Name: "Goblin Guide", CMC: 1, TypeLine: "Creature - Goblin Scout"}
+	negate := &domain.Card{ID: "c-negate", Name: "Negate", CMC: 2, TypeLine: "Instant", OracleText: "Counter target noncreature spell."}
+	hearse := &domain.Card{ID: "c-hearse", Name: "Unlicensed Hearse", CMC: 2, TypeLine: "Artifact", OracleText: "Exile up to two target cards from a single graveyard."}
+
+	cardRepo := &legalityMockCardRepo{
+		byID: map[string]*domain.Card{
+			"c-mountain": mountain,
+			"c-bolt":     bolt,
+			"c-guide":    guide,
+			"c-negate":   negate,
+			"c-hearse":   hearse,
+		},
+		byName: map[string]*domain.Card{
+			"Mountain":          mountain,
+			"Lightning Bolt":    bolt,
+			"Goblin Guide":      guide,
+			"Negate":            negate,
+			"Unlicensed Hearse": hearse,
+		},
+	}
+
+	deck := &domain.Deck{
+		ID:     "d-sb-1",
+		UserID: "u-1",
+		Format: "modern",
+		Cards: []domain.DeckCard{
+			{CardID: "c-mountain", CardName: "Mountain", Quantity: 20},
+			{CardID: "c-bolt", CardName: "Lightning Bolt", Quantity: 4},
+			{CardID: "c-guide", CardName: "Goblin Guide", Quantity: 4},
+			{CardID: "c-negate", CardName: "Negate", Quantity: 2, IsSideboard: true},
+			{CardID: "c-hearse", CardName: "Unlicensed Hearse", Quantity: 2, IsSideboard: true},
+		},
+	}
+
+	h := NewDeckHandler(&legalityMockDeckRepo{deck: deck}, nil, cardRepo, nil, nil, nil)
+	body := strings.NewReader(`{"opponent_archetype":"combo","meta_snapshot":"2026-Q1"}`)
+	rr := runSideboardSuggestRequest(t, h, "/api/v1/decks/d-sb-1/sideboard/suggest", body)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if _, ok := resp["suggestions"]; !ok {
+		t.Fatalf("expected suggestions field")
+	}
+	if _, ok := resp["total_cards"]; !ok {
+		t.Fatalf("expected total_cards field")
+	}
+	if _, ok := resp["plan"]; !ok {
+		t.Fatalf("expected plan field")
+	}
+}
+
+func TestDeckSideboardSuggestHandler_RequiresSideboard(t *testing.T) {
+	deck := &domain.Deck{
+		ID:     "d-sb-2",
+		UserID: "u-1",
+		Format: "modern",
+		Cards: []domain.DeckCard{{CardName: "Mountain", Quantity: 24}},
+	}
+
+	h := NewDeckHandler(&legalityMockDeckRepo{deck: deck}, nil, &legalityMockCardRepo{byName: map[string]*domain.Card{}}, nil, nil, nil)
+	rr := runSideboardSuggestRequest(t, h, "/api/v1/decks/d-sb-2/sideboard/suggest", strings.NewReader(`{"opponent_archetype":"aggro"}`))
+	if rr.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422, got %d body=%s", rr.Code, rr.Body.String())
 	}
 }

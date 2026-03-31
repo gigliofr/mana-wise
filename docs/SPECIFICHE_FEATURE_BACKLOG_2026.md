@@ -217,7 +217,7 @@ Stato implementazione corrente:
 
 ## 5) Sideboard Builder AI
 Priorita: Media  
-Stato: Parziale (`POST /api/v1/sideboard/plan` gia presente; manca generazione 15-card completa orientata meta snapshot)
+Stato: Parziale (`POST /api/v1/sideboard/plan` e `POST /api/v1/decks/{id}/sideboard/suggest` presenti; manca generazione 15-card completa orientata meta snapshot)
 
 ### Descrizione funzionale
 Genera sideboard da 15 carte ottimizzata per formato e meta corrente, con rationale per matchup.
@@ -251,6 +251,11 @@ Risposta 200:
 ### Dipendenze tecniche
 - Meta dataset (MTGGoldfish/MTGTOP8)
 - Modulo matchup simulator gia esistente
+
+Stato implementazione corrente:
+- endpoint deck-centric `POST /api/v1/decks/{id}/sideboard/suggest` disponibile
+- usa mainboard + sideboard salvati nel deck e produce `suggestions`, `total_cards`, `plan`
+- supporta `opponent_archetype` e `meta_snapshot` nel payload
 
 ---
 

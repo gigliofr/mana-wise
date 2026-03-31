@@ -45,6 +45,7 @@ web/              → Vite + React SPA
 | POST   | `/api/v1/mulligan/simulate` | JWT | Monte Carlo keep-rate simulation by hand size |
 | POST   | `/api/v1/deck/classify` | JWT | Classify deck fingerprint (archetype, color identity, curve, confidence) |
 | GET    | `/api/v1/decks/{id}/analysis` | JWT | Deterministic analysis + optional fingerprint for a saved deck |
+| POST   | `/api/v1/decks/{id}/sideboard/suggest` | JWT | Deck-centric sideboard suggestions from saved main+sideboard for a target matchup |
 | POST   | `/api/v1/decks/{id}/simulate` | JWT | Deck-centric mulligan simulation (keep probability, P(2 lands T2), P(1-drop), curve-out T1-T4, structured keep/mulligan reasoning) |
 | GET    | `/api/v1/decks/{id}/synergies` | JWT | Deck-centric combo and synergy package detection (hybrid rule+embedding ranking, includes ranking metadata) |
 | GET    | `/api/v1/decks/{id}/legality` | JWT | Real-time multi-format legality report for a saved deck |
