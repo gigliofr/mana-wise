@@ -167,6 +167,24 @@ func runSimulateRequest(t *testing.T, h *DeckHandler, path string) *httptest.Res
 	return rr
 }
 
+func runSynergiesRequest(t *testing.T, h *DeckHandler, path string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	r := chi.NewRouter()
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			ctx := context.WithValue(req.Context(), middleware.ContextKeyUserID, "u-1")
+			next.ServeHTTP(w, req.WithContext(ctx))
+		})
+	})
+	r.Get("/api/v1/decks/{id}/synergies", h.Synergies)
+
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+	return rr
+}
+
 func TestDeckLegalityHandler_OK(t *testing.T) {
 	h := NewDeckHandler(
 		&legalityMockDeckRepo{deck: &domain.Deck{
@@ -364,5 +382,88 @@ func TestDeckSimulateHandler_ContainsProbabilityMetrics(t *testing.T) {
 	}
 	if _, ok := reasoningRaw["signals"]; !ok {
 		t.Fatalf("expected reasoning.signals field")
+	}
+}
+
+func TestDeckSynergiesHandler_OK(t *testing.T) {
+	oracle := &domain.Card{ID: "c-oracle", Name: "Thassa's Oracle", CMC: 2, TypeLine: "Creature - Merfolk Wizard", OracleText: "When this enters..."}
+	consult := &domain.Card{ID: "c-consult", Name: "Demonic Consultation", CMC: 1, TypeLine: "Instant", OracleText: "Name a card. Exile top six cards..."}
+	ponder := &domain.Card{ID: "c-ponder", Name: "Ponder", CMC: 1, TypeLine: "Sorcery", OracleText: "Look at the top three cards... Draw a card."}
+	duress := &domain.Card{ID: "c-duress", Name: "Duress", CMC: 1, TypeLine: "Sorcery", OracleText: "Target opponent reveals their hand..."}
+	island := &domain.Card{ID: "c-island", Name: "Island", CMC: 0, TypeLine: "Basic Land - Island"}
+	swamp := &domain.Card{ID: "c-swamp", Name: "Swamp", CMC: 0, TypeLine: "Basic Land - Swamp"}
+
+	cardRepo := &legalityMockCardRepo{
+		byID: map[string]*domain.Card{
+			"c-oracle":  oracle,
+			"c-consult": consult,
+			"c-ponder":  ponder,
+			"c-duress":  duress,
+			"c-island":  island,
+			"c-swamp":   swamp,
+		},
+		byName: map[string]*domain.Card{
+			"Thassa's Oracle":    oracle,
+			"Demonic Consultation": consult,
+			"Ponder":             ponder,
+			"Duress":             duress,
+			"Island":             island,
+			"Swamp":              swamp,
+		},
+	}
+
+	deck := &domain.Deck{
+		ID:     "d-syn-1",
+		UserID: "u-1",
+		Format: "modern",
+		Cards: []domain.DeckCard{
+			{CardID: "c-oracle", CardName: "Thassa's Oracle", Quantity: 2},
+			{CardID: "c-consult", CardName: "Demonic Consultation", Quantity: 2},
+			{CardID: "c-ponder", CardName: "Ponder", Quantity: 4},
+			{CardID: "c-duress", CardName: "Duress", Quantity: 4},
+			{CardID: "c-island", CardName: "Island", Quantity: 24},
+			{CardID: "c-swamp", CardName: "Swamp", Quantity: 24},
+		},
+	}
+
+	h := NewDeckHandler(&legalityMockDeckRepo{deck: deck}, nil, cardRepo, nil, nil, nil)
+	rr := runSynergiesRequest(t, h, "/api/v1/decks/d-syn-1/synergies")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if _, ok := resp["combos"]; !ok {
+		t.Fatalf("expected combos field")
+	}
+	if _, ok := resp["synergy_score"]; !ok {
+		t.Fatalf("expected synergy_score field")
+	}
+	if _, ok := resp["packages"]; !ok {
+		t.Fatalf("expected packages field")
+	}
+
+	combos, _ := resp["combos"].([]interface{})
+	if len(combos) == 0 {
+		t.Fatalf("expected at least one detected combo")
+	}
+}
+
+func TestDeckSynergiesHandler_UnavailableWhenCardRepoNil(t *testing.T) {
+	h := NewDeckHandler(
+		&legalityMockDeckRepo{deck: &domain.Deck{ID: "d-syn-2", UserID: "u-1"}},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	rr := runSynergiesRequest(t, h, "/api/v1/decks/d-syn-2/synergies")
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d body=%s", rr.Code, rr.Body.String())
 	}
 }

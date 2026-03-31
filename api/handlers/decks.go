@@ -50,6 +50,27 @@ type deckAnalysisResponse struct {
 	CheckedAtUTC  string                                `json:"checked_at"`
 }
 
+type deckSynergiesResponse struct {
+	DeckID       string             `json:"deck_id"`
+	Combos       []deckCombo        `json:"combos"`
+	SynergyScore int                `json:"synergy_score"`
+	Packages     []synergyPackage   `json:"packages"`
+	CheckedAtUTC string             `json:"checked_at"`
+}
+
+type deckCombo struct {
+	Cards       []string `json:"cards"`
+	Type        string   `json:"type"`
+	Description string   `json:"description"`
+	TurnKill    int      `json:"turn_kill"`
+}
+
+type synergyPackage struct {
+	Name  string   `json:"name"`
+	Cards []string `json:"cards"`
+	Score int      `json:"score"`
+}
+
 type curveTypeBucket struct {
 	CMC          int `json:"cmc"`
 	Creatures    int `json:"creatures"`
@@ -234,6 +255,49 @@ func (h *DeckHandler) Analysis(w http.ResponseWriter, r *http.Request) {
 		MetaFitScore:  metaFit,
 		DeviationMeta: deviation,
 		CheckedAtUTC:  time.Now().UTC().Format(time.RFC3339),
+	})
+}
+
+// Synergies handles GET /api/v1/decks/{id}/synergies.
+func (h *DeckHandler) Synergies(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.UserIDFromContext(r.Context())
+	id := chi.URLParam(r, "id")
+
+	if h.cardRepo == nil {
+		jsonError(w, "card repository unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	deck, err := h.repo.FindByID(r.Context(), id)
+	if err != nil {
+		jsonError(w, "failed to retrieve deck", http.StatusInternalServerError)
+		return
+	}
+	if deck == nil {
+		jsonError(w, "deck not found", http.StatusNotFound)
+		return
+	}
+	if deck.UserID != userID && !deck.IsPublic {
+		jsonError(w, "deck not found", http.StatusNotFound)
+		return
+	}
+
+	cards, quantities, err := h.resolveDeckCards(r, deck)
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusUnprocessableEntity)
+		return
+	}
+
+	combos := detectDeckCombos(cards, quantities)
+	pkgs := detectSynergyPackages(cards, quantities)
+	score := computeSynergyScore(combos, pkgs)
+
+	jsonOK(w, deckSynergiesResponse{
+		DeckID:       deck.ID,
+		Combos:       combos,
+		SynergyScore: score,
+		Packages:     pkgs,
+		CheckedAtUTC: time.Now().UTC().Format(time.RFC3339),
 	})
 }
 
@@ -474,6 +538,157 @@ func metaFitFromDeviation(deviation float64) int {
 	}
 	if score > 100 {
 		return 100
+	}
+	return score
+}
+
+type knownCombo struct {
+	cards       []string
+	typeName    string
+	description string
+	turnKill    int
+}
+
+var knownCombos = []knownCombo{
+	{cards: []string{"Thassa's Oracle", "Demonic Consultation"}, typeName: "two_card_win", description: "Immediate win line by emptying library before Oracle trigger resolves.", turnKill: 3},
+	{cards: []string{"Thassa's Oracle", "Tainted Pact"}, typeName: "two_card_win", description: "Oracle plus selective exile line for deterministic win setup.", turnKill: 3},
+	{cards: []string{"Heliod, Sun-Crowned", "Walking Ballista"}, typeName: "infinite_damage", description: "Lifegain counter loop creates infinite damage shots.", turnKill: 4},
+	{cards: []string{"Devoted Druid", "Vizier of Remedies"}, typeName: "infinite_mana", description: "Untap counter prevention loop for infinite green mana.", turnKill: 3},
+	{cards: []string{"Kiki-Jiki, Mirror Breaker", "Restoration Angel"}, typeName: "infinite_creatures", description: "Repeated blink-copy loop generates lethal board immediately.", turnKill: 5},
+	{cards: []string{"Painter's Servant", "Grindstone"}, typeName: "mill_kill", description: "Color lock enables full-library mill in one activation cycle.", turnKill: 3},
+	{cards: []string{"Underworld Breach", "Brain Freeze"}, typeName: "storm_loop", description: "Escape loop mills and recasts for lethal storm sequence.", turnKill: 3},
+}
+
+func detectDeckCombos(cards []*domain.Card, quantities map[string]int) []deckCombo {
+	nameSet := make(map[string]bool, len(cards))
+	canonical := make(map[string]string, len(cards))
+	for _, c := range cards {
+		if c == nil {
+			continue
+		}
+		key := strings.ToLower(strings.TrimSpace(c.Name))
+		if key == "" {
+			continue
+		}
+		nameSet[key] = true
+		canonical[key] = c.Name
+	}
+
+	out := make([]deckCombo, 0, 4)
+	for _, combo := range knownCombos {
+		ok := true
+		parts := make([]string, 0, len(combo.cards))
+		for _, part := range combo.cards {
+			k := strings.ToLower(strings.TrimSpace(part))
+			if !nameSet[k] {
+				ok = false
+				break
+			}
+			if canonical[k] != "" {
+				parts = append(parts, canonical[k])
+			} else {
+				parts = append(parts, part)
+			}
+		}
+		if ok {
+			out = append(out, deckCombo{
+				Cards:       parts,
+				Type:        combo.typeName,
+				Description: combo.description,
+				TurnKill:    combo.turnKill,
+			})
+		}
+	}
+	return out
+}
+
+func detectSynergyPackages(cards []*domain.Card, quantities map[string]int) []synergyPackage {
+	type agg struct {
+		cards []string
+		score int
+	}
+
+	pk := map[string]*agg{}
+	ensure := func(name string) *agg {
+		if v, ok := pk[name]; ok {
+			return v
+		}
+		v := &agg{cards: []string{}, score: 0}
+		pk[name] = v
+		return v
+	}
+
+	for _, c := range cards {
+		if c == nil {
+			continue
+		}
+		qty := quantities[c.ID]
+		if qty <= 0 {
+			qty = 1
+		}
+		name := strings.TrimSpace(c.Name)
+		typeLine := strings.ToLower(c.TypeLine)
+		oracle := strings.ToLower(c.OracleText)
+
+		if strings.Contains(oracle, "draw") || strings.Contains(oracle, "scry") || strings.Contains(oracle, "surveil") || strings.Contains(oracle, "look at the top") {
+			p := ensure("draw_engine")
+			p.cards = append(p.cards, name)
+			p.score += qty * 6
+		}
+		if strings.Contains(oracle, "counter target") || strings.Contains(oracle, "destroy target") || strings.Contains(oracle, "exile target") || strings.Contains(oracle, "damage to any target") || strings.Contains(oracle, "target creature") {
+			p := ensure("interaction_suite")
+			p.cards = append(p.cards, name)
+			p.score += qty * 5
+		}
+		if strings.Contains(typeLine, "creature") && c.CMC <= 2.0 {
+			p := ensure("early_pressure")
+			p.cards = append(p.cards, name)
+			p.score += qty * 4
+		}
+		if strings.Contains(typeLine, "land") || strings.Contains(oracle, "add ") || strings.Contains(oracle, "search your library for a land") {
+			p := ensure("mana_engine")
+			p.cards = append(p.cards, name)
+			p.score += qty * 3
+		}
+	}
+
+	out := make([]synergyPackage, 0, len(pk))
+	for name, data := range pk {
+		if len(data.cards) < 3 {
+			continue
+		}
+		seen := map[string]bool{}
+		unique := make([]string, 0, len(data.cards))
+		for _, n := range data.cards {
+			if n == "" || seen[n] {
+				continue
+			}
+			seen[n] = true
+			unique = append(unique, n)
+		}
+		if len(unique) < 3 {
+			continue
+		}
+		score := data.score
+		if score > 100 {
+			score = 100
+		}
+		out = append(out, synergyPackage{Name: name, Cards: unique, Score: score})
+	}
+
+	return out
+}
+
+func computeSynergyScore(combos []deckCombo, pkgs []synergyPackage) int {
+	score := len(combos) * 25
+	for _, p := range pkgs {
+		score += int(math.Round(float64(p.Score) * 0.35))
+	}
+	if score > 100 {
+		return 100
+	}
+	if score < 0 {
+		return 0
 	}
 	return score
 }

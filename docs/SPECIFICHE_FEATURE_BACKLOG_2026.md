@@ -169,7 +169,7 @@ Risposta 200:
 
 ## 4) Synergy & Combo Detector
 Priorita: Alta  
-Stato: Mancante
+Stato: Parziale (endpoint deck-centric v1 rule-based implementato)
 
 ### Descrizione funzionale
 Rileva combo note e pacchetti sinergici nel deck, con spiegazione e turn-kill stimato.
@@ -206,6 +206,11 @@ Risposta 200:
 ### Note implementative
 - Primo step rule-based con knowledge base locale
 - Secondo step ranking con embedding similarity
+
+Stato implementazione v1:
+- endpoint `GET /api/v1/decks/{id}/synergies` disponibile
+- output include `combos`, `synergy_score`, `packages`
+- detection iniziale su combo note + package tags (draw/interaction/early pressure/mana engine)
 
 ---
 
