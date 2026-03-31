@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
+import CardHoverPreview from '../CardHoverPreview';
 
 /**
  * CardImpactTable — Tabella ordinabile delle carte con impact score
  */
-function CardImpactTable({ cardImpacts = [] }) {
+function CardImpactTable({ cardImpacts = [], token, messages }) {
   const [sortBy, setSortBy] = useState('impact');
   const [sortOrder, setSortOrder] = useState('desc');
 
@@ -63,7 +64,11 @@ function CardImpactTable({ cardImpacts = [] }) {
         <tbody>
           {sortedCards.map((card, i) => (
             <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-              <td className="px-4 py-2">{card.card_name}</td>
+              <td className="px-4 py-2">
+                <CardHoverPreview cardName={card.card_name} token={token} messages={messages}>
+                  {card.card_name}
+                </CardHoverPreview>
+              </td>
               <td className="px-4 py-2 text-center">${card.price_usd?.toFixed(2) || '–'}</td>
               <td className="px-4 py-2 text-center">{card.edhrec_rank || '–'}</td>
               <td className="px-4 py-2 text-center">

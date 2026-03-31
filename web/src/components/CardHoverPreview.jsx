@@ -3,6 +3,8 @@ import { useEffect, useMemo, useState } from 'react'
 const API = '/api/v1'
 const previewCache = new Map()
 const STICKY_PREF_KEY = 'mw_card_preview_sticky_default'
+const CACHE_MAX_ENTRIES = 220
+const CACHE_TTL_MS = 1000 * 60 * 60 * 24
 
 function normalizeCardName(name) {
   return String(name || '')
@@ -59,6 +61,58 @@ function pickImageUrl(card) {
   return ''
 }
 
+function pickCardFaces(card) {
+  const faces = []
+  if (card?.image_uris?.normal || card?.image_uris?.large) {
+    faces.push({
+      name: card?.name || '',
+      image_url: card?.image_uris?.normal || card?.image_uris?.large || '',
+    })
+  }
+  if (Array.isArray(card?.card_faces)) {
+    for (const face of card.card_faces) {
+      const url = face?.image_uris?.normal || face?.image_uris?.large || ''
+      if (!url) continue
+      faces.push({
+        name: face?.name || '',
+        image_url: url,
+      })
+    }
+  }
+
+  const deduped = []
+  const seen = new Set()
+  for (const face of faces) {
+    if (!face.image_url || seen.has(face.image_url)) continue
+    seen.add(face.image_url)
+    deduped.push(face)
+  }
+  return deduped
+}
+
+function readCache(key) {
+  const record = previewCache.get(key)
+  if (!record) return null
+  if (Date.now() - record.at > CACHE_TTL_MS) {
+    previewCache.delete(key)
+    return null
+  }
+  previewCache.delete(key)
+  previewCache.set(key, { ...record, at: Date.now() })
+  return record.value
+}
+
+function writeCache(key, value) {
+  if (!key) return
+  if (previewCache.has(key)) previewCache.delete(key)
+  previewCache.set(key, { value, at: Date.now() })
+  while (previewCache.size > CACHE_MAX_ENTRIES) {
+    const oldestKey = previewCache.keys().next().value
+    if (!oldestKey) break
+    previewCache.delete(oldestKey)
+  }
+}
+
 async function fetchFromScryfall(cardName) {
   const url = `https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(cardName)}`
   const res = await fetch(url)
@@ -70,6 +124,7 @@ async function fetchFromScryfall(cardName) {
     type_line: data.type_line || '',
     oracle_text: data.oracle_text || '',
     image_url: pickImageUrl(data),
+    faces: pickCardFaces(data),
     source: 'scryfall',
   }
 }
@@ -86,6 +141,7 @@ async function fetchFromScryfallSetCollector(setCode, collectorNumber) {
     type_line: data.type_line || '',
     oracle_text: data.oracle_text || '',
     image_url: pickImageUrl(data),
+    faces: pickCardFaces(data),
     source: 'scryfall_set_collector',
   }
 }
@@ -104,6 +160,7 @@ async function fetchFromScryfallSearch(cardName) {
     type_line: first.type_line || '',
     oracle_text: first.oracle_text || '',
     image_url: pickImageUrl(first),
+    faces: pickCardFaces(first),
     source: 'scryfall_search',
   }
 }
@@ -183,6 +240,7 @@ export default function CardHoverPreview({ cardName, token, messages, children }
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [preview, setPreview] = useState(null)
+  const [faceIndex, setFaceIndex] = useState(0)
   const [error, setError] = useState('')
   const [position, setPosition] = useState({ x: 0, y: 0 })
   const [pinned, setPinned] = useState(false)
@@ -206,23 +264,25 @@ export default function CardHoverPreview({ cardName, token, messages, children }
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [open])
 
+  useEffect(() => {
+    setFaceIndex(0)
+  }, [normalized, preview?.name])
+
   async function loadPreview() {
     if (!normalized) return
 
-    if (previewCache.has(normalized)) {
-      const cached = previewCache.get(normalized)
-      if (cached) {
-        setPreview(cached)
-        setError('')
-        return
-      }
+    const cached = readCache(normalized)
+    if (cached) {
+      setPreview(cached)
+      setError('')
+      return
     }
 
     setLoading(true)
     setError('')
     try {
       const data = await resolvePreview(cardName, token)
-      previewCache.set(normalized, data)
+      writeCache(normalized, data)
       setPreview(data)
     } catch {
       // Last-resort UI-safe fallback: never leave the user without a preview shell.
@@ -232,9 +292,10 @@ export default function CardHoverPreview({ cardName, token, messages, children }
         type_line: '',
         oracle_text: '',
         image_url: '',
+        faces: [],
         source: 'fallback_runtime',
       }
-      previewCache.set(normalized, fallback)
+      writeCache(normalized, fallback)
       setPreview(fallback)
       setError('')
     } finally {
@@ -269,6 +330,11 @@ export default function CardHoverPreview({ cardName, token, messages, children }
   }
 
   const trigger = children || cardName
+  const faces = Array.isArray(preview?.faces) ? preview.faces : []
+  const hasMultipleFaces = faces.length > 1
+  const shownFace = hasMultipleFaces ? faces[faceIndex % faces.length] : null
+  const shownImage = shownFace?.image_url || preview?.image_url || ''
+  const shownFaceName = shownFace?.name || preview?.name || ''
 
   return (
     <span
@@ -312,6 +378,26 @@ export default function CardHoverPreview({ cardName, token, messages, children }
           onClick={e => e.stopPropagation()}
         >
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginBottom: 6 }}>
+            {hasMultipleFaces && (
+              <button
+                type="button"
+                onClick={e => {
+                  e.stopPropagation()
+                  setFaceIndex(prev => (prev + 1) % faces.length)
+                }}
+                style={{
+                  fontSize: '.72rem',
+                  color: 'var(--muted)',
+                  border: '1px solid var(--border)',
+                  background: 'transparent',
+                  borderRadius: 8,
+                  padding: '2px 6px',
+                  cursor: 'pointer',
+                }}
+              >
+                {messages?.cardPreviewFlip || 'Flip'} ({(faceIndex % faces.length) + 1}/{faces.length})
+              </button>
+            )}
             <button
               type="button"
               onClick={e => {
@@ -398,17 +484,31 @@ export default function CardHoverPreview({ cardName, token, messages, children }
           {!loading && !error && preview && (
             <div>
               <div style={{ fontWeight: 700, fontSize: '.92rem', marginBottom: 2 }}>{preview.name}</div>
+              {hasMultipleFaces && shownFaceName && shownFaceName !== preview.name && (
+                <div style={{ color: 'var(--muted)', fontSize: '.76rem', marginBottom: 6 }}>
+                  {messages?.cardPreviewFace || 'Face'}: {shownFaceName}
+                </div>
+              )}
               {(preview.mana_cost || preview.type_line) && (
                 <div style={{ color: 'var(--muted)', fontSize: '.78rem', marginBottom: 8 }}>
                   {[preview.mana_cost, preview.type_line].filter(Boolean).join(' · ')}
                 </div>
               )}
-              {preview.image_url && (
+              {shownImage && (
                 <img
-                  src={preview.image_url}
-                  alt={preview.name}
+                  key={`${shownImage}-${faceIndex}`}
+                  src={shownImage}
+                  alt={shownFaceName || preview.name}
                   loading="lazy"
-                  style={{ width: '100%', borderRadius: 8, border: '1px solid var(--border)', marginBottom: 8 }}
+                  style={{
+                    width: '100%',
+                    borderRadius: 8,
+                    border: '1px solid var(--border)',
+                    marginBottom: 8,
+                    transition: 'transform .18s ease, opacity .18s ease',
+                    transform: 'rotateY(0deg)',
+                    opacity: 1,
+                  }}
                 />
               )}
               <div style={{ whiteSpace: 'pre-line', fontSize: '.8rem', lineHeight: 1.35, color: 'var(--text)' }}>

@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useState } from 'react'
 import ManaCurveChart from './ManaCurveChart'
 import InteractionPanel from './InteractionPanel'
+import CardHoverPreview from './CardHoverPreview'
 import { ManaSymbol, ManaSymbolGroup, isManaColorCode } from './ManaSymbol'
 
 const API = '/api/v1'
@@ -1212,7 +1213,10 @@ function LegalityLegend({ legality, messages }) {
                               <ul style={{ margin: '6px 0 0 18px' }}>
                                 {data.illegal_cards.map((item, idx) => (
                                   <li key={`illegal-${format}-${idx}`}>
-                                    {item.card_name} x{item.quantity}: {item.reason}
+                                    <CardHoverPreview cardName={item.card_name} token={token} messages={messages}>
+                                      {item.card_name}
+                                    </CardHoverPreview>
+                                    {' '}x{item.quantity}: {item.reason}
                                   </li>
                                 ))}
                               </ul>

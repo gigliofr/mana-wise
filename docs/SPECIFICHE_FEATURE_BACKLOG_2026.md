@@ -446,7 +446,7 @@ Risposta history:
 
 ## 11) Card Hover Preview HD
 Priorita: UX  
-Stato: Parziale (componente presente; da estendere globalmente e ottimizzare cache)
+Stato: Parziale avanzato (esteso su DeckLibrary, SideboardCoach, Analyzer legality, ScoreDetail; DFC flip + cache LRU/TTL implementati)
 
 ### Descrizione funzionale
 Hover su nome carta mostra preview HD Scryfall, supporto DFC con flip animato, disponibile in ogni area UI.
@@ -458,8 +458,9 @@ Hover su nome carta mostra preview HD Scryfall, supporto DFC con flip animato, d
   - usare `image_uris` / `card_faces[].image_uris`
 
 ### Dipendenze tecniche
-- Service Worker cache
-- LRU cache in-memory lato client
+- LRU cache in-memory lato client (TTL 24h + eviction)
+- Supporto DFC/multi-face con flip UI (front/back)
+- Future v2: Service Worker cache per immagini Scryfall cross-session
 
 ---
 

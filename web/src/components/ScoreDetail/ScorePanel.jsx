@@ -8,7 +8,7 @@ import CurveChart from './CurveChart';
  * ScorePanel — Orchestrator di tutti i componenti ScoreDetail
  * Consuma un oggetto ScoreDetail dal backend POST /score
  */
-function ScorePanel({ scoreDetail = null, loading = false, error = null }) {
+function ScorePanel({ scoreDetail = null, loading = false, error = null, token, messages }) {
   if (loading) {
     return (
       <div className="flex justify-center items-center p-8">
@@ -98,7 +98,7 @@ function ScorePanel({ scoreDetail = null, loading = false, error = null }) {
         <p className="text-gray-600 text-sm">
           Individual card ratings based on price, EDHREC popularity, and reprint frequency. Click columns to sort.
         </p>
-        <CardImpactTable cardImpacts={card_impacts} />
+        <CardImpactTable cardImpacts={card_impacts} token={token} messages={messages} />
       </div>
 
       {/* Footer */}
