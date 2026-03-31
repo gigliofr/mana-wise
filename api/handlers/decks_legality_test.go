@@ -127,6 +127,24 @@ func runAnalysisRequest(t *testing.T, h *DeckHandler, path string) *httptest.Res
 	return rr
 }
 
+func runSimulateRequest(t *testing.T, h *DeckHandler, path string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	r := chi.NewRouter()
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			ctx := context.WithValue(req.Context(), middleware.ContextKeyUserID, "u-1")
+			next.ServeHTTP(w, req.WithContext(ctx))
+		})
+	})
+	r.Post("/api/v1/decks/{id}/simulate", h.Simulate)
+
+	req := httptest.NewRequest(http.MethodPost, path, nil)
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+	return rr
+}
+
 func TestDeckLegalityHandler_OK(t *testing.T) {
 	h := NewDeckHandler(
 		&legalityMockDeckRepo{deck: &domain.Deck{
@@ -144,6 +162,7 @@ func TestDeckLegalityHandler_OK(t *testing.T) {
 				"c2": {ID: "c2", Name: "Mountain", TypeLine: "Basic Land - Mountain", Legalities: map[string]string{"modern": "legal", "standard": "legal", "legacy": "legal", "vintage": "legal", "pioneer": "legal", "pauper": "legal", "commander": "legal"}},
 			},
 		},
+		nil,
 		nil,
 		nil,
 	)
@@ -183,6 +202,7 @@ func TestDeckLegalityHandler_CardNotFound(t *testing.T) {
 		&legalityMockCardRepo{byID: map[string]*domain.Card{}},
 		nil,
 		nil,
+		nil,
 	)
 
 	rr := runLegalityRequest(t, h, "/api/v1/decks/d-2/legality")
@@ -199,9 +219,26 @@ func TestDeckAnalysisHandler_UnavailableWhenAnalyzeNil(t *testing.T) {
 		nil,
 		nil,
 		nil,
+		nil,
 	)
 
 	rr := runAnalysisRequest(t, h, "/api/v1/decks/d-3/analysis")
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestDeckSimulateHandler_UnavailableWhenMulliganNil(t *testing.T) {
+	h := NewDeckHandler(
+		&legalityMockDeckRepo{deck: &domain.Deck{ID: "d-4", UserID: "u-1"}},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	rr := runSimulateRequest(t, h, "/api/v1/decks/d-4/simulate")
 	if rr.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503, got %d body=%s", rr.Code, rr.Body.String())
 	}

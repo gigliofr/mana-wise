@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -21,11 +22,12 @@ type DeckHandler struct {
 	cardRepo domain.CardRepository
 	analyze  *usecase.AnalyzeDeckUseCase
 	classify *usecase.DeckClassifierUseCase
+	mulligan *usecase.MulliganAssistantUseCase
 }
 
 // NewDeckHandler creates a DeckHandler.
-func NewDeckHandler(repo domain.DeckRepository, userRepo domain.UserRepository, cardRepo domain.CardRepository, analyze *usecase.AnalyzeDeckUseCase, classify *usecase.DeckClassifierUseCase) *DeckHandler {
-	return &DeckHandler{repo: repo, userRepo: userRepo, cardRepo: cardRepo, analyze: analyze, classify: classify}
+func NewDeckHandler(repo domain.DeckRepository, userRepo domain.UserRepository, cardRepo domain.CardRepository, analyze *usecase.AnalyzeDeckUseCase, classify *usecase.DeckClassifierUseCase, mulligan *usecase.MulliganAssistantUseCase) *DeckHandler {
+	return &DeckHandler{repo: repo, userRepo: userRepo, cardRepo: cardRepo, analyze: analyze, classify: classify, mulligan: mulligan}
 }
 
 type deckLegalityResponse struct {
@@ -39,7 +41,40 @@ type deckAnalysisResponse struct {
 	Deterministic domain.AnalysisResult                 `json:"deterministic"`
 	Fingerprint   *usecase.DeckClassifyResult           `json:"fingerprint,omitempty"`
 	Legality      map[string]usecase.DeckLegalityResult `json:"legality"`
+	Curve         []curveTypeBucket                     `json:"curve,omitempty"`
+	Archetype     string                                `json:"archetype,omitempty"`
+	Confidence    float64                               `json:"confidence,omitempty"`
+	AvgCMC        float64                               `json:"avg_cmc,omitempty"`
+	DeviationMeta float64                               `json:"deviation_from_meta,omitempty"`
 	CheckedAtUTC  string                                `json:"checked_at"`
+}
+
+type curveTypeBucket struct {
+	CMC          int `json:"cmc"`
+	Creatures    int `json:"creatures"`
+	Instants     int `json:"instants"`
+	Sorceries    int `json:"sorceries"`
+	Enchantments int `json:"enchantments"`
+	Artifacts    int `json:"artifacts"`
+	Planeswalkers int `json:"planeswalkers"`
+	Total        int `json:"total"`
+}
+
+type deckSimulateRequest struct {
+	Simulations int    `json:"simulations,omitempty"`
+	Format      string `json:"format,omitempty"`
+	Archetype   string `json:"archetype,omitempty"`
+	OnPlay      *bool  `json:"on_play,omitempty"`
+}
+
+type deckSimulateResponse struct {
+	DeckID          string                      `json:"deck_id"`
+	KeepProbability float64                     `json:"keep_probability"`
+	AvgLandsT1      float64                     `json:"avg_lands_t1"`
+	CurveOutT4      float64                     `json:"curve_out_t4"`
+	Recommendation  string                      `json:"recommendation"`
+	Raw             usecase.MulliganSimulationResult `json:"raw"`
+	CheckedAtUTC    string                      `json:"checked_at"`
 }
 
 // saveDeckRequest is the JSON body for deck save/update.
@@ -168,20 +203,112 @@ func (h *DeckHandler) Analysis(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var fingerprint *usecase.DeckClassifyResult
+	archetype := ""
+	confidence := 0.0
 	if h.classify != nil {
 		if fp, fpErr := h.classify.Execute(r.Context(), usecase.DeckClassifyRequest{Decklist: decklist, Format: deck.Format}); fpErr == nil {
 			fingerprint = &fp
+			archetype = fp.Archetype
+			confidence = fp.Confidence
 		}
 	}
 
 	legality := usecase.DetermineDeckLegalityAllFormats(analysisResult.RawCards, analysisResult.Quantities)
+	curveBreakdown := buildCurveTypeBreakdown(analysisResult.RawCards, analysisResult.Quantities)
+	deviation := deviationFromMeta(archetype, analysisResult.Result.Mana.AverageCMC)
 
 	jsonOK(w, deckAnalysisResponse{
 		DeckID:        deck.ID,
 		Deterministic: analysisResult.Result,
 		Fingerprint:   fingerprint,
 		Legality:      legality,
+		Curve:         curveBreakdown,
+		Archetype:     archetype,
+		Confidence:    confidence,
+		AvgCMC:        analysisResult.Result.Mana.AverageCMC,
+		DeviationMeta: deviation,
 		CheckedAtUTC:  time.Now().UTC().Format(time.RFC3339),
+	})
+}
+
+// Simulate handles POST /api/v1/decks/{id}/simulate.
+func (h *DeckHandler) Simulate(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.UserIDFromContext(r.Context())
+	id := chi.URLParam(r, "id")
+
+	if h.mulligan == nil {
+		jsonError(w, "mulligan assistant unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	deck, err := h.repo.FindByID(r.Context(), id)
+	if err != nil {
+		jsonError(w, "failed to retrieve deck", http.StatusInternalServerError)
+		return
+	}
+	if deck == nil {
+		jsonError(w, "deck not found", http.StatusNotFound)
+		return
+	}
+	if deck.UserID != userID && !deck.IsPublic {
+		jsonError(w, "deck not found", http.StatusNotFound)
+		return
+	}
+
+	var req deckSimulateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err.Error() != "EOF" {
+		jsonError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	decklist := deckToDecklist(deck)
+	if strings.TrimSpace(decklist) == "" {
+		jsonError(w, "deck has no mainboard cards", http.StatusUnprocessableEntity)
+		return
+	}
+
+	format := strings.TrimSpace(req.Format)
+	if format == "" {
+		format = deck.Format
+	}
+
+	onPlay := true
+	if req.OnPlay != nil {
+		onPlay = *req.OnPlay
+	}
+
+	res, err := h.mulligan.Execute(r.Context(), usecase.MulliganSimulationRequest{
+		Decklist:   decklist,
+		Format:     format,
+		Archetype:  req.Archetype,
+		Iterations: req.Simulations,
+		OnPlay:     onPlay,
+	})
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusUnprocessableEntity)
+		return
+	}
+
+	keepProbability := 0.0
+	avgLandsT1 := 0.0
+	curveOutT4 := 0.0
+	for _, s := range res.Summaries {
+		if s.HandSize == 7 {
+			keepProbability = s.KeepRate
+			avgLandsT1 = s.AvgLands
+			curveOutT4 = math.Max(0, math.Min(1, s.AvgEarlyPlays/4.0))
+			break
+		}
+	}
+
+	jsonOK(w, deckSimulateResponse{
+		DeckID:          deck.ID,
+		KeepProbability: keepProbability,
+		AvgLandsT1:      avgLandsT1,
+		CurveOutT4:      round4(curveOutT4),
+		Recommendation:  res.Recommendation,
+		Raw:             res,
+		CheckedAtUTC:    time.Now().UTC().Format(time.RFC3339),
 	})
 }
 
@@ -251,6 +378,93 @@ func deckToDecklist(deck *domain.Deck) string {
 		b.WriteString("\n")
 	}
 	return strings.TrimSpace(b.String())
+}
+
+func buildCurveTypeBreakdown(cards []*domain.Card, quantities map[string]int) []curveTypeBucket {
+	buckets := map[int]*curveTypeBucket{}
+
+	for _, card := range cards {
+		if card == nil || card.IsLand() {
+			continue
+		}
+		qty := quantities[card.ID]
+		if qty <= 0 {
+			qty = 1
+		}
+		cmc := int(math.Round(card.CMC))
+		if cmc > 6 {
+			cmc = 6
+		}
+		if cmc < 0 {
+			cmc = 0
+		}
+
+		row, ok := buckets[cmc]
+		if !ok {
+			row = &curveTypeBucket{CMC: cmc}
+			buckets[cmc] = row
+		}
+
+		tl := strings.ToLower(strings.TrimSpace(card.TypeLine))
+		added := false
+		if strings.Contains(tl, "creature") || strings.Contains(tl, "creatura") {
+			row.Creatures += qty
+			added = true
+		}
+		if strings.Contains(tl, "instant") || strings.Contains(tl, "istantaneo") {
+			row.Instants += qty
+			added = true
+		}
+		if strings.Contains(tl, "sorcery") || strings.Contains(tl, "stregoneria") {
+			row.Sorceries += qty
+			added = true
+		}
+		if strings.Contains(tl, "enchantment") || strings.Contains(tl, "incantesimo") {
+			row.Enchantments += qty
+			added = true
+		}
+		if strings.Contains(tl, "artifact") || strings.Contains(tl, "artefatto") {
+			row.Artifacts += qty
+			added = true
+		}
+		if strings.Contains(tl, "planeswalker") {
+			row.Planeswalkers += qty
+			added = true
+		}
+		if !added {
+			row.Sorceries += qty
+		}
+		row.Total += qty
+	}
+
+	out := make([]curveTypeBucket, 0, 7)
+	for cmc := 0; cmc <= 6; cmc++ {
+		if row, ok := buckets[cmc]; ok {
+			out = append(out, *row)
+			continue
+		}
+		out = append(out, curveTypeBucket{CMC: cmc})
+	}
+	return out
+}
+
+func deviationFromMeta(archetype string, avgCMC float64) float64 {
+	targets := map[string]float64{
+		"aggro":    2.0,
+		"midrange": 2.9,
+		"control":  3.2,
+		"combo":    2.6,
+		"ramp":     3.6,
+	}
+	target, ok := targets[strings.ToLower(strings.TrimSpace(archetype))]
+	if !ok || target <= 0 {
+		return 0
+	}
+	return round4(math.Abs(avgCMC-target) / target)
+}
+
+func round4(v float64) float64 {
+	return math.Round(v*10000) / 10000
 }
 
 // Create handles POST /api/v1/decks.

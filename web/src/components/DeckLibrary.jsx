@@ -19,6 +19,7 @@ export default function DeckLibrary({
   const [editedDecklist, setEditedDecklist] = useState('')
   const [page, setPage] = useState(0)
   const [expandedDecks, setExpandedDecks] = useState({})
+  const [deckLegality, setDeckLegality] = useState({})
 
   const ITEMS_PER_PAGE = 3
   const paginatedDecks = decks.slice(page * ITEMS_PER_PAGE, (page + 1) * ITEMS_PER_PAGE)
@@ -64,6 +65,62 @@ export default function DeckLibrary({
       cancelled = true
     }
   }, [token, messages.deckLoadFailed])
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function ensureLegality() {
+      const pending = paginatedDecks
+        .filter(deck => deck?.id && !deckLegality[deck.id])
+        .map(deck => deck.id)
+
+      if (pending.length === 0) return
+
+      await Promise.all(
+        pending.map(async deckID => {
+          try {
+            const res = await fetch(`${API}/decks/${deckID}/legality`, {
+              headers: { Authorization: `Bearer ${token}` },
+            })
+            const data = await res.json()
+            if (!res.ok) throw new Error(data.error || 'legality fetch failed')
+            const formatMap = data?.formats || {}
+            const cardIllegalByFormat = {}
+            Object.keys(formatMap).forEach(fmt => {
+              const illegal = formatMap?.[fmt]?.illegal_cards || []
+              const names = {}
+              illegal.forEach(item => {
+                const n = (item?.card_name || '').trim().toLowerCase()
+                if (n) names[n] = true
+              })
+              cardIllegalByFormat[fmt] = names
+            })
+            if (!cancelled) {
+              setDeckLegality(prev => ({
+                ...prev,
+                [deckID]: {
+                  formats: formatMap,
+                  cardIllegalByFormat,
+                },
+              }))
+            }
+          } catch {
+            if (!cancelled) {
+              setDeckLegality(prev => ({
+                ...prev,
+                [deckID]: { formats: {}, cardIllegalByFormat: {} },
+              }))
+            }
+          }
+        }),
+      )
+    }
+
+    ensureLegality()
+    return () => {
+      cancelled = true
+    }
+  }, [paginatedDecks, deckLegality, token])
 
   function deckToDecklist(deck) {
     const cards = Array.isArray(deck?.cards) ? deck.cards : []
@@ -314,28 +371,59 @@ export default function DeckLibrary({
           <div className="decklib-list">
             {paginatedDecks.map(deck => (
               <div className="decklib-item" key={deck.id}>
+                {(() => {
+                  const normalizedFormat = (deck.format || 'standard').toLowerCase()
+                  const legality = deckLegality[deck.id]?.formats?.[normalizedFormat]
+                  const formatIsLegal = legality?.is_legal
+                  const chipColor = formatIsLegal === true ? 'var(--green)' : formatIsLegal === false ? 'var(--red)' : 'var(--muted)'
+                  const chipText = formatIsLegal === true
+                    ? messages.legalityLegalLabel
+                    : formatIsLegal === false
+                      ? messages.legalityIllegalLabel
+                      : messages.loading
+
+                  return (
                 <div>
                   <div className="decklib-name">{deck.name}</div>
-                  <div className="decklib-sub">{deck.format}</div>
+                  <div className="decklib-sub" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span>{deck.format}</span>
+                    <span
+                      style={{
+                        fontSize: '.68rem',
+                        textTransform: 'uppercase',
+                        letterSpacing: '.04em',
+                        border: `1px solid ${chipColor}`,
+                        color: chipColor,
+                        borderRadius: 999,
+                        padding: '1px 7px',
+                        fontWeight: 700,
+                      }}
+                    >
+                      {chipText}
+                    </span>
+                  </div>
                   <div style={{ marginTop: 6, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                     {(isDeckExpanded(deck.id) ? mainDeckCards(deck) : mainDeckCards(deck).slice(0, 6)).map((c, idx) => {
                       const label = `${c.quantity || 1}x ${c.card_name || c.name || ''}`.trim()
                       const cardName = (c.card_name || c.name || '').trim()
                       if (!cardName) return null
+                      const illegalByFormat = deckLegality[deck.id]?.cardIllegalByFormat?.[normalizedFormat] || {}
+                      const isIllegalCard = Boolean(illegalByFormat[cardName.toLowerCase()])
                       return (
                         <span
                           key={`${deck.id}-card-${idx}`}
                           style={{
                             fontSize: '.74rem',
-                            color: 'var(--muted)',
-                            border: '1px solid var(--border)',
+                            color: isIllegalCard ? 'var(--red)' : 'var(--muted)',
+                            border: isIllegalCard ? '1px solid var(--red)' : '1px solid var(--border)',
                             borderRadius: 999,
                             padding: '2px 8px',
-                            background: 'rgba(255,255,255,0.02)',
+                            background: isIllegalCard ? 'rgba(255,0,0,0.08)' : 'rgba(255,255,255,0.02)',
                           }}
+                          title={isIllegalCard ? `${messages.legalityIllegalLabel} (${normalizedFormat})` : undefined}
                         >
                           <CardHoverPreview cardName={cardName} token={token} messages={messages}>
-                            {label}
+                            {isIllegalCard ? `⚠ ${label}` : label}
                           </CardHoverPreview>
                         </span>
                       )
@@ -359,6 +447,8 @@ export default function DeckLibrary({
                     )}
                   </div>
                 </div>
+                  )
+                })()}
                 <div className="decklib-buttons">
                   <button
                     type="button"
