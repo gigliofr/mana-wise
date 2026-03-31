@@ -36,6 +36,24 @@ type MulliganSummary struct {
 	AvgEarlyPlays float64 `json:"avg_early_plays"`
 }
 
+// MulliganReasoningSignal explains one measurable signal behind the final verdict.
+type MulliganReasoningSignal struct {
+	Key       string  `json:"key"`
+	Value     float64 `json:"value"`
+	Threshold float64 `json:"threshold"`
+	Direction string  `json:"direction"`
+	Status    string  `json:"status"`
+	Message   string  `json:"message"`
+}
+
+// MulliganReasoning provides a structured explanation for keep/mulligan pressure.
+type MulliganReasoning struct {
+	Verdict  string                   `json:"verdict"`
+	Risk     string                   `json:"risk"`
+	Signals  []MulliganReasoningSignal `json:"signals"`
+	Advice   []string                 `json:"advice"`
+}
+
 // MulliganSimulationResult is returned by the mulligan simulation.
 type MulliganSimulationResult struct {
 	Format         string            `json:"format"`
@@ -49,6 +67,7 @@ type MulliganSimulationResult struct {
 	POneDrop        float64          `json:"p_one_drop"`
 	CurveOutT4      float64          `json:"curve_out_t4"`
 	Recommendation string            `json:"recommendation"`
+	Reasoning      MulliganReasoning `json:"reasoning"`
 }
 
 type mulliganCard struct {
@@ -180,6 +199,7 @@ func (uc *MulliganAssistantUseCase) Execute(ctx context.Context, req MulliganSim
 	result.POneDrop = round2(float64(oneDropCount) / float64(iterations))
 	result.CurveOutT4 = round2(float64(curveOutT4Count) / float64(iterations))
 
+	result.Reasoning = buildMulliganReasoning(result)
 	result.Recommendation = buildMulliganRecommendation(result)
 	return result, nil
 }
@@ -250,6 +270,101 @@ func buildMulliganRecommendation(res MulliganSimulationResult) string {
 		return "Mulligan decisions are medium sensitivity: prioritize hands with early interaction and clean mana."
 	}
 	return "High mulligan pressure detected: adjust mana base or increase early-game density before event play."
+}
+
+func buildMulliganReasoning(res MulliganSimulationResult) MulliganReasoning {
+	signals := []MulliganReasoningSignal{
+		evaluateSignal(
+			"keep_probability",
+			res.KeepProbability,
+			0.65,
+			"gte",
+			"Keep-rate in 7-card hands is below target consistency.",
+		),
+		evaluateSignal(
+			"p_two_lands_t2",
+			res.PTwoLandsT2,
+			0.75,
+			"gte",
+			"Two-lands-by-turn-2 consistency is below baseline.",
+		),
+		evaluateSignal(
+			"p_one_drop",
+			res.POneDrop,
+			0.55,
+			"gte",
+			"Turn-1 proactive play density is low.",
+		),
+		evaluateSignal(
+			"curve_out_t4",
+			res.CurveOutT4,
+			0.40,
+			"gte",
+			"Curve-out to turn 4 is unstable.",
+		),
+	}
+
+	failed := 0
+	for _, s := range signals {
+		if s.Status == "fail" {
+			failed++
+		}
+	}
+
+	verdict := "keep_favored"
+	risk := "low"
+	if failed >= 3 || res.KeepProbability < 0.55 {
+		verdict = "mulligan_favored"
+		risk = "high"
+	} else if failed >= 1 || res.KeepProbability < 0.7 {
+		verdict = "context_dependent"
+		risk = "medium"
+	}
+
+	advice := []string{}
+	if res.PTwoLandsT2 < 0.75 {
+		advice = append(advice, "Increase untapped land density or reduce color strain in early turns.")
+	}
+	if res.POneDrop < 0.55 {
+		advice = append(advice, "Raise one-drop count to improve turn-1 agency.")
+	}
+	if res.CurveOutT4 < 0.40 {
+		advice = append(advice, "Smooth the mana curve between 2 and 4 CMC for cleaner sequencing.")
+	}
+	if len(advice) == 0 {
+		advice = append(advice, "Current distribution supports disciplined keeps in most opening hands.")
+	}
+
+	return MulliganReasoning{
+		Verdict: verdict,
+		Risk:    risk,
+		Signals: signals,
+		Advice:  advice,
+	}
+}
+
+func evaluateSignal(key string, value float64, threshold float64, direction string, failMessage string) MulliganReasoningSignal {
+	status := "pass"
+	if direction == "gte" && value < threshold {
+		status = "fail"
+	}
+	if direction == "lte" && value > threshold {
+		status = "fail"
+	}
+
+	message := "Within expected range."
+	if status == "fail" {
+		message = failMessage
+	}
+
+	return MulliganReasoningSignal{
+		Key:       key,
+		Value:     value,
+		Threshold: threshold,
+		Direction: direction,
+		Status:    status,
+		Message:   message,
+	}
 }
 
 func normalizeArchetype(a string) string {

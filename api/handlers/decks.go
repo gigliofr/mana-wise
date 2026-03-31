@@ -76,6 +76,7 @@ type deckSimulateResponse struct {
 	POneDrop        float64                     `json:"p_one_drop"`
 	CurveOutT4      float64                     `json:"curve_out_t4"`
 	Recommendation  string                      `json:"recommendation"`
+	Reasoning       usecase.MulliganReasoning   `json:"reasoning"`
 	Raw             usecase.MulliganSimulationResult `json:"raw"`
 	CheckedAtUTC    string                      `json:"checked_at"`
 }
@@ -302,6 +303,7 @@ func (h *DeckHandler) Simulate(w http.ResponseWriter, r *http.Request) {
 		POneDrop:        res.POneDrop,
 		CurveOutT4:      res.CurveOutT4,
 		Recommendation:  res.Recommendation,
+		Reasoning:       res.Reasoning,
 		Raw:             res,
 		CheckedAtUTC:    time.Now().UTC().Format(time.RFC3339),
 	})

@@ -24,7 +24,7 @@ Consolidare le feature ad alta priorita in endpoint deck-centric riusabili dal f
 - [x] MT-3.1 Esporre endpoint deck-centric `POST /api/v1/decks/{id}/simulate`
 - [x] MT-3.2 Parametro simulazioni (default 10k, max guardrail)
 - [x] MT-3.3 Esporre metriche richieste (`p_two_lands_t2`, `p_one_drop`, `curve_out_t4`)
-- [ ] MT-3.4 Motivazione keep/mulligan strutturata
+- [x] MT-3.4 Motivazione keep/mulligan strutturata
 
 ## Note
 - L'implementazione mantiene retrocompatibilita con endpoint legacy (`/mulligan/simulate`, `/analyze`).

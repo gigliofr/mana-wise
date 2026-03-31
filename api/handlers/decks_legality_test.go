@@ -351,4 +351,18 @@ func TestDeckSimulateHandler_ContainsProbabilityMetrics(t *testing.T) {
 			t.Fatalf("expected %s field", key)
 		}
 	}
+
+	reasoningRaw, ok := resp["reasoning"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected reasoning object")
+	}
+	if _, ok := reasoningRaw["verdict"]; !ok {
+		t.Fatalf("expected reasoning.verdict field")
+	}
+	if _, ok := reasoningRaw["risk"]; !ok {
+		t.Fatalf("expected reasoning.risk field")
+	}
+	if _, ok := reasoningRaw["signals"]; !ok {
+		t.Fatalf("expected reasoning.signals field")
+	}
 }
