@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/manawise/api/api/middleware"
 	"github.com/manawise/api/domain"
+	"github.com/manawise/api/usecase"
 )
 
 type legalityMockDeckRepo struct {
@@ -58,7 +60,27 @@ func (r *legalityMockCardRepo) FindByName(ctx context.Context, name string) (*do
 }
 
 func (r *legalityMockCardRepo) FindByNames(ctx context.Context, names []string) ([]*domain.Card, error) {
-	return nil, nil
+	out := make([]*domain.Card, 0, len(names))
+	seen := map[string]bool{}
+	for _, n := range names {
+		if c, ok := r.byName[n]; ok && c != nil {
+			if !seen[c.ID] {
+				out = append(out, c)
+				seen[c.ID] = true
+			}
+			continue
+		}
+		for _, c := range r.byName {
+			if c != nil && strings.EqualFold(c.Name, n) {
+				if !seen[c.ID] {
+					out = append(out, c)
+					seen[c.ID] = true
+				}
+				break
+			}
+		}
+	}
+	return out, nil
 }
 
 func (r *legalityMockCardRepo) FindForEmbedding(ctx context.Context, limit int, onlyMissing bool) ([]*domain.Card, error) {
@@ -241,5 +263,92 @@ func TestDeckSimulateHandler_UnavailableWhenMulliganNil(t *testing.T) {
 	rr := runSimulateRequest(t, h, "/api/v1/decks/d-4/simulate")
 	if rr.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestDeckAnalysisHandler_ContainsCurveAndMetaFields(t *testing.T) {
+	bolt := &domain.Card{ID: "c1", Name: "Lightning Bolt", CMC: 1, TypeLine: "Instant", Legalities: map[string]string{"modern": "legal"}}
+	mountain := &domain.Card{ID: "c2", Name: "Mountain", CMC: 0, TypeLine: "Basic Land - Mountain", Legalities: map[string]string{"modern": "legal"}}
+	cardRepo := &legalityMockCardRepo{
+		byID: map[string]*domain.Card{"c1": bolt, "c2": mountain},
+		byName: map[string]*domain.Card{"Lightning Bolt": bolt, "Mountain": mountain},
+	}
+
+	deck := &domain.Deck{
+		ID:     "d-a1",
+		UserID: "u-1",
+		Format: "modern",
+		Cards: []domain.DeckCard{
+			{CardID: "c1", CardName: "Lightning Bolt", Quantity: 4},
+			{CardID: "c2", CardName: "Mountain", Quantity: 56},
+		},
+	}
+
+	analyzeUC := usecase.NewAnalyzeDeckUseCase(&analyzeMockFetcher{}, cardRepo, 2)
+	classifyUC := usecase.NewDeckClassifierUseCase(cardRepo)
+	h := NewDeckHandler(&legalityMockDeckRepo{deck: deck}, nil, cardRepo, analyzeUC, classifyUC, nil)
+
+	rr := runAnalysisRequest(t, h, "/api/v1/decks/d-a1/analysis")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if _, ok := resp["curve"]; !ok {
+		t.Fatalf("expected curve field")
+	}
+	if _, ok := resp["meta_fit_score"]; !ok {
+		t.Fatalf("expected meta_fit_score field")
+	}
+	if _, ok := resp["deviation_from_meta"]; !ok {
+		t.Fatalf("expected deviation_from_meta field")
+	}
+}
+
+func TestDeckSimulateHandler_ContainsProbabilityMetrics(t *testing.T) {
+	deck := &domain.Deck{
+		ID:     "d-s1",
+		UserID: "u-1",
+		Format: "modern",
+		Cards: []domain.DeckCard{
+			{CardName: "Lightning Bolt", Quantity: 4},
+			{CardName: "Goblin Guide", Quantity: 4},
+			{CardName: "Mountain", Quantity: 20},
+			{CardName: "Lava Spike", Quantity: 4},
+			{CardName: "Monastery Swiftspear", Quantity: 4},
+			{CardName: "Skullcrack", Quantity: 4},
+			{CardName: "Rift Bolt", Quantity: 4},
+			{CardName: "Searing Blaze", Quantity: 4},
+			{CardName: "Eidolon of the Great Revel", Quantity: 4},
+			{CardName: "Searing Blood", Quantity: 4},
+			{CardName: "Light Up the Stage", Quantity: 4},
+		},
+	}
+
+	h := NewDeckHandler(
+		&legalityMockDeckRepo{deck: deck},
+		nil,
+		nil,
+		nil,
+		nil,
+		usecase.NewMulliganAssistantUseCase(nil),
+	)
+
+	rr := runSimulateRequest(t, h, "/api/v1/decks/d-s1/simulate")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	for _, key := range []string{"keep_probability", "avg_lands_t1", "p_two_lands_t2", "p_one_drop", "curve_out_t4"} {
+		if _, ok := resp[key]; !ok {
+			t.Fatalf("expected %s field", key)
+		}
 	}
 }

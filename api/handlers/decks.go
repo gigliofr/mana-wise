@@ -45,6 +45,7 @@ type deckAnalysisResponse struct {
 	Archetype     string                                `json:"archetype,omitempty"`
 	Confidence    float64                               `json:"confidence,omitempty"`
 	AvgCMC        float64                               `json:"avg_cmc,omitempty"`
+	MetaFitScore  int                                   `json:"meta_fit_score,omitempty"`
 	DeviationMeta float64                               `json:"deviation_from_meta,omitempty"`
 	CheckedAtUTC  string                                `json:"checked_at"`
 }
@@ -71,6 +72,8 @@ type deckSimulateResponse struct {
 	DeckID          string                      `json:"deck_id"`
 	KeepProbability float64                     `json:"keep_probability"`
 	AvgLandsT1      float64                     `json:"avg_lands_t1"`
+	PTwoLandsT2     float64                     `json:"p_two_lands_t2"`
+	POneDrop        float64                     `json:"p_one_drop"`
 	CurveOutT4      float64                     `json:"curve_out_t4"`
 	Recommendation  string                      `json:"recommendation"`
 	Raw             usecase.MulliganSimulationResult `json:"raw"`
@@ -216,6 +219,7 @@ func (h *DeckHandler) Analysis(w http.ResponseWriter, r *http.Request) {
 	legality := usecase.DetermineDeckLegalityAllFormats(analysisResult.RawCards, analysisResult.Quantities)
 	curveBreakdown := buildCurveTypeBreakdown(analysisResult.RawCards, analysisResult.Quantities)
 	deviation := deviationFromMeta(archetype, analysisResult.Result.Mana.AverageCMC)
+	metaFit := metaFitFromDeviation(deviation)
 
 	jsonOK(w, deckAnalysisResponse{
 		DeckID:        deck.ID,
@@ -226,6 +230,7 @@ func (h *DeckHandler) Analysis(w http.ResponseWriter, r *http.Request) {
 		Archetype:     archetype,
 		Confidence:    confidence,
 		AvgCMC:        analysisResult.Result.Mana.AverageCMC,
+		MetaFitScore:  metaFit,
 		DeviationMeta: deviation,
 		CheckedAtUTC:  time.Now().UTC().Format(time.RFC3339),
 	})
@@ -289,23 +294,13 @@ func (h *DeckHandler) Simulate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	keepProbability := 0.0
-	avgLandsT1 := 0.0
-	curveOutT4 := 0.0
-	for _, s := range res.Summaries {
-		if s.HandSize == 7 {
-			keepProbability = s.KeepRate
-			avgLandsT1 = s.AvgLands
-			curveOutT4 = math.Max(0, math.Min(1, s.AvgEarlyPlays/4.0))
-			break
-		}
-	}
-
 	jsonOK(w, deckSimulateResponse{
 		DeckID:          deck.ID,
-		KeepProbability: keepProbability,
-		AvgLandsT1:      avgLandsT1,
-		CurveOutT4:      round4(curveOutT4),
+		KeepProbability: res.KeepProbability,
+		AvgLandsT1:      res.AvgLandsT1,
+		PTwoLandsT2:     res.PTwoLandsT2,
+		POneDrop:        res.POneDrop,
+		CurveOutT4:      res.CurveOutT4,
 		Recommendation:  res.Recommendation,
 		Raw:             res,
 		CheckedAtUTC:    time.Now().UTC().Format(time.RFC3339),
@@ -465,6 +460,20 @@ func deviationFromMeta(archetype string, avgCMC float64) float64 {
 
 func round4(v float64) float64 {
 	return math.Round(v*10000) / 10000
+}
+
+func metaFitFromDeviation(deviation float64) int {
+	if deviation <= 0 {
+		return 100
+	}
+	score := int(math.Round((1 - math.Min(1, deviation)) * 100))
+	if score < 0 {
+		return 0
+	}
+	if score > 100 {
+		return 100
+	}
+	return score
 }
 
 // Create handles POST /api/v1/decks.

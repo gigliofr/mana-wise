@@ -17,13 +17,13 @@ Consolidare le feature ad alta priorita in endpoint deck-centric riusabili dal f
 ## Feature 1 - Mana curve analyzer avanzato (deck endpoint)
 - [x] MT-1.1 Aggiungere endpoint `GET /api/v1/decks/{id}/analysis`
 - [x] MT-1.2 Estrarre breakdown CMC per tipo (creature/instant/sorcery/enchantment/artifact/planeswalker)
-- [ ] MT-1.3 Esportare `meta_fit_score` e `deviation_from_meta`
-- [ ] MT-1.4 Test integrazione endpoint
+- [x] MT-1.3 Esportare `meta_fit_score` e `deviation_from_meta`
+- [x] MT-1.4 Test integrazione endpoint
 
 ## Feature 3 - Mulligan simulator avanzato
 - [x] MT-3.1 Esporre endpoint deck-centric `POST /api/v1/decks/{id}/simulate`
-- [ ] MT-3.2 Parametro simulazioni (default 10k, max guardrail)
-- [ ] MT-3.3 Esporre metriche richieste (`p_two_lands_t2`, `p_one_drop`, `curve_out_t4`)
+- [x] MT-3.2 Parametro simulazioni (default 10k, max guardrail)
+- [x] MT-3.3 Esporre metriche richieste (`p_two_lands_t2`, `p_one_drop`, `curve_out_t4`)
 - [ ] MT-3.4 Motivazione keep/mulligan strutturata
 
 ## Note

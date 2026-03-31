@@ -43,6 +43,11 @@ type MulliganSimulationResult struct {
 	OnPlay         bool              `json:"on_play"`
 	Iterations     int               `json:"iterations"`
 	Summaries      []MulliganSummary `json:"summaries"`
+	KeepProbability float64          `json:"keep_probability"`
+	AvgLandsT1      float64          `json:"avg_lands_t1"`
+	PTwoLandsT2     float64          `json:"p_two_lands_t2"`
+	POneDrop        float64          `json:"p_one_drop"`
+	CurveOutT4      float64          `json:"curve_out_t4"`
 	Recommendation string            `json:"recommendation"`
 }
 
@@ -106,6 +111,10 @@ func (uc *MulliganAssistantUseCase) Execute(ctx context.Context, req MulliganSim
 		Summaries:  []MulliganSummary{},
 	}
 
+	twoLandsT2Count := 0
+	oneDropCount := 0
+	curveOutT4Count := 0
+
 	for _, handSize := range []int{7, 6, 5} {
 		keepCount := 0
 		lands := 0
@@ -128,6 +137,48 @@ func (uc *MulliganAssistantUseCase) Execute(ctx context.Context, req MulliganSim
 			AvgEarlyPlays: round2(float64(early) / float64(iterations)),
 		})
 	}
+
+	for i := 0; i < iterations; i++ {
+		sample9 := drawHand(pool, 9, rng)
+		sample7 := sample9
+		if len(sample7) > 7 {
+			sample7 = sample7[:7]
+		}
+		sample11 := drawHand(pool, 11, rng)
+
+		lands9 := 0
+		for _, c := range sample9 {
+			if c.isLand {
+				lands9++
+			}
+		}
+		if lands9 >= 2 {
+			twoLandsT2Count++
+		}
+
+		hasOneDrop := false
+		for _, c := range sample7 {
+			if !c.isLand && c.cmc <= 1.0 {
+				hasOneDrop = true
+				break
+			}
+		}
+		if hasOneDrop {
+			oneDropCount++
+		}
+
+		if hasCurveOutByTurn4(sample11) {
+			curveOutT4Count++
+		}
+	}
+
+	if len(result.Summaries) > 0 {
+		result.KeepProbability = result.Summaries[0].KeepRate
+		result.AvgLandsT1 = result.Summaries[0].AvgLands
+	}
+	result.PTwoLandsT2 = round2(float64(twoLandsT2Count) / float64(iterations))
+	result.POneDrop = round2(float64(oneDropCount) / float64(iterations))
+	result.CurveOutT4 = round2(float64(curveOutT4Count) / float64(iterations))
 
 	result.Recommendation = buildMulliganRecommendation(result)
 	return result, nil
@@ -301,4 +352,37 @@ func drawHand(pool []mulliganCard, size int, rng *rand.Rand) []mulliganCard {
 		hand = append(hand, pool[idx[i]])
 	}
 	return hand
+}
+
+func hasCurveOutByTurn4(sample []mulliganCard) bool {
+	if len(sample) == 0 {
+		return false
+	}
+
+	lands := 0
+	has1 := false
+	has2 := false
+	has3 := false
+	has4 := false
+
+	for _, c := range sample {
+		if c.isLand {
+			lands++
+			continue
+		}
+		if c.cmc <= 1.0 {
+			has1 = true
+		}
+		if c.cmc <= 2.0 {
+			has2 = true
+		}
+		if c.cmc <= 3.0 {
+			has3 = true
+		}
+		if c.cmc <= 4.0 {
+			has4 = true
+		}
+	}
+
+	return lands >= 4 && has1 && has2 && has3 && has4
 }
