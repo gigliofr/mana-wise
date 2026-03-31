@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"math"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -83,6 +84,29 @@ type deckPriceResponse struct {
 	Cards             []deckPriceCardLine `json:"cards"`
 	MissingPrices     []string            `json:"missing_prices,omitempty"`
 	CheckedAtUTC      string              `json:"checked_at"`
+}
+
+type deckBudgetReplacement struct {
+	Card               string  `json:"card"`
+	Qty                int     `json:"qty"`
+	CurrentUnitUSD     float64 `json:"current_unit_usd"`
+	SuggestedCard      string  `json:"suggested_card"`
+	SuggestedUnitUSD   float64 `json:"suggested_unit_usd"`
+	EstimatedSavingsUSD float64 `json:"estimated_savings_usd"`
+	SimilarityScore    float64 `json:"similarity_score"`
+	Reason             string  `json:"reason"`
+}
+
+type deckBudgetResponse struct {
+	DeckID             string                  `json:"deck_id"`
+	TargetUSD          float64                 `json:"target_usd"`
+	CurrentTotalUSD    float64                 `json:"current_total_usd"`
+	EstimatedNewTotalUSD float64               `json:"estimated_new_total_usd"`
+	RequiredSavingsUSD float64                 `json:"required_savings_usd"`
+	EstimatedSavingsUSD float64                `json:"estimated_savings_usd"`
+	Achievable         bool                    `json:"achievable"`
+	Replacements       []deckBudgetReplacement `json:"replacements"`
+	CheckedAtUTC       string                  `json:"checked_at"`
 }
 
 type deckCombo struct {
@@ -293,6 +317,148 @@ func (h *DeckHandler) Price(w http.ResponseWriter, r *http.Request) {
 		Cards:             lines,
 		MissingPrices:     missing,
 		CheckedAtUTC:      time.Now().UTC().Format(time.RFC3339),
+	})
+}
+
+// Budget handles GET /api/v1/decks/{id}/budget?target=200.
+func (h *DeckHandler) Budget(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.UserIDFromContext(r.Context())
+	id := chi.URLParam(r, "id")
+
+	if h.cardRepo == nil {
+		jsonError(w, "card repository unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	targetRaw := strings.TrimSpace(r.URL.Query().Get("target"))
+	if targetRaw == "" {
+		jsonError(w, "target query parameter is required", http.StatusBadRequest)
+		return
+	}
+	targetUSD, err := strconv.ParseFloat(targetRaw, 64)
+	if err != nil || targetUSD <= 0 {
+		jsonError(w, "target must be a positive number", http.StatusBadRequest)
+		return
+	}
+
+	deck, err := h.repo.FindByID(r.Context(), id)
+	if err != nil {
+		jsonError(w, "failed to retrieve deck", http.StatusInternalServerError)
+		return
+	}
+	if deck == nil {
+		jsonError(w, "deck not found", http.StatusNotFound)
+		return
+	}
+	if deck.UserID != userID && !deck.IsPublic {
+		jsonError(w, "deck not found", http.StatusNotFound)
+		return
+	}
+
+	type pricedDeckEntry struct {
+		card     *domain.Card
+		entry    domain.DeckCard
+		unitUSD  float64
+		lineUSD  float64
+	}
+
+	priced := make([]pricedDeckEntry, 0, len(deck.Cards))
+	currentTotalUSD := 0.0
+
+	for _, entry := range deck.Cards {
+		if strings.TrimSpace(entry.CardName) == "" || entry.Quantity <= 0 {
+			continue
+		}
+		card, resolveErr := h.resolveDeckCardEntry(r, entry)
+		if resolveErr != nil {
+			jsonError(w, resolveErr.Error(), http.StatusUnprocessableEntity)
+			return
+		}
+		usd, _, _ := extractCardUnitPrices(card)
+		lineUSD := round4(usd * float64(entry.Quantity))
+		currentTotalUSD += lineUSD
+		priced = append(priced, pricedDeckEntry{card: card, entry: entry, unitUSD: usd, lineUSD: lineUSD})
+	}
+
+	currentTotalUSD = round4(currentTotalUSD)
+	requiredSavings := round4(currentTotalUSD - targetUSD)
+	if requiredSavings <= 0 {
+		jsonOK(w, deckBudgetResponse{
+			DeckID:              deck.ID,
+			TargetUSD:           round4(targetUSD),
+			CurrentTotalUSD:     currentTotalUSD,
+			EstimatedNewTotalUSD: currentTotalUSD,
+			RequiredSavingsUSD:  0,
+			EstimatedSavingsUSD: 0,
+			Achievable:          true,
+			Replacements:        []deckBudgetReplacement{},
+			CheckedAtUTC:        time.Now().UTC().Format(time.RFC3339),
+		})
+		return
+	}
+
+	sort.Slice(priced, func(i, j int) bool { return priced[i].lineUSD > priced[j].lineUSD })
+
+	candidates, _ := h.cardRepo.FindWithEmbeddings(r.Context(), 3000)
+	replacements := []deckBudgetReplacement{}
+	savings := 0.0
+
+	for _, item := range priced {
+		if savings >= requiredSavings {
+			break
+		}
+		if item.card == nil || item.unitUSD <= 0 || item.entry.Quantity <= 0 {
+			continue
+		}
+
+		replCard, replUSD, sim := findBudgetReplacement(item.card, item.unitUSD, candidates)
+		if replCard == nil || replUSD <= 0 || replUSD >= item.unitUSD {
+			continue
+		}
+
+		savingPerCopy := round4(item.unitUSD - replUSD)
+		if savingPerCopy <= 0 {
+			continue
+		}
+
+		remaining := requiredSavings - savings
+		copiesNeeded := int(math.Ceil(remaining / savingPerCopy))
+		if copiesNeeded <= 0 {
+			copiesNeeded = 1
+		}
+		if copiesNeeded > item.entry.Quantity {
+			copiesNeeded = item.entry.Quantity
+		}
+
+		estimated := round4(float64(copiesNeeded) * savingPerCopy)
+		savings += estimated
+
+		replacements = append(replacements, deckBudgetReplacement{
+			Card:                item.card.Name,
+			Qty:                 copiesNeeded,
+			CurrentUnitUSD:      round4(item.unitUSD),
+			SuggestedCard:       replCard.Name,
+			SuggestedUnitUSD:    round4(replUSD),
+			EstimatedSavingsUSD: estimated,
+			SimilarityScore:     round4(sim),
+			Reason:              "Lower-cost card with similar role and curve profile.",
+		})
+	}
+
+	estimatedSavings := round4(savings)
+	newTotal := round4(currentTotalUSD - estimatedSavings)
+	achievable := estimatedSavings >= requiredSavings
+
+	jsonOK(w, deckBudgetResponse{
+		DeckID:               deck.ID,
+		TargetUSD:            round4(targetUSD),
+		CurrentTotalUSD:      currentTotalUSD,
+		EstimatedNewTotalUSD: newTotal,
+		RequiredSavingsUSD:   requiredSavings,
+		EstimatedSavingsUSD:  estimatedSavings,
+		Achievable:           achievable,
+		Replacements:         replacements,
+		CheckedAtUTC:         time.Now().UTC().Format(time.RFC3339),
 	})
 }
 
@@ -803,6 +969,69 @@ func extractCardUnitPrices(card *domain.Card) (float64, float64, string) {
 		}
 	}
 	return 0, 0, "unpriced"
+}
+
+func findBudgetReplacement(source *domain.Card, sourceUSD float64, candidates []*domain.Card) (*domain.Card, float64, float64) {
+	if source == nil || sourceUSD <= 0 {
+		return nil, 0, 0
+	}
+
+	sourceType := primaryCardType(source.TypeLine)
+	bestScore := -1.0
+	var bestCard *domain.Card
+	bestUSD := 0.0
+
+	for _, cand := range candidates {
+		if cand == nil || cand.ID == source.ID {
+			continue
+		}
+		candUSD, _, _ := extractCardUnitPrices(cand)
+		if candUSD <= 0 || candUSD >= sourceUSD {
+			continue
+		}
+		if candUSD > sourceUSD*0.75 {
+			continue
+		}
+
+		candType := primaryCardType(cand.TypeLine)
+		typeScore := 0.0
+		if candType == sourceType && candType != "" {
+			typeScore = 1
+		}
+
+		cmcDelta := math.Abs(source.CMC - cand.CMC)
+		cmcScore := math.Max(0, 1-(cmcDelta/2))
+		cheapScore := math.Max(0, math.Min(1, (sourceUSD-candUSD)/sourceUSD))
+
+		embScore := 0.0
+		if len(source.EmbeddingVector) > 0 && len(cand.EmbeddingVector) > 0 {
+			embScore = math.Max(0, cosineSimilarity(source.EmbeddingVector, cand.EmbeddingVector))
+		} else {
+			embScore = (typeScore*0.6 + cmcScore*0.4)
+		}
+
+		score := embScore*0.55 + cheapScore*0.3 + typeScore*0.15
+		if score > bestScore {
+			bestScore = score
+			bestCard = cand
+			bestUSD = candUSD
+		}
+	}
+
+	if bestCard == nil {
+		return nil, 0, 0
+	}
+	return bestCard, bestUSD, bestScore
+}
+
+func primaryCardType(typeLine string) string {
+	t := strings.ToLower(strings.TrimSpace(typeLine))
+	for _, token := range []string{"creature", "instant", "sorcery", "artifact", "enchantment", "planeswalker", "land", "battle"} {
+		if strings.Contains(t, token) {
+			return token
+		}
+	}
+	return ""
 }
 
 type deckCardResolveError struct {

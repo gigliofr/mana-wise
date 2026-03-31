@@ -46,6 +46,7 @@ func (r *legalityMockDeckRepo) Delete(ctx context.Context, id string) error {
 type legalityMockCardRepo struct {
 	byID   map[string]*domain.Card
 	byName map[string]*domain.Card
+	withEmbeddings []*domain.Card
 }
 
 func (r *legalityMockCardRepo) FindByID(ctx context.Context, id string) (*domain.Card, error) {
@@ -101,7 +102,13 @@ func (r *legalityMockCardRepo) UpdateEmbedding(ctx context.Context, id string, v
 }
 
 func (r *legalityMockCardRepo) FindWithEmbeddings(ctx context.Context, limit int) ([]*domain.Card, error) {
-	return nil, nil
+	if len(r.withEmbeddings) == 0 {
+		return nil, nil
+	}
+	if limit > 0 && len(r.withEmbeddings) > limit {
+		return r.withEmbeddings[:limit], nil
+	}
+	return r.withEmbeddings, nil
 }
 
 func (r *legalityMockCardRepo) CountAll(ctx context.Context) (int64, error) {
@@ -216,6 +223,24 @@ func runPriceRequest(t *testing.T, h *DeckHandler, path string) *httptest.Respon
 		})
 	})
 	r.Get("/api/v1/decks/{id}/price", h.Price)
+
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+	return rr
+}
+
+func runBudgetRequest(t *testing.T, h *DeckHandler, path string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	r := chi.NewRouter()
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			ctx := context.WithValue(req.Context(), middleware.ContextKeyUserID, "u-1")
+			next.ServeHTTP(w, req.WithContext(ctx))
+		})
+	})
+	r.Get("/api/v1/decks/{id}/budget", h.Budget)
 
 	req := httptest.NewRequest(http.MethodGet, path, nil)
 	rr := httptest.NewRecorder()
@@ -670,5 +695,74 @@ func TestDeckPriceHandler_UnavailableWhenCardRepoNil(t *testing.T) {
 	rr := runPriceRequest(t, h, "/api/v1/decks/d-p2/price")
 	if rr.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestDeckBudgetHandler_OK(t *testing.T) {
+	ragavan := &domain.Card{
+		ID:            "c-ragavan",
+		Name:          "Ragavan, Nimble Pilferer",
+		CMC:           1,
+		TypeLine:      "Legendary Creature - Monkey Pirate",
+		EmbeddingVector: []float64{0.9, 0.1, 0.2},
+		CurrentPrices: map[string]float64{"usd": 50.0, "eur": 46.0},
+	}
+	swiftspear := &domain.Card{
+		ID:            "c-swiftspear",
+		Name:          "Monastery Swiftspear",
+		CMC:           1,
+		TypeLine:      "Creature - Human Monk",
+		EmbeddingVector: []float64{0.82, 0.09, 0.24},
+		CurrentPrices: map[string]float64{"usd": 1.5, "eur": 1.2},
+	}
+	mountain := &domain.Card{ID: "c-mountain", Name: "Mountain", CurrentPrices: map[string]float64{"usd": 0.1, "eur": 0.1}}
+
+	cardRepo := &legalityMockCardRepo{
+		byID: map[string]*domain.Card{"c-ragavan": ragavan, "c-swiftspear": swiftspear, "c-mountain": mountain},
+		byName: map[string]*domain.Card{"Ragavan, Nimble Pilferer": ragavan, "Monastery Swiftspear": swiftspear, "Mountain": mountain},
+		withEmbeddings: []*domain.Card{swiftspear, mountain},
+	}
+
+	deck := &domain.Deck{
+		ID:     "d-b1",
+		UserID: "u-1",
+		Cards: []domain.DeckCard{
+			{CardID: "c-ragavan", CardName: "Ragavan, Nimble Pilferer", Quantity: 4},
+			{CardID: "c-mountain", CardName: "Mountain", Quantity: 20},
+		},
+	}
+
+	h := NewDeckHandler(&legalityMockDeckRepo{deck: deck}, nil, cardRepo, nil, nil, nil)
+	rr := runBudgetRequest(t, h, "/api/v1/decks/d-b1/budget?target=60")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if _, ok := resp["replacements"]; !ok {
+		t.Fatalf("expected replacements field")
+	}
+	repls, _ := resp["replacements"].([]interface{})
+	if len(repls) == 0 {
+		t.Fatalf("expected at least one replacement suggestion")
+	}
+}
+
+func TestDeckBudgetHandler_BadTarget(t *testing.T) {
+	h := NewDeckHandler(
+		&legalityMockDeckRepo{deck: &domain.Deck{ID: "d-b2", UserID: "u-1"}},
+		nil,
+		&legalityMockCardRepo{byName: map[string]*domain.Card{}},
+		nil,
+		nil,
+		nil,
+	)
+
+	rr := runBudgetRequest(t, h, "/api/v1/decks/d-b2/budget")
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", rr.Code, rr.Body.String())
 	}
 }

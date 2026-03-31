@@ -290,9 +290,10 @@ Risposta esempio:
 
 Stato implementazione corrente:
 - endpoint `GET /api/v1/decks/{id}/price` disponibile
+- endpoint `GET /api/v1/decks/{id}/budget?target=...` disponibile
 - output include `total_usd`, `total_eur`, split main/sideboard e line items per carta
+- budget response include `replacements`, `estimated_savings_usd`, `estimated_new_total_usd`, `achievable`
 - source prezzo per carta: `current_prices` con fallback a `latest_snapshot`
-- budget optimizer (`/api/v1/decks/{id}/budget`) ancora da implementare
 
 ---
 
