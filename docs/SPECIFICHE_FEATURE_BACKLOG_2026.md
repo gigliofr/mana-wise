@@ -207,10 +207,11 @@ Risposta 200:
 - Primo step rule-based con knowledge base locale
 - Secondo step ranking con embedding similarity
 
-Stato implementazione v1:
+Stato implementazione corrente:
 - endpoint `GET /api/v1/decks/{id}/synergies` disponibile
 - output include `combos`, `synergy_score`, `packages`
-- detection iniziale su combo note + package tags (draw/interaction/early pressure/mana engine)
+- detection su combo note + package tags (draw/interaction/early pressure/mana engine)
+- ranking ibrido rule+embedding con metadati (`ranking_mode`, `embedding_coverage`, `combo.score`)
 
 ---
 

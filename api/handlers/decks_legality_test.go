@@ -387,11 +387,12 @@ func TestDeckSimulateHandler_ContainsProbabilityMetrics(t *testing.T) {
 
 func TestDeckSynergiesHandler_OK(t *testing.T) {
 	oracle := &domain.Card{ID: "c-oracle", Name: "Thassa's Oracle", CMC: 2, TypeLine: "Creature - Merfolk Wizard", OracleText: "When this enters..."}
-	consult := &domain.Card{ID: "c-consult", Name: "Demonic Consultation", CMC: 1, TypeLine: "Instant", OracleText: "Name a card. Exile top six cards..."}
-	ponder := &domain.Card{ID: "c-ponder", Name: "Ponder", CMC: 1, TypeLine: "Sorcery", OracleText: "Look at the top three cards... Draw a card."}
-	duress := &domain.Card{ID: "c-duress", Name: "Duress", CMC: 1, TypeLine: "Sorcery", OracleText: "Target opponent reveals their hand..."}
-	island := &domain.Card{ID: "c-island", Name: "Island", CMC: 0, TypeLine: "Basic Land - Island"}
-	swamp := &domain.Card{ID: "c-swamp", Name: "Swamp", CMC: 0, TypeLine: "Basic Land - Swamp"}
+	oracle.EmbeddingVector = []float64{0.91, 0.12, 0.33}
+	consult := &domain.Card{ID: "c-consult", Name: "Demonic Consultation", CMC: 1, TypeLine: "Instant", OracleText: "Name a card. Exile top six cards...", EmbeddingVector: []float64{0.88, 0.15, 0.29}}
+	ponder := &domain.Card{ID: "c-ponder", Name: "Ponder", CMC: 1, TypeLine: "Sorcery", OracleText: "Look at the top three cards... Draw a card.", EmbeddingVector: []float64{0.79, 0.25, 0.36}}
+	duress := &domain.Card{ID: "c-duress", Name: "Duress", CMC: 1, TypeLine: "Sorcery", OracleText: "Target opponent reveals their hand...", EmbeddingVector: []float64{0.61, 0.41, 0.52}}
+	island := &domain.Card{ID: "c-island", Name: "Island", CMC: 0, TypeLine: "Basic Land - Island", EmbeddingVector: []float64{0.14, 0.84, 0.07}}
+	swamp := &domain.Card{ID: "c-swamp", Name: "Swamp", CMC: 0, TypeLine: "Basic Land - Swamp", EmbeddingVector: []float64{0.09, 0.9, 0.11}}
 
 	cardRepo := &legalityMockCardRepo{
 		byID: map[string]*domain.Card{
@@ -445,10 +446,20 @@ func TestDeckSynergiesHandler_OK(t *testing.T) {
 	if _, ok := resp["packages"]; !ok {
 		t.Fatalf("expected packages field")
 	}
+	if _, ok := resp["ranking_mode"]; !ok {
+		t.Fatalf("expected ranking_mode field")
+	}
+	if _, ok := resp["embedding_coverage"]; !ok {
+		t.Fatalf("expected embedding_coverage field")
+	}
 
 	combos, _ := resp["combos"].([]interface{})
 	if len(combos) == 0 {
 		t.Fatalf("expected at least one detected combo")
+	}
+	firstCombo, _ := combos[0].(map[string]interface{})
+	if _, ok := firstCombo["score"]; !ok {
+		t.Fatalf("expected combo score field")
 	}
 }
 

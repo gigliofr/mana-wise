@@ -55,6 +55,8 @@ type deckSynergiesResponse struct {
 	Combos       []deckCombo        `json:"combos"`
 	SynergyScore int                `json:"synergy_score"`
 	Packages     []synergyPackage   `json:"packages"`
+	RankingMode  string             `json:"ranking_mode,omitempty"`
+	EmbeddingCoverage float64       `json:"embedding_coverage,omitempty"`
 	CheckedAtUTC string             `json:"checked_at"`
 }
 
@@ -63,6 +65,7 @@ type deckCombo struct {
 	Type        string   `json:"type"`
 	Description string   `json:"description"`
 	TurnKill    int      `json:"turn_kill"`
+	Score       int      `json:"score,omitempty"`
 }
 
 type synergyPackage struct {
@@ -288,15 +291,22 @@ func (h *DeckHandler) Synergies(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	coverage := embeddingCoverage(cards)
 	combos := detectDeckCombos(cards, quantities)
 	pkgs := detectSynergyPackages(cards, quantities)
 	score := computeSynergyScore(combos, pkgs)
+	mode := "rule_based_v1"
+	if coverage > 0 {
+		mode = "hybrid_rule_embedding_v2"
+	}
 
 	jsonOK(w, deckSynergiesResponse{
 		DeckID:       deck.ID,
 		Combos:       combos,
 		SynergyScore: score,
 		Packages:     pkgs,
+		RankingMode:  mode,
+		EmbeddingCoverage: coverage,
 		CheckedAtUTC: time.Now().UTC().Format(time.RFC3339),
 	})
 }
@@ -562,6 +572,7 @@ var knownCombos = []knownCombo{
 func detectDeckCombos(cards []*domain.Card, quantities map[string]int) []deckCombo {
 	nameSet := make(map[string]bool, len(cards))
 	canonical := make(map[string]string, len(cards))
+	byName := make(map[string]*domain.Card, len(cards))
 	for _, c := range cards {
 		if c == nil {
 			continue
@@ -572,6 +583,7 @@ func detectDeckCombos(cards []*domain.Card, quantities map[string]int) []deckCom
 		}
 		nameSet[key] = true
 		canonical[key] = c.Name
+		byName[key] = c
 	}
 
 	out := make([]deckCombo, 0, 4)
@@ -591,11 +603,17 @@ func detectDeckCombos(cards []*domain.Card, quantities map[string]int) []deckCom
 			}
 		}
 		if ok {
+			emb := embeddingPairScore(parts, byName)
+			comboScore := 70 + int(math.Round(emb*30))
+			if comboScore > 100 {
+				comboScore = 100
+			}
 			out = append(out, deckCombo{
 				Cards:       parts,
 				Type:        combo.typeName,
 				Description: combo.description,
 				TurnKill:    combo.turnKill,
+				Score:       comboScore,
 			})
 		}
 	}
@@ -652,6 +670,14 @@ func detectSynergyPackages(cards []*domain.Card, quantities map[string]int) []sy
 		}
 	}
 
+	cardIndex := map[string]*domain.Card{}
+	for _, c := range cards {
+		if c == nil {
+			continue
+		}
+		cardIndex[c.Name] = c
+	}
+
 	out := make([]synergyPackage, 0, len(pk))
 	for name, data := range pk {
 		if len(data.cards) < 3 {
@@ -669,7 +695,8 @@ func detectSynergyPackages(cards []*domain.Card, quantities map[string]int) []sy
 		if len(unique) < 3 {
 			continue
 		}
-		score := data.score
+		embCohesion := packageEmbeddingCohesion(unique, cardIndex)
+		score := data.score + int(math.Round(embCohesion*20))
 		if score > 100 {
 			score = 100
 		}
@@ -680,7 +707,14 @@ func detectSynergyPackages(cards []*domain.Card, quantities map[string]int) []sy
 }
 
 func computeSynergyScore(combos []deckCombo, pkgs []synergyPackage) int {
-	score := len(combos) * 25
+	score := 0
+	for _, c := range combos {
+		if c.Score > 0 {
+			score += int(math.Round(float64(c.Score) * 0.3))
+		} else {
+			score += 25
+		}
+	}
 	for _, p := range pkgs {
 		score += int(math.Round(float64(p.Score) * 0.35))
 	}
@@ -691,6 +725,67 @@ func computeSynergyScore(combos []deckCombo, pkgs []synergyPackage) int {
 		return 0
 	}
 	return score
+}
+
+func embeddingCoverage(cards []*domain.Card) float64 {
+	if len(cards) == 0 {
+		return 0
+	}
+	withEmb := 0
+	for _, c := range cards {
+		if c != nil && len(c.EmbeddingVector) > 0 {
+			withEmb++
+		}
+	}
+	return round4(float64(withEmb) / float64(len(cards)))
+}
+
+func embeddingPairScore(names []string, byName map[string]*domain.Card) float64 {
+	if len(names) < 2 {
+		return 0
+	}
+	vectors := make([][]float64, 0, len(names))
+	for _, n := range names {
+		k := strings.ToLower(strings.TrimSpace(n))
+		if c, ok := byName[k]; ok && c != nil && len(c.EmbeddingVector) > 0 {
+			vectors = append(vectors, c.EmbeddingVector)
+		}
+	}
+	if len(vectors) < 2 {
+		return 0
+	}
+	return averagePairwiseCosine(vectors)
+}
+
+func packageEmbeddingCohesion(names []string, byName map[string]*domain.Card) float64 {
+	vectors := make([][]float64, 0, len(names))
+	for _, n := range names {
+		if c, ok := byName[n]; ok && c != nil && len(c.EmbeddingVector) > 0 {
+			vectors = append(vectors, c.EmbeddingVector)
+		}
+	}
+	if len(vectors) < 2 {
+		return 0
+	}
+	return averagePairwiseCosine(vectors)
+}
+
+func averagePairwiseCosine(vectors [][]float64) float64 {
+	if len(vectors) < 2 {
+		return 0
+	}
+	pairs := 0
+	total := 0.0
+	for i := 0; i < len(vectors); i++ {
+		for j := i + 1; j < len(vectors); j++ {
+			total += cosineSimilarity(vectors[i], vectors[j])
+			pairs++
+		}
+	}
+	if pairs == 0 {
+		return 0
+	}
+	return math.Max(0, math.Min(1, total/float64(pairs)))
 }
 
 // Create handles POST /api/v1/decks.

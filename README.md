@@ -46,7 +46,7 @@ web/              → Vite + React SPA
 | POST   | `/api/v1/deck/classify` | JWT | Classify deck fingerprint (archetype, color identity, curve, confidence) |
 | GET    | `/api/v1/decks/{id}/analysis` | JWT | Deterministic analysis + optional fingerprint for a saved deck |
 | POST   | `/api/v1/decks/{id}/simulate` | JWT | Deck-centric mulligan simulation (keep probability, P(2 lands T2), P(1-drop), curve-out T1-T4, structured keep/mulligan reasoning) |
-| GET    | `/api/v1/decks/{id}/synergies` | JWT | Deck-centric combo and synergy package detection (rule-based v1) |
+| GET    | `/api/v1/decks/{id}/synergies` | JWT | Deck-centric combo and synergy package detection (hybrid rule+embedding ranking, includes ranking metadata) |
 | GET    | `/api/v1/decks/{id}/legality` | JWT | Real-time multi-format legality report for a saved deck |
 | GET    | `/api/v1/cards/search?name=...` | JWT | Resolve card by name with fuzzy fallback |
 | GET    | `/api/v1/cards/by-name/price-trend?name=...` | JWT | Price trend by card name |
