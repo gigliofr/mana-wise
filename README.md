@@ -36,6 +36,7 @@ web/              → Vite + React SPA
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | GET    | `/api/v1/health` | — | Health check |
+| GET    | `/api/v1/meta/{format}` | — | Meta snapshot with archetype distribution and trend data (formats: modern, legacy, pioneer, standard) |
 | POST   | `/api/v1/auth/register` | — | Register |
 | POST   | `/api/v1/auth/login` | — | Login |
 | GET    | `/api/v1/auth/me` | JWT | Current user |

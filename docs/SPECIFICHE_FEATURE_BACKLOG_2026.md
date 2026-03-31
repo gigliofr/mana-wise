@@ -299,10 +299,10 @@ Stato implementazione corrente:
 
 ## 7) Meta Dashboard per Formato
 Priorita: Media  
-Stato: Mancante
+Stato: Parziale (v1: endpoint `/api/v1/meta/{format}` disponibile con distribuzione archetype staticamente configurata + trend dati; manca ETL MTGTOP8/MTGGoldfish integrato per dati real-time)
 
 ### Descrizione funzionale
-Dashboard tier list + trend 30 giorni + confronto deck utente vs meta.
+Endpoint snapshot meta con archetype distribution, trend percentuale (up/down/stable), sideboard samples, e popular cards. Versione v1 con hardcoded meta realistic per Modern/Legacy/Pioneer/Standard. Future v2 integrate live ETL.
 
 ### Contratto API
 `GET /api/v1/meta/{format}`
@@ -311,16 +311,29 @@ Risposta 200:
 ```json
 {
   "format": "modern",
-  "updated": "2026-03-31",
-  "tier1": [{ "archetype": "Amulet Titan", "share": 0.14, "trend": "+2%" }],
-  "tier2": [],
-  "tier3": []
+  "archetypes": [
+    {
+      "name": "Scam",
+      "percentage": 18.5,
+      "description": "Rakdos tempo with Fury + Counterspell interactive shell",
+      "trend_direction": "stable",
+      "trend_percentage": 0.2,
+      "sideboard_sample": ["Temporary Lockdown", "Zealous Persecution"],
+      "popular_cards": ["Fury", "Murktide", "Dress Down"]
+    }
+  ],
+  "last_updated_at": "2026-03-31T16:45:00Z",
+  "data_source": "hardcoded-v1-placeholder",
+  "sample_size": 1000
 }
 ```
 
 ### Dipendenze tecniche
-- Scraping ETL MTGTOP8 + MTGGoldfish
-- Job settimanale + storage storico
+- Handler: `api/handlers/meta.go`
+- Route: `GET /api/v1/meta/{format}` (public, no JWT)
+- Supportati: modern, legacy, pioneer, standard
+- V1: Hardcoded realistic meta distribution (Modern: Scam 18.5%, Rhinos 16.2%, Murktide 14.8%, etc.)
+- Future v1: Scraping ETL MTGTOP8 + MTGGoldfish con job settimanale + storage storico
 
 ---
 

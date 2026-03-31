@@ -60,6 +60,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 	analyticsH := handlers.NewAnalyticsHandler(deps.Analytics)
 	adminH := handlers.NewAdminHandler(deps.UserRepo)
 	scoreH := handlers.NewScoreHandler(deps.AnalyzeUC, deps.ScoreUC, deps.ImpactScoreUC, deps.UserRepo)
+	metaH := handlers.NewMetaHandler()
 	var deckH *handlers.DeckHandler
 	if deps.DeckRepo != nil {
 		deckH = handlers.NewDeckHandler(deps.DeckRepo, deps.UserRepo, deps.CardRepo, deps.AnalyzeUC, deps.DeckClassifyUC, deps.MulliganUC)
@@ -73,6 +74,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 	r.Route("/api/v1", func(r chi.Router) {
 		// Public endpoints.
 		r.Get("/health", handlers.Health)
+		r.Get("/meta/{format}", metaH.Snapshot)
 
 		// Auth endpoints — rate-limited per IP.
 		r.Route("/auth", func(r chi.Router) {
