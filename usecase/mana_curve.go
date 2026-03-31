@@ -168,6 +168,9 @@ func AnalyzeManaCurve(cards []*domain.Card, quantities map[string]int, format st
 		Gap:      result.TotalSourceGap,
 	})
 
+	// Calculate draw probabilities (hypergeometric)
+	result.DrawProbabilities = calculateDrawProbabilities(result.TotalCards, landCount, buckets)
+
 	// Generate suggestions
 	result.Suggestions = generateManaSuggestions(result, params, landCount, flexibleSourceCount)
 
@@ -679,4 +682,57 @@ func countPips(manaCost string) map[string]int {
 
 func isColour(s string) bool {
 	return s == "W" || s == "U" || s == "B" || s == "R" || s == "G" || s == "C"
+}
+
+// calculateDrawProbabilities computes hypergeometric probabilities for key mana-draw scenarios.
+// These represent the probabilities of drawing specific land counts in sample hands.
+func calculateDrawProbabilities(deckSize, landCount int, buckets map[int]int) *domain.DrawProbabilities {
+	if deckSize <= 0 || landCount < 0 || landCount > deckSize {
+		return nil
+	}
+
+	prob := &domain.DrawProbabilities{}
+
+	// T1 (Turn 1, 7-card opening hand): P(exactly 1 land)
+	prob.Turn1LandProb = roundPct(hypergeomPMF(deckSize, landCount, 7, 1) * 100)
+
+	// T2 (Turn 2, 9 cards seen): P(2+ lands) = 1 - P(0 lands) - P(1 land)
+	p0 := hypergeomPMF(deckSize, landCount, 9, 0)
+	p1 := hypergeomPMF(deckSize, landCount, 9, 1)
+	prob.Turn2LwardsProb = roundPct((1 - p0 - p1) * 100)
+
+	// T3 (Turn 3, 11 cards seen): P(2-3 lands) = P(2) + P(3)
+	p2 := hypergeomPMF(deckSize, landCount, 11, 2)
+	p3 := hypergeomPMF(deckSize, landCount, 11, 3)
+	prob.Turn3LandsProb = roundPct((p2 + p3) * 100)
+
+	// Perfect curve T1-T4: Probability of hitting at least one 1-drop, 2-drop, 3-drop, 4-drop
+	// Approximate as: (# of 1-CMC cards / deck) * (# of 2-CMC cards / deck) * (# of 3-CMC cards / deck) * (# of 4-CMC cards / deck)
+	// This is a naive product; a more accurate model would use multivariate hypergeom, but this is common in deck-building.
+	nonLandCards := deckSize - landCount
+	if nonLandCards > 0 {
+		count1 := buckets[1]
+		count2 := buckets[2]
+		count3 := buckets[3]
+		count4 := buckets[4]
+		p1Drop := float64(count1) / float64(nonLandCards)
+		p2Drop := float64(count2) / float64(nonLandCards)
+		p3Drop := float64(count3) / float64(nonLandCards)
+		p4Drop := float64(count4) / float64(nonLandCards)
+		// Drawing ~14 cards across 4 turns (7 opening + 3 draws + 4 plays = ~14 new cards)
+		// Approximate with a simple product of ratios
+		prob.PerfectCurveT1T4 = roundPct(math.Min(100, p1Drop*p2Drop*p3Drop*p4Drop*100))
+	}
+
+	// Mana screw: 0 lands in first 9 cards
+	prob.ManaScrewRisk = roundPct(hypergeomPMF(deckSize, landCount, 9, 0) * 100)
+
+	// Mana flood: 5+ lands in first 9 cards = 1 - P(0) - P(1) - P(2) - P(3) - P(4)
+	floodP := 0.0
+	for k := 5; k <= 9; k++ {
+		floodP += hypergeomPMF(deckSize, landCount, 9, k)
+	}
+	prob.ManaFloodRisk = roundPct(floodP * 100)
+
+	return prob
 }

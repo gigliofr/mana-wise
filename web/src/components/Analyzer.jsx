@@ -741,6 +741,39 @@ function ManaCurvePanel({ data, detectedArchetype, fingerprint, decklist, messag
           </div>
         </div>
 
+        {data.draw_probabilities && (
+          <div style={{ marginTop: 12 }}>
+            <p style={{ margin: 0, fontSize: '.82rem', color: 'var(--muted)' }}>{messages.drawProbTitle}</p>
+            <p style={{ margin: '4px 0 0', fontSize: '.75rem', color: 'var(--muted)' }}>{messages.drawProbHint}</p>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8, marginTop: 8 }}>
+              <div className="stat-item" title={messages.drawProbT1Hint}>
+                <div className="stat-value" style={{ fontSize: '.95rem' }}>{(data.draw_probabilities.turn1_land_prob || 0).toFixed(1)}%</div>
+                <div className="stat-label">{messages.drawProbT1Label}</div>
+              </div>
+              <div className="stat-item" title={messages.drawProbT2Hint}>
+                <div className="stat-value" style={{ fontSize: '.95rem' }}>{(data.draw_probabilities.turn2_lands_prob || 0).toFixed(1)}%</div>
+                <div className="stat-label">{messages.drawProbT2Label}</div>
+              </div>
+              <div className="stat-item" title={messages.drawProbT3Hint}>
+                <div className="stat-value" style={{ fontSize: '.95rem' }}>{(data.draw_probabilities.turn3_lands_prob || 0).toFixed(1)}%</div>
+                <div className="stat-label">{messages.drawProbT3Label}</div>
+              </div>
+              <div className="stat-item" title={messages.drawProbPerfectHint}>
+                <div className="stat-value" style={{ fontSize: '.95rem' }}>{(data.draw_probabilities.perfect_curve_t1_t4 || 0).toFixed(1)}%</div>
+                <div className="stat-label">{messages.drawProbPerfectLabel}</div>
+              </div>
+              <div className="stat-item" title={messages.drawProbScrewHint}>
+                <div className="stat-value" style={{ fontSize: '.95rem', color: 'var(--red)' }}>{(data.draw_probabilities.mana_screw_risk || 0).toFixed(1)}%</div>
+                <div className="stat-label">{messages.drawProbScrewLabel}</div>
+              </div>
+              <div className="stat-item" title={messages.drawProbFloodHint}>
+                <div className="stat-value" style={{ fontSize: '.95rem', color: 'var(--orange)' }}>{(data.draw_probabilities.mana_flood_risk || 0).toFixed(1)}%</div>
+                <div className="stat-label">{messages.drawProbFloodLabel}</div>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div style={{ marginTop: 14 }}>
           <p style={{ margin: 0, fontSize: '.82rem', color: 'var(--muted)' }}>{messages.manaMockVsMetaLabel}</p>
           <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>

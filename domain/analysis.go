@@ -30,6 +30,16 @@ type CardTypeDistribution struct {
 	Planeswalker   int `json:"planeswalker"`
 }
 
+// DrawProbabilities holds calculated turn-by-turn mana probabilities.
+type DrawProbabilities struct {
+	Turn1LandProb       float64 `json:"turn1_land_prob"`       // Probability of having exactly 1 land by turn 1 (in 7-card hand)
+	Turn2LwardsProb     float64 `json:"turn2_lands_prob"`      // Probability of having 2+ lands by turn 2 (in 9-card sample)
+	Turn3LandsProb      float64 `json:"turn3_lands_prob"`      // Probability of having 2-3 lands by turn 3 (in 11-card sample)
+	PerfectCurveT1T4    float64 `json:"perfect_curve_t1_t4"`   // Probability of playing spells each of turns 1-4 (1-drop, 2-drop, 3-drop, 4-drop available)
+	ManaScrewRisk       float64 `json:"mana_screw_risk"`       // Risk of having 0 lands in first 9 cards
+	ManaFloodRisk       float64 `json:"mana_flood_risk"`       // Risk of having 5+ lands in first 9 cards
+}
+
 // ManaAnalysis is the output of the deterministic mana-curve analysis.
 type ManaAnalysis struct {
 	Format            string                `json:"format"`
@@ -55,6 +65,7 @@ type ManaAnalysis struct {
 	// Example: 16 white pips means the deck demands T white sources early.
 	PipDistribution   map[string]int        `json:"pip_distribution,omitempty"`
 	SourceRequirements []ColorSourceRequirement `json:"source_requirements,omitempty"`
+	DrawProbabilities *DrawProbabilities    `json:"draw_probabilities,omitempty"`
 	Suggestions       []ManaCurveSuggestion `json:"suggestions"`
 }
 
