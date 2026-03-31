@@ -339,7 +339,7 @@ Risposta 200:
 
 ## 8) Import/Export Universale
 Priorita: Media  
-Stato: Mancante
+Stato: Parziale (v1: endpoints stabiliti + parser per Arena/MTGO/Moxfield/text con card resolution)
 
 ### Descrizione funzionale
 Import/export multi formato: Arena text, MTGO, Moxfield, Archidekt, MTGGoldfish.

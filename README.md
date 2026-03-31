@@ -1,3 +1,5 @@
+| POST   | `/api/v1/decks/import` | JWT | Import decklist from Arena/MTGO/Moxfield/text format with card resolution |
+| GET    | `/api/v1/decks/{id}/export?format=arena|mtgo|moxfield|text` | JWT | Export deck to specified format |
 # ManaWise AI
 
 AI-powered Magic: The Gathering deck analyzer.  

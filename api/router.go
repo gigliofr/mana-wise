@@ -62,8 +62,10 @@ func NewRouter(deps RouterDeps) http.Handler {
 	scoreH := handlers.NewScoreHandler(deps.AnalyzeUC, deps.ScoreUC, deps.ImpactScoreUC, deps.UserRepo)
 	metaH := handlers.NewMetaHandler()
 	var deckH *handlers.DeckHandler
+	var deckImportExportH *handlers.DeckImportExportHandler
 	if deps.DeckRepo != nil {
 		deckH = handlers.NewDeckHandler(deps.DeckRepo, deps.UserRepo, deps.CardRepo, deps.AnalyzeUC, deps.DeckClassifyUC, deps.MulliganUC)
+		deckImportExportH = handlers.NewDeckImportExportHandler(deps.DeckRepo, deps.UserRepo, deps.CardRepo, deps.ResolveCardUC)
 	}
 
 	jwtMW := middleware.JWTAuth(deps.JWTSecret)
@@ -106,6 +108,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 
 			// Saved decks — only registered when DeckRepo is wired.
 			if deckH != nil {
+				r.Post("/decks/import", deckImportExportH.Import)
 				r.Get("/decks", deckH.List)
 				r.Post("/decks", deckH.Create)
 				r.Get("/decks/{id}", deckH.Get)
@@ -116,6 +119,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 				r.Post("/decks/{id}/sideboard/suggest", deckH.SideboardSuggest)
 				r.Post("/decks/{id}/simulate", deckH.Simulate)
 				r.Get("/decks/{id}/legality", deckH.Legality)
+				r.Get("/decks/{id}/export", deckImportExportH.Export)
 				r.Put("/decks/{id}", deckH.Update)
 				r.Delete("/decks/{id}", deckH.Delete)
 			}
