@@ -54,6 +54,7 @@ web/              → Vite + React SPA
 | POST   | `/api/v1/decks/{id}/simulate` | JWT | Deck-centric mulligan simulation (keep probability, P(2 lands T2), P(1-drop), curve-out T1-T4, structured keep/mulligan reasoning) |
 | GET    | `/api/v1/decks/{id}/synergies` | JWT | Deck-centric combo and synergy package detection (hybrid rule+embedding ranking, includes ranking metadata) |
 | GET    | `/api/v1/decks/{id}/legality` | JWT | Real-time multi-format legality report for a saved deck |
+| GET    | `/api/v1/users/me/collection/gaps/{deck_id}?owned=CardA:2,CardB:1` | JWT | Collection gap analysis versus target deck (missing copies + acquisition USD total) |
 | GET    | `/api/v1/cards/search?name=...` | JWT | Resolve card by name with fuzzy fallback |
 | GET    | `/api/v1/cards/by-name/price-trend?name=...` | JWT | Price trend by card name |
 | GET    | `/api/v1/cards/by-name/synergies?name=...&n=10` | JWT | Synergies by card name |

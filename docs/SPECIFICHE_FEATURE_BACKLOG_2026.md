@@ -373,7 +373,7 @@ Risposta 200:
 
 ## 9) Collection Gap Analysis
 Priorita: Bassa  
-Stato: Mancante
+Stato: Parziale (v1 endpoint disponibile con inventory via query `owned`; manca persistenza inventory utente su DB)
 
 ### Descrizione funzionale
 Confronta collezione utente vs deck target e mostra missing + costo totale.
@@ -381,20 +381,28 @@ Confronta collezione utente vs deck target e mostra missing + costo totale.
 ### Contratto API
 `GET /api/v1/users/me/collection/gaps/{deck_id}`
 
+Query opzionale v1:
+- `owned=Card Name:Qty,Other Card:Qty` (ripetibile)
+
 Risposta 200:
 ```json
 {
+  "deck_id": "uuid",
   "completion_pct": 73,
   "missing": [
-    { "card": "Force of Will", "qty": 2, "price_usd": 94.0 }
+    { "card": "Force of Will", "qty": 2, "price_usd": 94.0, "line_total_usd": 188.0 }
   ],
-  "total_to_acquire_usd": 210.5
+  "total_to_acquire_usd": 210.5,
+  "inventory_source": "query_owned_v1"
 }
 ```
 
 ### Dipendenze tecniche
-- Inventory utente
-- Price service (feature 6)
+- Handler: `DeckHandler.CollectionGaps()`
+- Route protetta JWT: `GET /api/v1/users/me/collection/gaps/{deck_id}`
+- Price service: riuso `extractCardUnitPrices` (feature 6)
+- Inventory v1: query parsing (`owned`) in `parseOwnedInventoryFromQuery`
+- Future v2: inventory utente persistito (Mongo collection dedicata) con sync da scanner/import
 
 ---
 

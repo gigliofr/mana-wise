@@ -108,6 +108,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 
 			// Saved decks — only registered when DeckRepo is wired.
 			if deckH != nil {
+				r.Get("/users/me/collection/gaps/{deck_id}", deckH.CollectionGaps)
 				r.Post("/decks/import", deckImportExportH.Import)
 				r.Get("/decks", deckH.List)
 				r.Post("/decks", deckH.Create)
