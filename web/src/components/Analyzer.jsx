@@ -571,10 +571,30 @@ function evaluateOpeningHand(hand, archetypeKey, messages) {
   }
 }
 
+// London Mulligan: Draw N cards, optionally mulligan to N-1, scry 1
+function londonMulliganRedraw(pool, currentHand, mulliganCount) {
+  // Next hand size: 7, 6, 5, 4, 3 (after 0, 1, 2, 3, 4 mulligans)
+  const nextSize = 7 - mulliganCount
+  // If already at minimum (3 cards after 4 mulls), don't draw
+  if (nextSize < 3) return currentHand
+  // Draw a new hand
+  return randomHand(pool, nextSize)
+}
+
+// London mulligan scry: put 1 card to bottom of library (remove from hand)
+function applyScry(hand, scryIndex) {
+  if (scryIndex < 0 || scryIndex >= hand.length) return hand
+  // Remove the card at scryIndex (it goes to bottom of deck)
+  return hand.filter((_, idx) => idx !== scryIndex)
+}
+
 function ManaCurvePanel({ data, detectedArchetype, fingerprint, decklist, messages }) {
   const [selectedArchetype, setSelectedArchetype] = useState(normalizeMockArchetype(detectedArchetype))
   const [openingHand, setOpeningHand] = useState([])
   const [handSize, setHandSize] = useState(7)
+  const [mulliganCount, setMulliganCount] = useState(0)
+  const [inScryPhase, setInScryPhase] = useState(false)
+  const [graveyard, setGraveyard] = useState([])
 
   useEffect(() => {
     setSelectedArchetype(normalizeMockArchetype(detectedArchetype))
@@ -792,21 +812,90 @@ function ManaCurvePanel({ data, detectedArchetype, fingerprint, decklist, messag
           </div>
         </div>
 
-        <div style={{ marginTop: 14 }}>
-          <p style={{ margin: 0, fontSize: '.82rem', color: 'var(--muted)' }}>{messages.manaMockOpeningLabel(handSize)}</p>
-          <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8 }}>
+        <div style={{ marginTop: 14, border: '1px solid var(--border)', borderRadius: 10, padding: 12, background: 'rgba(255,255,255,0.02)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+            <div>
+              <p style={{ margin: 0, fontSize: '.82rem', color: 'var(--muted)' }}>{messages.manaMockOpeningLabel(openingHand.length)}</p>
+              <p style={{ margin: '4px 0 0', fontSize: '.75rem', color: 'var(--muted)' }}>
+                {messages.londonMulliganCountLabel(mulliganCount)} {graveyard.length > 0 && `· GY: ${graveyard.length}`}
+              </p>
+            </div>
+            {inScryPhase && (
+              <div style={{ padding: '4px 8px', background: 'var(--orange)', color: 'white', borderRadius: 4, fontSize: '.75rem', fontWeight: 700 }}>
+                {messages.londonScryPhaseLabel}
+              </div>
+            )}
+          </div>
+          <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8 }}>
             {openingHand.length > 0 ? openingHand.map((card, idx) => (
-              <div key={`open-hand-${idx}`} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '6px 8px', fontSize: '.82rem', background: 'var(--bg)' }}>
+              <div
+                key={`open-hand-${idx}`}
+                onClick={() => {
+                  if (inScryPhase && mulliganCount < 4) {
+                    const afterScry = applyScry(openingHand, idx)
+                    setOpeningHand(afterScry)
+                    setGraveyard([...graveyard, card])
+                    setInScryPhase(false)
+                  }
+                }}
+                style={{
+                  border: inScryPhase ? '2px dashed var(--orange)' : '1px solid var(--border)',
+                  borderRadius: 8,
+                  padding: '6px 8px',
+                  fontSize: '.82rem',
+                  background: inScryPhase ? 'rgba(255,165,0,0.1)' : 'var(--bg)',
+                  cursor: inScryPhase ? 'pointer' : 'default',
+                  opacity: inScryPhase ? 0.9 : 1,
+                  transition: 'all 0.2s',
+                }}
+                title={inScryPhase ? messages.londonScryHint : ''}
+              >
                 {card.name}
               </div>
             )) : (
               <div style={{ color: 'var(--muted)', fontSize: '.82rem' }}>{messages.manaMockNoCards}</div>
             )}
           </div>
-          <p style={{ margin: '8px 0 0', color: handEval.tone, fontSize: '.82rem', fontWeight: 600 }}>{handEval.text}</p>
-          <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
-            <button type="button" className="btn-ghost" onClick={() => { setHandSize(7); setOpeningHand(randomHand(pool, 7)) }}>{messages.manaMockRedraw7}</button>
-            <button type="button" className="btn-ghost" onClick={() => { setHandSize(6); setOpeningHand(randomHand(pool, 6)) }}>{messages.manaMockRedraw6}</button>
+          <p style={{ margin: '10px 0 0', color: handEval.tone, fontSize: '.82rem', fontWeight: 600 }}>{handEval.text}</p>
+          <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {!inScryPhase && (
+              <>
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => {
+                    setMulliganCount(0)
+                    setGraveyard([])
+                    setOpeningHand(randomHand(pool, 7))
+                  }}
+                  style={{ padding: '8px 12px', fontSize: '.82rem' }}
+                >
+                  {messages.londonNewGameLabel}
+                </button>
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  onClick={() => {
+                    if (mulliganCount >= 4) {
+                      alert(messages.londonFullMulliganLabel)
+                      return
+                    }
+                    setMulliganCount(mulliganCount + 1)
+                    setInScryPhase(true)
+                  }}
+                  disabled={mulliganCount >= 4}
+                  style={{ opacity: mulliganCount >= 4 ? 0.5 : 1, cursor: mulliganCount >= 4 ? 'not-allowed' : 'pointer' }}
+                >
+                  {messages.londonMulliganLabel}
+                </button>
+                <span style={{ marginLeft: 'auto', fontSize: '.8rem', color: 'var(--green)', fontWeight: 700 }}>{messages.londonKeepLabel}</span>
+              </>
+            )}
+            {inScryPhase && (
+              <span style={{ fontSize: '.8rem', color: 'var(--orange)', fontWeight: 700, width: '100%' }}>
+                {messages.londonSelectScryLabel}
+              </span>
+            )}
           </div>
         </div>
       </div>
