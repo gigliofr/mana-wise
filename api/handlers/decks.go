@@ -60,6 +60,31 @@ type deckSynergiesResponse struct {
 	CheckedAtUTC string             `json:"checked_at"`
 }
 
+type deckPriceCardLine struct {
+	CardID       string  `json:"card_id,omitempty"`
+	Name         string  `json:"name"`
+	Quantity     int     `json:"quantity"`
+	IsSideboard  bool    `json:"is_sideboard"`
+	UnitUSD      float64 `json:"unit_usd"`
+	UnitEUR      float64 `json:"unit_eur"`
+	LineTotalUSD float64 `json:"line_total_usd"`
+	LineTotalEUR float64 `json:"line_total_eur"`
+	PriceSource  string  `json:"price_source"`
+}
+
+type deckPriceResponse struct {
+	DeckID            string              `json:"deck_id"`
+	TotalUSD          float64             `json:"total_usd"`
+	TotalEUR          float64             `json:"total_eur"`
+	MainboardTotalUSD float64             `json:"mainboard_total_usd"`
+	MainboardTotalEUR float64             `json:"mainboard_total_eur"`
+	SideboardTotalUSD float64             `json:"sideboard_total_usd"`
+	SideboardTotalEUR float64             `json:"sideboard_total_eur"`
+	Cards             []deckPriceCardLine `json:"cards"`
+	MissingPrices     []string            `json:"missing_prices,omitempty"`
+	CheckedAtUTC      string              `json:"checked_at"`
+}
+
 type deckCombo struct {
 	Cards       []string `json:"cards"`
 	Type        string   `json:"type"`
@@ -178,6 +203,97 @@ func (h *DeckHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jsonOK(w, deck)
+}
+
+// Price handles GET /api/v1/decks/{id}/price.
+func (h *DeckHandler) Price(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.UserIDFromContext(r.Context())
+	id := chi.URLParam(r, "id")
+
+	if h.cardRepo == nil {
+		jsonError(w, "card repository unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	deck, err := h.repo.FindByID(r.Context(), id)
+	if err != nil {
+		jsonError(w, "failed to retrieve deck", http.StatusInternalServerError)
+		return
+	}
+	if deck == nil {
+		jsonError(w, "deck not found", http.StatusNotFound)
+		return
+	}
+	if deck.UserID != userID && !deck.IsPublic {
+		jsonError(w, "deck not found", http.StatusNotFound)
+		return
+	}
+
+	lines := make([]deckPriceCardLine, 0, len(deck.Cards))
+	missing := []string{}
+	mainUSD := 0.0
+	mainEUR := 0.0
+	sideUSD := 0.0
+	sideEUR := 0.0
+
+	for _, entry := range deck.Cards {
+		if strings.TrimSpace(entry.CardName) == "" || entry.Quantity <= 0 {
+			continue
+		}
+
+		card, resolveErr := h.resolveDeckCardEntry(r, entry)
+		if resolveErr != nil {
+			jsonError(w, resolveErr.Error(), http.StatusUnprocessableEntity)
+			return
+		}
+
+		usd, eur, source := extractCardUnitPrices(card)
+		lineUSD := round4(usd * float64(entry.Quantity))
+		lineEUR := round4(eur * float64(entry.Quantity))
+
+		if usd == 0 && eur == 0 {
+			missing = append(missing, strings.TrimSpace(entry.CardName))
+		}
+
+		if entry.IsSideboard {
+			sideUSD += lineUSD
+			sideEUR += lineEUR
+		} else {
+			mainUSD += lineUSD
+			mainEUR += lineEUR
+		}
+
+		line := deckPriceCardLine{
+			Name:         strings.TrimSpace(entry.CardName),
+			Quantity:     entry.Quantity,
+			IsSideboard:  entry.IsSideboard,
+			UnitUSD:      usd,
+			UnitEUR:      eur,
+			LineTotalUSD: lineUSD,
+			LineTotalEUR: lineEUR,
+			PriceSource:  source,
+		}
+		if card != nil {
+			line.CardID = card.ID
+			if strings.TrimSpace(card.Name) != "" {
+				line.Name = card.Name
+			}
+		}
+		lines = append(lines, line)
+	}
+
+	jsonOK(w, deckPriceResponse{
+		DeckID:            deck.ID,
+		TotalUSD:          round4(mainUSD + sideUSD),
+		TotalEUR:          round4(mainEUR + sideEUR),
+		MainboardTotalUSD: round4(mainUSD),
+		MainboardTotalEUR: round4(mainEUR),
+		SideboardTotalUSD: round4(sideUSD),
+		SideboardTotalEUR: round4(sideEUR),
+		Cards:             lines,
+		MissingPrices:     missing,
+		CheckedAtUTC:      time.Now().UTC().Format(time.RFC3339),
+	})
 }
 
 // Legality handles GET /api/v1/decks/{id}/legality.
@@ -647,6 +763,46 @@ func (h *DeckHandler) resolveDeckCards(r *http.Request, deck *domain.Deck) ([]*d
 	}
 
 	return cards, quantities, nil
+}
+
+func (h *DeckHandler) resolveDeckCardEntry(r *http.Request, entry domain.DeckCard) (*domain.Card, error) {
+	if strings.TrimSpace(entry.CardID) != "" {
+		card, err := h.cardRepo.FindByID(r.Context(), entry.CardID)
+		if err != nil {
+			return nil, err
+		}
+		if card != nil {
+			return card, nil
+		}
+	}
+
+	card, err := h.cardRepo.FindByName(r.Context(), entry.CardName)
+	if err != nil {
+		return nil, err
+	}
+	if card == nil {
+		return nil, &deckCardResolveError{name: entry.CardName}
+	}
+	return card, nil
+}
+
+func extractCardUnitPrices(card *domain.Card) (float64, float64, string) {
+	if card == nil {
+		return 0, 0, "missing"
+	}
+	if card.CurrentPrices != nil {
+		usd := card.CurrentPrices["usd"]
+		eur := card.CurrentPrices["eur"]
+		if usd > 0 || eur > 0 {
+			return round4(usd), round4(eur), "current_prices"
+		}
+	}
+	if latest := card.LatestPrice(); latest != nil {
+		if latest.USD > 0 || latest.EUR > 0 {
+			return round4(latest.USD), round4(latest.EUR), "latest_snapshot"
+		}
+	}
+	return 0, 0, "unpriced"
 }
 
 type deckCardResolveError struct {

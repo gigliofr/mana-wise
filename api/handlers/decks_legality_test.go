@@ -205,6 +205,24 @@ func runSideboardSuggestRequest(t *testing.T, h *DeckHandler, path string, body 
 	return rr
 }
 
+func runPriceRequest(t *testing.T, h *DeckHandler, path string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	r := chi.NewRouter()
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			ctx := context.WithValue(req.Context(), middleware.ContextKeyUserID, "u-1")
+			next.ServeHTTP(w, req.WithContext(ctx))
+		})
+	})
+	r.Get("/api/v1/decks/{id}/price", h.Price)
+
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+	return rr
+}
+
 func TestDeckLegalityHandler_OK(t *testing.T) {
 	h := NewDeckHandler(
 		&legalityMockDeckRepo{deck: &domain.Deck{
@@ -584,5 +602,73 @@ func TestDeckSideboardSuggestHandler_GeneratesWhenNoSavedSideboard(t *testing.T)
 	}
 	if got, ok := resp["total_cards"].(float64); !ok || int(got) != 15 {
 		t.Fatalf("expected total_cards=15, got %v", resp["total_cards"])
+	}
+}
+
+func TestDeckPriceHandler_OK(t *testing.T) {
+	bolt := &domain.Card{
+		ID:           "c-bolt",
+		Name:         "Lightning Bolt",
+		CurrentPrices: map[string]float64{"usd": 2.5, "eur": 2.2},
+	}
+	mountain := &domain.Card{
+		ID:   "c-mountain",
+		Name: "Mountain",
+		PriceHistory: []domain.PriceSnapshot{{USD: 0.15, EUR: 0.12, Date: time.Now().UTC()}},
+	}
+
+	cardRepo := &legalityMockCardRepo{
+		byID: map[string]*domain.Card{"c-bolt": bolt, "c-mountain": mountain},
+		byName: map[string]*domain.Card{"Lightning Bolt": bolt, "Mountain": mountain},
+	}
+
+	deck := &domain.Deck{
+		ID:     "d-p1",
+		UserID: "u-1",
+		Cards: []domain.DeckCard{
+			{CardID: "c-bolt", CardName: "Lightning Bolt", Quantity: 4},
+			{CardID: "c-mountain", CardName: "Mountain", Quantity: 20},
+			{CardID: "c-bolt", CardName: "Lightning Bolt", Quantity: 2, IsSideboard: true},
+		},
+	}
+
+	h := NewDeckHandler(&legalityMockDeckRepo{deck: deck}, nil, cardRepo, nil, nil, nil)
+	rr := runPriceRequest(t, h, "/api/v1/decks/d-p1/price")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if _, ok := resp["total_usd"]; !ok {
+		t.Fatalf("expected total_usd field")
+	}
+	if _, ok := resp["mainboard_total_usd"]; !ok {
+		t.Fatalf("expected mainboard_total_usd field")
+	}
+	if _, ok := resp["sideboard_total_usd"]; !ok {
+		t.Fatalf("expected sideboard_total_usd field")
+	}
+	cards, _ := resp["cards"].([]interface{})
+	if len(cards) < 2 {
+		t.Fatalf("expected at least two card lines, got %d", len(cards))
+	}
+}
+
+func TestDeckPriceHandler_UnavailableWhenCardRepoNil(t *testing.T) {
+	h := NewDeckHandler(
+		&legalityMockDeckRepo{deck: &domain.Deck{ID: "d-p2", UserID: "u-1"}},
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+
+	rr := runPriceRequest(t, h, "/api/v1/decks/d-p2/price")
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d body=%s", rr.Code, rr.Body.String())
 	}
 }

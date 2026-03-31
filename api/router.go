@@ -107,6 +107,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 				r.Get("/decks", deckH.List)
 				r.Post("/decks", deckH.Create)
 				r.Get("/decks/{id}", deckH.Get)
+				r.Get("/decks/{id}/price", deckH.Price)
 				r.Get("/decks/{id}/analysis", deckH.Analysis)
 				r.Get("/decks/{id}/synergies", deckH.Synergies)
 				r.Post("/decks/{id}/sideboard/suggest", deckH.SideboardSuggest)

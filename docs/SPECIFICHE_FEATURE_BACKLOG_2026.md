@@ -263,7 +263,7 @@ Stato implementazione corrente:
 
 ## 6) Price Tracker & Budget Optimizer
 Priorita: Media  
-Stato: Mancante
+Stato: Parziale (endpoint deck-centric prezzo implementato)
 
 ### Descrizione funzionale
 Prezzo deck real-time + suggerimenti di replacement per budget target.
@@ -287,6 +287,12 @@ Risposta esempio:
 - TCGPlayer API
 - Cardmarket API
 - Cache prezzi con TTL breve
+
+Stato implementazione corrente:
+- endpoint `GET /api/v1/decks/{id}/price` disponibile
+- output include `total_usd`, `total_eur`, split main/sideboard e line items per carta
+- source prezzo per carta: `current_prices` con fallback a `latest_snapshot`
+- budget optimizer (`/api/v1/decks/{id}/budget`) ancora da implementare
 
 ---
 

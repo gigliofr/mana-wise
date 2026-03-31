@@ -44,6 +44,7 @@ web/              → Vite + React SPA
 | POST   | `/api/v1/sideboard/plan` | JWT | Build matchup-specific sideboard ins/outs |
 | POST   | `/api/v1/mulligan/simulate` | JWT | Monte Carlo keep-rate simulation by hand size |
 | POST   | `/api/v1/deck/classify` | JWT | Classify deck fingerprint (archetype, color identity, curve, confidence) |
+| GET    | `/api/v1/decks/{id}/price` | JWT | Deck-centric price aggregation (USD/EUR totals + per-card lines, main/sideboard split) |
 | GET    | `/api/v1/decks/{id}/analysis` | JWT | Deterministic analysis + optional fingerprint for a saved deck |
 | POST   | `/api/v1/decks/{id}/sideboard/suggest` | JWT | Deck-centric sideboard suggestions with complete 15-card meta-oriented generation (works with or without saved sideboard) |
 | POST   | `/api/v1/decks/{id}/simulate` | JWT | Deck-centric mulligan simulation (keep probability, P(2 lands T2), P(1-drop), curve-out T1-T4, structured keep/mulligan reasoning) |
