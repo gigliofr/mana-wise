@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -10,17 +11,35 @@ import (
 	"github.com/google/uuid"
 	"github.com/manawise/api/api/middleware"
 	"github.com/manawise/api/domain"
+	"github.com/manawise/api/usecase"
 )
 
 // DeckHandler handles CRUD operations for saved decks.
 type DeckHandler struct {
 	repo     domain.DeckRepository
 	userRepo domain.UserRepository
+	cardRepo domain.CardRepository
+	analyze  *usecase.AnalyzeDeckUseCase
+	classify *usecase.DeckClassifierUseCase
 }
 
 // NewDeckHandler creates a DeckHandler.
-func NewDeckHandler(repo domain.DeckRepository, userRepo domain.UserRepository) *DeckHandler {
-	return &DeckHandler{repo: repo, userRepo: userRepo}
+func NewDeckHandler(repo domain.DeckRepository, userRepo domain.UserRepository, cardRepo domain.CardRepository, analyze *usecase.AnalyzeDeckUseCase, classify *usecase.DeckClassifierUseCase) *DeckHandler {
+	return &DeckHandler{repo: repo, userRepo: userRepo, cardRepo: cardRepo, analyze: analyze, classify: classify}
+}
+
+type deckLegalityResponse struct {
+	DeckID       string                               `json:"deck_id"`
+	Formats      map[string]usecase.DeckLegalityResult `json:"formats"`
+	CheckedAtUTC string                               `json:"checked_at"`
+}
+
+type deckAnalysisResponse struct {
+	DeckID        string                                `json:"deck_id"`
+	Deterministic domain.AnalysisResult                 `json:"deterministic"`
+	Fingerprint   *usecase.DeckClassifyResult           `json:"fingerprint,omitempty"`
+	Legality      map[string]usecase.DeckLegalityResult `json:"legality"`
+	CheckedAtUTC  string                                `json:"checked_at"`
 }
 
 // saveDeckRequest is the JSON body for deck save/update.
@@ -70,6 +89,168 @@ func (h *DeckHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jsonOK(w, deck)
+}
+
+// Legality handles GET /api/v1/decks/{id}/legality.
+func (h *DeckHandler) Legality(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.UserIDFromContext(r.Context())
+	id := chi.URLParam(r, "id")
+
+	if h.cardRepo == nil {
+		jsonError(w, "card repository unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	deck, err := h.repo.FindByID(r.Context(), id)
+	if err != nil {
+		jsonError(w, "failed to retrieve deck", http.StatusInternalServerError)
+		return
+	}
+	if deck == nil {
+		jsonError(w, "deck not found", http.StatusNotFound)
+		return
+	}
+	if deck.UserID != userID && !deck.IsPublic {
+		jsonError(w, "deck not found", http.StatusNotFound)
+		return
+	}
+
+	cards, quantities, err := h.resolveDeckCards(r, deck)
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusUnprocessableEntity)
+		return
+	}
+
+	jsonOK(w, deckLegalityResponse{
+		DeckID:       deck.ID,
+		Formats:      usecase.DetermineDeckLegalityAllFormats(cards, quantities),
+		CheckedAtUTC: time.Now().UTC().Format(time.RFC3339),
+	})
+}
+
+// Analysis handles GET /api/v1/decks/{id}/analysis.
+func (h *DeckHandler) Analysis(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.UserIDFromContext(r.Context())
+	id := chi.URLParam(r, "id")
+
+	if h.analyze == nil {
+		jsonError(w, "analysis use case unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	deck, err := h.repo.FindByID(r.Context(), id)
+	if err != nil {
+		jsonError(w, "failed to retrieve deck", http.StatusInternalServerError)
+		return
+	}
+	if deck == nil {
+		jsonError(w, "deck not found", http.StatusNotFound)
+		return
+	}
+	if deck.UserID != userID && !deck.IsPublic {
+		jsonError(w, "deck not found", http.StatusNotFound)
+		return
+	}
+
+	decklist := deckToDecklist(deck)
+	if strings.TrimSpace(decklist) == "" {
+		jsonError(w, "deck has no mainboard cards", http.StatusUnprocessableEntity)
+		return
+	}
+
+	analysisResult, err := h.analyze.Execute(r.Context(), usecase.AnalyzeDeckRequest{
+		Decklist: decklist,
+		Format:   deck.Format,
+	})
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusUnprocessableEntity)
+		return
+	}
+
+	var fingerprint *usecase.DeckClassifyResult
+	if h.classify != nil {
+		if fp, fpErr := h.classify.Execute(r.Context(), usecase.DeckClassifyRequest{Decklist: decklist, Format: deck.Format}); fpErr == nil {
+			fingerprint = &fp
+		}
+	}
+
+	legality := usecase.DetermineDeckLegalityAllFormats(analysisResult.RawCards, analysisResult.Quantities)
+
+	jsonOK(w, deckAnalysisResponse{
+		DeckID:        deck.ID,
+		Deterministic: analysisResult.Result,
+		Fingerprint:   fingerprint,
+		Legality:      legality,
+		CheckedAtUTC:  time.Now().UTC().Format(time.RFC3339),
+	})
+}
+
+func (h *DeckHandler) resolveDeckCards(r *http.Request, deck *domain.Deck) ([]*domain.Card, map[string]int, error) {
+	mainCards := deck.MainboardCards()
+	cards := make([]*domain.Card, 0, len(mainCards))
+	quantities := make(map[string]int, len(mainCards))
+	seen := make(map[string]bool, len(mainCards))
+
+	for _, entry := range mainCards {
+		if entry.Quantity <= 0 {
+			continue
+		}
+
+		var card *domain.Card
+		var err error
+		if strings.TrimSpace(entry.CardID) != "" {
+			card, err = h.cardRepo.FindByID(r.Context(), entry.CardID)
+			if err != nil {
+				return nil, nil, err
+			}
+		}
+		if card == nil {
+			card, err = h.cardRepo.FindByName(r.Context(), entry.CardName)
+			if err != nil {
+				return nil, nil, err
+			}
+		}
+		if card == nil {
+			return nil, nil, &deckCardResolveError{name: entry.CardName}
+		}
+
+		if !seen[card.ID] {
+			cards = append(cards, card)
+			seen[card.ID] = true
+		}
+		quantities[card.ID] += entry.Quantity
+	}
+
+	return cards, quantities, nil
+}
+
+type deckCardResolveError struct {
+	name string
+}
+
+func (e *deckCardResolveError) Error() string {
+	return "card not found in catalog: " + strings.TrimSpace(e.name)
+}
+
+func deckToDecklist(deck *domain.Deck) string {
+	if deck == nil {
+		return ""
+	}
+	var b strings.Builder
+	for _, c := range deck.MainboardCards() {
+		if c.Quantity <= 0 {
+			continue
+		}
+		name := strings.TrimSpace(c.CardName)
+		if name == "" {
+			continue
+		}
+		b.WriteString(strconv.Itoa(c.Quantity))
+		b.WriteString(" ")
+		b.WriteString(name)
+		b.WriteString("\n")
+	}
+	return strings.TrimSpace(b.String())
 }
 
 // Create handles POST /api/v1/decks.

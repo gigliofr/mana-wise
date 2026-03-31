@@ -62,7 +62,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 	scoreH := handlers.NewScoreHandler(deps.AnalyzeUC, deps.ScoreUC, deps.ImpactScoreUC, deps.UserRepo)
 	var deckH *handlers.DeckHandler
 	if deps.DeckRepo != nil {
-		deckH = handlers.NewDeckHandler(deps.DeckRepo, deps.UserRepo)
+		deckH = handlers.NewDeckHandler(deps.DeckRepo, deps.UserRepo, deps.CardRepo, deps.AnalyzeUC, deps.DeckClassifyUC)
 	}
 
 	jwtMW := middleware.JWTAuth(deps.JWTSecret)
@@ -107,6 +107,8 @@ func NewRouter(deps RouterDeps) http.Handler {
 				r.Get("/decks", deckH.List)
 				r.Post("/decks", deckH.Create)
 				r.Get("/decks/{id}", deckH.Get)
+				r.Get("/decks/{id}/analysis", deckH.Analysis)
+				r.Get("/decks/{id}/legality", deckH.Legality)
 				r.Put("/decks/{id}", deckH.Update)
 				r.Delete("/decks/{id}", deckH.Delete)
 			}
