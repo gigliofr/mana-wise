@@ -20,7 +20,6 @@ export default function DeckLibrary({
   const [page, setPage] = useState(0)
   const [expandedDecks, setExpandedDecks] = useState({})
   const [deckLegality, setDeckLegality] = useState({})
-  const [legalityLoading, setLegalityLoading] = useState({})
 
   const ITEMS_PER_PAGE = 3
   const paginatedDecks = decks.slice(page * ITEMS_PER_PAGE, (page + 1) * ITEMS_PER_PAGE)
@@ -78,10 +77,16 @@ export default function DeckLibrary({
       if (pending.length === 0) return
 
       if (!cancelled) {
-        setLegalityLoading(prev => {
+        setDeckLegality(prev => {
           const next = { ...prev }
           pending.forEach(deckID => {
-            next[deckID] = true
+            if (!next[deckID]) {
+              next[deckID] = {
+                loading: true,
+                formats: {},
+                cardIllegalByFormat: {},
+              }
+            }
           })
           return next
         })
@@ -110,6 +115,7 @@ export default function DeckLibrary({
               setDeckLegality(prev => ({
                 ...prev,
                 [deckID]: {
+                  loading: false,
                   formats: formatMap,
                   cardIllegalByFormat,
                 },
@@ -119,14 +125,7 @@ export default function DeckLibrary({
             if (!cancelled) {
               setDeckLegality(prev => ({
                 ...prev,
-                [deckID]: { formats: {}, cardIllegalByFormat: {} },
-              }))
-            }
-          } finally {
-            if (!cancelled) {
-              setLegalityLoading(prev => ({
-                ...prev,
-                [deckID]: false,
+                [deckID]: { loading: false, formats: {}, cardIllegalByFormat: {} },
               }))
             }
           }
@@ -391,9 +390,10 @@ export default function DeckLibrary({
               <div className="decklib-item" key={deck.id}>
                 {(() => {
                   const normalizedFormat = (deck.format || 'standard').toLowerCase()
-                  const hasLegalityData = Boolean(deckLegality[deck.id])
-                  const isLegalityLoading = Boolean(legalityLoading[deck.id])
-                  const legality = deckLegality[deck.id]?.formats?.[normalizedFormat]
+                  const deckLegalityEntry = deckLegality[deck.id]
+                  const hasLegalityData = Boolean(deckLegalityEntry)
+                  const isLegalityLoading = deckLegalityEntry?.loading === true
+                  const legality = deckLegalityEntry?.formats?.[normalizedFormat]
                   const formatIsLegal = legality?.is_legal
                   const chipColor = formatIsLegal === true
                     ? 'var(--green)'
