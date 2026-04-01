@@ -7,6 +7,7 @@ import MulliganAssistant from './components/MulliganAssistant'
 import DeckLibrary from './components/DeckLibrary'
 import VisualDeckBuilder from './components/VisualDeckBuilder'
 import PlansSupport from './components/PlansSupport'
+import NotificationsCenter from './components/NotificationsCenter'
 import LegalFooter from './components/LegalFooter'
 import { LegalPage } from './components/LegalPages'
 import { LOCALES, translations } from './i18n'
@@ -124,6 +125,7 @@ function App() {
     { key: 'matchup', label: messages.navMatchup },
     { key: 'sideboard', label: messages.navSideboard },
     { key: 'mulligan', label: messages.navMulligan },
+    { key: 'notifications', label: messages.navNotifications || 'Notifiche' },
     { key: 'plans', label: messages.navPlans },
   ]
 
@@ -227,6 +229,13 @@ function App() {
               user={user}
               decklist={sharedDecklist}
               format={sharedFormat}
+              messages={messages}
+            />
+          )}
+          {activeTool === 'notifications' && (
+            <NotificationsCenter
+              token={token}
+              locale={locale}
               messages={messages}
             />
           )}
