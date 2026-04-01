@@ -299,7 +299,7 @@ Stato implementazione corrente:
 
 ## 7) Meta Dashboard per Formato
 Priorita: Media  
-Stato: Parziale (v1: endpoint `/api/v1/meta/{format}` disponibile con distribuzione archetype staticamente configurata + trend dati; manca ETL MTGTOP8/MTGGoldfish integrato per dati real-time)
+Stato: Parziale avanzato (v1 hardcoded + v2 ETL-ready con source esterno opzionale e fallback automatico)
 
 ### Descrizione funzionale
 Endpoint snapshot meta con archetype distribution, trend percentuale (up/down/stable), sideboard samples, e popular cards. Versione v1 con hardcoded meta realistic per Modern/Legacy/Pioneer/Standard. Future v2 integrate live ETL.
@@ -333,7 +333,7 @@ Risposta 200:
 - Route: `GET /api/v1/meta/{format}` (public, no JWT)
 - Supportati: modern, legacy, pioneer, standard
 - V1: Hardcoded realistic meta distribution (Modern: Scam 18.5%, Rhinos 16.2%, Murktide 14.8%, etc.)
-- Future v1: Scraping ETL MTGTOP8 + MTGGoldfish con job settimanale + storage storico
+- V2: ETL source esterno configurabile via env (`MANAWISE_META_SOURCE_{FORMAT}`) con cache TTL (`MANAWISE_META_CACHE_TTL_SECONDS`) e fallback hardcoded resiliente
 
 ---
 

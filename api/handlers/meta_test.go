@@ -1,11 +1,13 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestMetaSnapshot_Modern_OK(t *testing.T) {
@@ -100,7 +102,7 @@ func TestMetaSnapshot_Pioneer_OK(t *testing.T) {
 
 func TestMetaSnapshotArchetype_HasRequiredFields(t *testing.T) {
 	h := NewMetaHandler()
-	snapshot := h.getMetaSnapshot("modern")
+	snapshot := h.getHardcodedMetaSnapshot("modern")
 
 	for _, arch := range snapshot.Archetypes {
 		if arch.Name == "" {
@@ -120,7 +122,7 @@ func TestMetaSnapshotArchetype_HasRequiredFields(t *testing.T) {
 
 func TestMetaSnapshot_ResponseStructure(t *testing.T) {
 	h := NewMetaHandler()
-	snapshot := h.getMetaSnapshot("modern")
+	snapshot := h.getHardcodedMetaSnapshot("modern")
 
 	// Validate response structure
 	if snapshot.Format == "" {
@@ -146,7 +148,7 @@ func TestMetaSnapshot_ResponseStructure(t *testing.T) {
 
 func TestMetaSnapshot_ArchetypeWithTrend(t *testing.T) {
 	h := NewMetaHandler()
-	snapshot := h.getMetaSnapshot("modern")
+	snapshot := h.getHardcodedMetaSnapshot("modern")
 
 	// At least one archetype should have trend info
 	hasUpTrend := false
@@ -214,7 +216,7 @@ func runMetaSnapshotRequest(t *testing.T, format string) *deckMetaSnapshotRespon
 func TestMetaSideboardIntegration(t *testing.T) {
 	// Verify that meta snapshot archetypes align with sideboard template categories
 	h := NewMetaHandler()
-	snapshot := h.getMetaSnapshot("modern")
+	snapshot := h.getHardcodedMetaSnapshot("modern")
 
 	// Extract archetype names from snapshot
 	snapshotArchetypes := map[string]bool{}
@@ -225,5 +227,43 @@ func TestMetaSideboardIntegration(t *testing.T) {
 	// Verify "Other" category exists as fallback
 	if !snapshotArchetypes["other"] {
 		t.Errorf("expected 'Other' archetype in snapshot")
+	}
+}
+
+func TestMetaResolve_UsesExternalSource_WhenConfigured(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"format":"modern","archetypes":[{"name":"Domain Zoo","percentage":12.5,"description":"Aggro shell"}],"data_source":"etl-mock","sample_size":321}`))
+	}))
+	defer server.Close()
+
+	h := NewMetaHandlerWithConfig(metaHandlerConfig{
+		client:     server.Client(),
+		cacheTTL:   10 * time.Second,
+		sourceURLs: map[string]string{"modern": server.URL},
+	})
+
+	snap := h.resolveMetaSnapshot(context.Background(), "modern")
+	if snap.DataSource != "etl-mock" {
+		t.Fatalf("expected external data source, got %s", snap.DataSource)
+	}
+	if len(snap.Archetypes) != 1 || snap.Archetypes[0].Name != "Domain Zoo" {
+		t.Fatalf("expected external archetype payload, got %+v", snap.Archetypes)
+	}
+}
+
+func TestMetaResolve_FallbacksToHardcoded_WhenExternalFails(t *testing.T) {
+	h := NewMetaHandlerWithConfig(metaHandlerConfig{
+		client:     &http.Client{Timeout: 50 * time.Millisecond},
+		cacheTTL:   10 * time.Second,
+		sourceURLs: map[string]string{"modern": "http://127.0.0.1:1/unreachable"},
+	})
+
+	snap := h.resolveMetaSnapshot(context.Background(), "modern")
+	if !strings.HasPrefix(snap.DataSource, "hardcoded-v1") {
+		t.Fatalf("expected hardcoded fallback source, got %s", snap.DataSource)
+	}
+	if len(snap.Archetypes) == 0 {
+		t.Fatalf("expected fallback archetypes")
 	}
 }

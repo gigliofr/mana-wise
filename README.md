@@ -170,6 +170,23 @@ Optional:
 - `MANAWISE_API_URL` (default `http://localhost:8080`)
 - `BOT_DEFAULT_FORMAT` (default `commander`)
 
+## Meta Snapshot ETL (optional v2)
+
+`GET /api/v1/meta/{format}` now supports optional external ETL sources with automatic fallback to built-in snapshots.
+
+Optional environment variables:
+
+- `MANAWISE_META_SOURCE_MODERN`
+- `MANAWISE_META_SOURCE_LEGACY`
+- `MANAWISE_META_SOURCE_PIONEER`
+- `MANAWISE_META_SOURCE_STANDARD`
+- `MANAWISE_META_CACHE_TTL_SECONDS` (default `900`)
+
+Behavior:
+
+- if a `MANAWISE_META_SOURCE_*` URL is configured and reachable, response uses external payload (`data_source` preserved or set to `external-etl-v1`)
+- if external source fails/unavailable, response falls back to deterministic internal snapshot (`data_source=hardcoded-v1-fallback`)
+
 ## Analytics (optional)
 
 Set these environment variables to track funnel events:
