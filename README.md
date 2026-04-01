@@ -57,6 +57,8 @@ web/              → Vite + React SPA
 | POST   | `/api/v1/decks/{id}/restore/{version}` | JWT | Restore deck to a previous version and append restore event |
 | GET    | `/api/v1/decks/{id}/legality` | JWT | Real-time multi-format legality report for a saved deck |
 | GET    | `/api/v1/users/me/collection/gaps/{deck_id}?owned=CardA:2,CardB:1` | JWT | Collection gap analysis versus target deck (missing copies + acquisition USD total) |
+| GET    | `/api/v1/users/me/notifications` | JWT | User notification feed for banlist/rotation events with replacement suggestions |
+| POST   | `/api/v1/webhooks/scryfall` | — | Ingest external card legality events (banlist/rotation) into notification store |
 | GET    | `/api/v1/cards/search?name=...` | JWT | Resolve card by name with fuzzy fallback |
 | GET    | `/api/v1/cards/by-name/price-trend?name=...` | JWT | Price trend by card name |
 | GET    | `/api/v1/cards/by-name/synergies?name=...&n=10` | JWT | Synergies by card name |

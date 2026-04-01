@@ -61,6 +61,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 	adminH := handlers.NewAdminHandler(deps.UserRepo)
 	scoreH := handlers.NewScoreHandler(deps.AnalyzeUC, deps.ScoreUC, deps.ImpactScoreUC, deps.UserRepo)
 	metaH := handlers.NewMetaHandler()
+	notificationH := handlers.NewNotificationHandler(deps.DeckRepo, deps.CardRepo)
 	var deckH *handlers.DeckHandler
 	var deckImportExportH *handlers.DeckImportExportHandler
 	if deps.DeckRepo != nil {
@@ -77,6 +78,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 		// Public endpoints.
 		r.Get("/health", handlers.Health)
 		r.Get("/meta/{format}", metaH.Snapshot)
+		r.Post("/webhooks/scryfall", notificationH.IngestScryfallWebhook)
 
 		// Auth endpoints — rate-limited per IP.
 		r.Route("/auth", func(r chi.Router) {
@@ -93,6 +95,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 			// Analyze — also gate by freemium quota.
 			r.With(freemiumMW).Post("/analyze", analyzeH.ServeHTTP)
 			r.With(freemiumMW).Post("/score", scoreH.Score)
+			r.Get("/users/me/notifications", notificationH.Feed)
 			r.Post("/sideboard/plan", sideboardH.ServeHTTP)
 			r.Post("/mulligan/simulate", mulliganH.ServeHTTP)
 			r.Post("/matchup/simulate", matchupH.ServeHTTP)

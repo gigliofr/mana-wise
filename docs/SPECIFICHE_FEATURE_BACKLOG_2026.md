@@ -495,7 +495,7 @@ Body:
 
 ## 13) Notifiche Ban List & Rotation
 Priorita: UX  
-Stato: Mancante
+Stato: Parziale
 
 ### Descrizione funzionale
 Notifica utenti quando carta del deck viene bannata/ruota fuori formato, con suggerimento replacement.
@@ -523,7 +523,16 @@ Risposta feed:
 ### Dipendenze tecniche
 - Ingestion webhook
 - Notification store
-- Email provider (Resend/SendGrid)
+- Email provider (Resend/SendGrid) [non implementato in v1]
+
+### Stato implementazione v1 (backend)
+- Endpoint `POST /api/v1/webhooks/scryfall` implementato con ingest JSON (evento singolo o batch).
+- Endpoint `GET /api/v1/users/me/notifications` implementato con feed utente JWT-protetto.
+- Notification store v1 in-memory (ring cap a 500 eventi) con dedup logica lato feed.
+- Generazione notifiche da doppia fonte:
+  - eventi webhook compatibili per carta/formato
+  - rilevazione real-time carte non legali nei deck utente
+- Suggerimento replacement basilare incluso nel payload.
 
 ---
 
