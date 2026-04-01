@@ -174,6 +174,10 @@ Optional:
 
 `GET /api/v1/meta/{format}` now supports optional external ETL sources with automatic fallback to built-in snapshots.
 
+Optional query parameters:
+
+- `refresh=1` or `force_refresh=true` to bypass cache and force a source refresh.
+
 Optional environment variables:
 
 - `MANAWISE_META_SOURCE_MODERN`
@@ -186,6 +190,7 @@ Behavior:
 
 - if a `MANAWISE_META_SOURCE_*` URL is configured and reachable, response uses external payload (`data_source` preserved or set to `external-etl-v1`)
 - if external source fails/unavailable, response falls back to deterministic internal snapshot (`data_source=hardcoded-v1-fallback`)
+- response includes `cache_status` (`hit`, `miss-external`, `miss-fallback`, `bypass-external`, `bypass-fallback`)
 
 ## Analytics (optional)
 

@@ -243,7 +243,7 @@ func TestMetaResolve_UsesExternalSource_WhenConfigured(t *testing.T) {
 		sourceURLs: map[string]string{"modern": server.URL},
 	})
 
-	snap := h.resolveMetaSnapshot(context.Background(), "modern")
+	snap := h.resolveMetaSnapshot(context.Background(), "modern", false)
 	if snap.DataSource != "etl-mock" {
 		t.Fatalf("expected external data source, got %s", snap.DataSource)
 	}
@@ -259,11 +259,44 @@ func TestMetaResolve_FallbacksToHardcoded_WhenExternalFails(t *testing.T) {
 		sourceURLs: map[string]string{"modern": "http://127.0.0.1:1/unreachable"},
 	})
 
-	snap := h.resolveMetaSnapshot(context.Background(), "modern")
+	snap := h.resolveMetaSnapshot(context.Background(), "modern", false)
 	if !strings.HasPrefix(snap.DataSource, "hardcoded-v1") {
 		t.Fatalf("expected hardcoded fallback source, got %s", snap.DataSource)
 	}
 	if len(snap.Archetypes) == 0 {
 		t.Fatalf("expected fallback archetypes")
+	}
+}
+
+func TestMetaResolve_CacheHitAndRefreshStatus(t *testing.T) {
+	serverCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		serverCalls++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"archetypes":[{"name":"Cache Deck","percentage":10,"description":"x"}]}`))
+	}))
+	defer server.Close()
+
+	h := NewMetaHandlerWithConfig(metaHandlerConfig{
+		client:     server.Client(),
+		cacheTTL:   1 * time.Hour,
+		sourceURLs: map[string]string{"modern": server.URL},
+	})
+
+	first := h.resolveMetaSnapshot(context.Background(), "modern", false)
+	second := h.resolveMetaSnapshot(context.Background(), "modern", false)
+	refresh := h.resolveMetaSnapshot(context.Background(), "modern", true)
+
+	if first.CacheStatus != "miss-external" {
+		t.Fatalf("expected first cache status miss-external, got %s", first.CacheStatus)
+	}
+	if second.CacheStatus != "hit" {
+		t.Fatalf("expected second cache status hit, got %s", second.CacheStatus)
+	}
+	if refresh.CacheStatus != "bypass-external" {
+		t.Fatalf("expected refresh cache status bypass-external, got %s", refresh.CacheStatus)
+	}
+	if serverCalls != 2 {
+		t.Fatalf("expected 2 external calls (miss+refresh), got %d", serverCalls)
 	}
 }

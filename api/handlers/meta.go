@@ -96,6 +96,7 @@ type deckMetaSnapshotResponse struct {
 	LastUpdatedAt string          `json:"last_updated_at"`
 	DataSource    string          `json:"data_source"`
 	SampleSize    int             `json:"sample_size"`
+	CacheStatus   string          `json:"cache_status,omitempty"`
 }
 
 // Snapshot returns the current meta distribution for a given format.
@@ -106,28 +107,37 @@ func (h *MetaHandler) Snapshot(w http.ResponseWriter, r *http.Request) {
 		format = "modern"
 	}
 	format = normalizeFormat(format)
+	forceRefresh := parseBoolQuery(r, "refresh") || parseBoolQuery(r, "force_refresh")
 
-	snapshot := h.resolveMetaSnapshot(r.Context(), format)
+	snapshot := h.resolveMetaSnapshot(r.Context(), format, forceRefresh)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(snapshot)
 }
 
-func (h *MetaHandler) resolveMetaSnapshot(ctx context.Context, format string) deckMetaSnapshotResponse {
+func (h *MetaHandler) resolveMetaSnapshot(ctx context.Context, format string, forceRefresh bool) deckMetaSnapshotResponse {
 	now := time.Now().UTC()
 
 	// Warm-cache fast path.
-	h.mu.RLock()
-	if entry, ok := h.cache[format]; ok && now.Sub(entry.fetchedAt) < h.cacheTTL {
+	if !forceRefresh {
+		h.mu.RLock()
+		if entry, ok := h.cache[format]; ok && now.Sub(entry.fetchedAt) < h.cacheTTL {
+			h.mu.RUnlock()
+			snap := entry.snapshot
+			snap.CacheStatus = "hit"
+			return snap
+		}
 		h.mu.RUnlock()
-		return entry.snapshot
 	}
-	h.mu.RUnlock()
 
 	// V2 ETL source (optional, env-driven) with safe fallback.
 	if src := strings.TrimSpace(h.sourceURLs[format]); src != "" {
 		snap, err := h.fetchExternalSnapshot(ctx, src, format)
 		if err == nil {
+			snap.CacheStatus = "miss-external"
+			if forceRefresh {
+				snap.CacheStatus = "bypass-external"
+			}
 			h.mu.Lock()
 			h.cache[format] = metaCacheEntry{snapshot: snap, fetchedAt: now}
 			h.mu.Unlock()
@@ -137,10 +147,24 @@ func (h *MetaHandler) resolveMetaSnapshot(ctx context.Context, format string) de
 
 	// Fallback to deterministic v1 snapshot.
 	snap := h.getHardcodedMetaSnapshot(format)
+	snap.CacheStatus = "miss-fallback"
+	if forceRefresh {
+		snap.CacheStatus = "bypass-fallback"
+	}
 	h.mu.Lock()
 	h.cache[format] = metaCacheEntry{snapshot: snap, fetchedAt: now}
 	h.mu.Unlock()
 	return snap
+}
+
+func parseBoolQuery(r *http.Request, key string) bool {
+	v := strings.TrimSpace(strings.ToLower(r.URL.Query().Get(key)))
+	switch v {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func (h *MetaHandler) fetchExternalSnapshot(ctx context.Context, sourceURL, format string) (deckMetaSnapshotResponse, error) {
