@@ -534,6 +534,11 @@ Risposta feed:
   - rilevazione real-time carte non legali nei deck utente
 - Suggerimento replacement basilare incluso nel payload.
 
+### Stato implementazione v1 (frontend)
+- Tab dedicata notifiche nell'app con fetch autenticato di `GET /api/v1/users/me/notifications`.
+- Rendering feed notifiche con messaggio, carta, timestamp e replacement suggestion.
+- Azione manuale di refresh del feed.
+
 ---
 
 ## Piano delivery consigliato (incrementale)
