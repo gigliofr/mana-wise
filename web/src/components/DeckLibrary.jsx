@@ -116,6 +116,7 @@ export default function DeckLibrary({
                 ...prev,
                 [deckID]: {
                   loading: false,
+                  unavailable: false,
                   formats: formatMap,
                   cardIllegalByFormat,
                 },
@@ -125,7 +126,12 @@ export default function DeckLibrary({
             if (!cancelled) {
               setDeckLegality(prev => ({
                 ...prev,
-                [deckID]: { loading: false, formats: {}, cardIllegalByFormat: {} },
+                [deckID]: {
+                  loading: false,
+                  unavailable: true,
+                  formats: {},
+                  cardIllegalByFormat: {},
+                },
               }))
             }
           }
@@ -393,20 +399,28 @@ export default function DeckLibrary({
                   const deckLegalityEntry = deckLegality[deck.id]
                   const hasLegalityData = Boolean(deckLegalityEntry)
                   const isLegalityLoading = deckLegalityEntry?.loading === true
+                  const isLegalityUnavailable = deckLegalityEntry?.unavailable === true
                   const legality = deckLegalityEntry?.formats?.[normalizedFormat]
                   const formatIsLegal = legality?.is_legal
-                  const chipColor = formatIsLegal === true
+                  const chipColor = isLegalityUnavailable
+                    ? 'var(--orange)'
+                    : formatIsLegal === true
                     ? 'var(--green)'
                     : formatIsLegal === false
                       ? 'var(--red)'
                       : 'var(--muted)'
                   const chipText = isLegalityLoading && !hasLegalityData
                     ? messages.loading
+                    : isLegalityUnavailable
+                      ? (messages.legalityUnavailableShort || 'N/D')
                     : formatIsLegal === true
                       ? messages.legalityLegalLabel
                       : formatIsLegal === false
                         ? messages.legalityIllegalLabel
                         : (messages.unknownLabel || 'N/A')
+                  const chipTitle = isLegalityUnavailable
+                    ? (messages.legalityUnavailableHint || 'Verifica legalita non disponibile per questo mazzo')
+                    : undefined
 
                   return (
                 <div>
@@ -424,6 +438,7 @@ export default function DeckLibrary({
                         padding: '1px 7px',
                         fontWeight: 700,
                       }}
+                      title={chipTitle}
                     >
                       {chipText}
                     </span>
