@@ -143,7 +143,7 @@ export default function DeckLibrary({
     return () => {
       cancelled = true
     }
-  }, [paginatedDecks, deckLegality, token])
+  }, [paginatedDecks, token])
 
   function deckToDecklist(deck) {
     const cards = Array.isArray(deck?.cards) ? deck.cards : []
