@@ -27,10 +27,17 @@ export default function PlansSupport({ token, user, messages, onSessionUpdate })
 
   const currentPlan = (user?.plan || 'free').toLowerCase()
   const proUntil = user?.pro_until
+  const hasActiveProWindow = Boolean(proUntil && new Date(proUntil) > new Date())
 
   async function downgradeToFree() {
     setPlanError('')
     if (!token || currentPlan === 'free') return
+    if (hasActiveProWindow) {
+      setPlanError(messages.planDowngradeBlockedActivePro?.(proUntil) || messages.planSwitchError)
+      return
+    }
+    const confirmed = window.confirm(messages.planDowngradeConfirm || 'Confermi il downgrade al piano Free?')
+    if (!confirmed) return
     const res = await fetch(`${API}/auth/plan`, {
       method: 'POST',
       headers: {
@@ -91,7 +98,7 @@ export default function PlansSupport({ token, user, messages, onSessionUpdate })
             type="button"
             className="btn-ghost"
             onClick={() => downgradeToFree().catch(err => setPlanError(err.message))}
-            disabled={currentPlan === 'free'}
+            disabled={currentPlan === 'free' || hasActiveProWindow}
             style={{ width: '100%', marginTop: 10 }}
           >
             {currentPlan === 'free' ? messages.planCurrent : messages.planSelect}

@@ -28,6 +28,7 @@ function App() {
   const [sharedFormat, setSharedFormat] = useState('standard')
   const currentPath = window.location.pathname.toLowerCase()
   const isLegalPage = ['/privacy', '/cookie', '/contatti'].includes(currentPath)
+  const hasActivePro = user?.plan === 'pro' && (!user?.pro_until || new Date(user.pro_until) > new Date())
 
   function handleSessionUpdate(nextToken, nextUser) {
     localStorage.setItem(TOKEN_KEY, nextToken)
@@ -126,7 +127,6 @@ function App() {
     { key: 'sideboard', label: messages.navSideboard },
     { key: 'mulligan', label: messages.navMulligan },
     { key: 'notifications', label: messages.navNotifications || 'Notifiche' },
-    { key: 'plans', label: messages.navPlans },
   ]
 
   return (
@@ -154,6 +154,13 @@ function App() {
                 {user?.plan?.toUpperCase()}
               </strong>
             </span>
+            <button
+              type="button"
+              className={`btn-ghost${activeTool === 'plans' ? ' header-tool-active' : ''}`}
+              onClick={() => setActiveTool('plans')}
+            >
+              {messages.navPlans}
+            </button>
             <button className="btn-ghost" onClick={handleLogout}>{messages.signOut}</button>
           </div>
         </div>
@@ -198,12 +205,24 @@ function App() {
             />
           )}
           {activeTool === 'builder' && (
-            <VisualDeckBuilder
-              token={token}
-              messages={messages}
-              decklist={sharedDecklist}
-              onDeckChange={setSharedDecklist}
-            />
+            hasActivePro ? (
+              <VisualDeckBuilder
+                token={token}
+                messages={messages}
+                decklist={sharedDecklist}
+                onDeckChange={setSharedDecklist}
+              />
+            ) : (
+              <div className="card">
+                <h2>{messages.builderProOnlyTitle || 'Builder Pro'}</h2>
+                <p style={{ color: 'var(--muted)' }}>
+                  {messages.builderProOnlyBody || 'Il Visual Deck Builder avanzato è disponibile nel piano Pro.'}
+                </p>
+                <button type="button" className="btn-primary" onClick={() => setActiveTool('plans')}>
+                  {messages.navPlans}
+                </button>
+              </div>
+            )
           )}
           {activeTool === 'matchup' && (
             <MatchupSimulator

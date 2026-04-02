@@ -183,6 +183,10 @@ func (h *AuthHandler) UpdatePlan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if user.Plan != plan {
+		if plan == domain.PlanFree && user.Plan == domain.PlanPro && user.ProUntil != nil && user.ProUntil.After(time.Now().UTC()) {
+			jsonError(w, fmt.Sprintf("active pro entitlement until %s", user.ProUntil.UTC().Format(time.RFC3339)), http.StatusConflict)
+			return
+		}
 		user.Plan = plan
 		if plan == domain.PlanFree {
 			user.ProUntil = nil

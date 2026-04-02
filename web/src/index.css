@@ -41,6 +41,11 @@ header .inner {
 .logo { font-size: 1.4rem; font-weight: 700; letter-spacing: -.5px; }
 .logo span { color: var(--primary-h); }
 .header-actions { display: flex; gap: 8px; }
+.header-tool-active {
+  border-color: var(--primary-h) !important;
+  background: rgba(124,92,191,.16) !important;
+  color: var(--text) !important;
+}
 .locale-switch { display: flex; gap: 6px; align-items: center; }
 .auth-locale-switch { justify-content: flex-end; margin-bottom: 12px; }
 .locale-btn {
