@@ -20,6 +20,7 @@ export default function DeckLibrary({
   const [page, setPage] = useState(0)
   const [expandedDecks, setExpandedDecks] = useState({})
   const [deckLegality, setDeckLegality] = useState({})
+  const [cardMetadata, setCardMetadata] = useState({})
 
   const ITEMS_PER_PAGE = 3
   const paginatedDecks = decks.slice(page * ITEMS_PER_PAGE, (page + 1) * ITEMS_PER_PAGE)
@@ -145,6 +146,52 @@ export default function DeckLibrary({
     }
   }, [paginatedDecks, token])
 
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadMetadata() {
+      const names = Array.from(new Set(
+        paginatedDecks.flatMap(deck => mainDeckCards(deck))
+          .map(card => String(card?.card_name || card?.name || '').trim())
+          .filter(Boolean),
+      ))
+
+      if (!token || names.length === 0) {
+        if (!cancelled) setCardMetadata({})
+        return
+      }
+
+      try {
+        const res = await fetch(`${API}/cards/metadata/batch`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ names }),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data?.error || 'metadata fetch failed')
+
+        const next = {}
+        for (const item of (data?.items || [])) {
+          const key = String(item?.name || '').trim().toLowerCase()
+          if (!key) continue
+          next[key] = item
+        }
+
+        if (!cancelled) setCardMetadata(next)
+      } catch {
+        if (!cancelled) setCardMetadata({})
+      }
+    }
+
+    loadMetadata()
+    return () => {
+      cancelled = true
+    }
+  }, [paginatedDecks, token])
+
   function deckToDecklist(deck) {
     const cards = Array.isArray(deck?.cards) ? deck.cards : []
     return cards
@@ -157,6 +204,13 @@ export default function DeckLibrary({
   function mainDeckCards(deck) {
     const cards = Array.isArray(deck?.cards) ? deck.cards : []
     return cards.filter(c => !c.is_sideboard)
+  }
+
+  function badgeClassName(value) {
+    return String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
   }
 
   function isDeckExpanded(deckID) {
@@ -447,8 +501,11 @@ export default function DeckLibrary({
                       const label = `${c.quantity || 1}x ${c.card_name || c.name || ''}`.trim()
                       const cardName = (c.card_name || c.name || '').trim()
                       if (!cardName) return null
+                      const meta = cardMetadata[cardName.toLowerCase()]
                       const illegalByFormat = deckLegality[deck.id]?.cardIllegalByFormat?.[normalizedFormat] || {}
                       const isIllegalCard = Boolean(illegalByFormat[cardName.toLowerCase()])
+                      const rarity = String(meta?.rarity || '').trim().toUpperCase()
+                      const setCode = String(meta?.set_code || '').trim().toUpperCase()
                       return (
                         <span
                           key={`${deck.id}-card-${idx}`}
@@ -462,8 +519,16 @@ export default function DeckLibrary({
                           }}
                           title={isIllegalCard ? `${messages.legalityIllegalLabel} (${normalizedFormat})` : undefined}
                         >
-                          <CardHoverPreview cardName={cardName} token={token} messages={messages}>
-                            {isIllegalCard ? `⚠ ${label}` : label}
+                          <CardHoverPreview cardName={cardName} token={token} messages={messages} metadata={meta}>
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                              {isIllegalCard ? `⚠ ${label}` : label}
+                              {(rarity || setCode) && (
+                                <span style={{ display: 'inline-flex', gap: 4, flexWrap: 'wrap' }}>
+                                  {rarity && <span className={`builder-badge rarity-${badgeClassName(rarity)}`}>{rarity}</span>}
+                                  {setCode && <span className="builder-badge builder-badge-set">{setCode}</span>}
+                                </span>
+                              )}
+                            </span>
                           </CardHoverPreview>
                         </span>
                       )

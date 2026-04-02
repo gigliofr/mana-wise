@@ -34,6 +34,13 @@ function boardMarker(board) {
   return ''
 }
 
+function badgeClassName(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+}
+
 function parseDecklist(decklist) {
   const rows = []
   const lines = String(decklist || '').split(/\r?\n/)
@@ -99,6 +106,10 @@ function SortableCard({ item, token, messages }) {
     transition,
     isDragging,
   } = useSortable({ id: item.id, data: { board: item.board } })
+  const meta = item.meta || {}
+  const rarity = String(meta.rarity || '').trim().toUpperCase()
+  const setCode = String(meta.set_code || '').trim().toUpperCase()
+  const rarityClass = badgeClassName(rarity)
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -110,10 +121,16 @@ function SortableCard({ item, token, messages }) {
     <div ref={setNodeRef} style={style} className="builder-card" {...attributes} {...listeners}>
       <div className="builder-card-qty">{item.quantity}x</div>
       <div className="builder-card-name">
-        <CardHoverPreview cardName={item.name} token={token} messages={messages}>
+        <CardHoverPreview cardName={item.name} token={token} messages={messages} metadata={meta}>
           {item.name}
         </CardHoverPreview>
       </div>
+      {(rarity || setCode) && (
+        <div className="builder-card-badges">
+          {rarity && <span className={`builder-badge rarity-${rarityClass}`}>{rarity}</span>}
+          {setCode && <span className="builder-badge builder-badge-set">{setCode}</span>}
+        </div>
+      )}
     </div>
   )
 }
@@ -142,8 +159,8 @@ export default function VisualDeckBuilder({ token, messages, decklist, onDeckCha
   const [metaByName, setMetaByName] = useState({})
   const [metaLoading, setMetaLoading] = useState(false)
   const [metaError, setMetaError] = useState('')
-  const [rarityFilter, setRarityFilter] = useState('')
-  const [setFilter, setSetFilter] = useState('')
+  const [rarityFilters, setRarityFilters] = useState([])
+  const [setFilters, setSetFilters] = useState([])
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
 
@@ -232,13 +249,13 @@ export default function VisualDeckBuilder({ token, messages, decklist, onDeckCha
   const matchesFilters = (card) => {
     const key = String(card?.name || '').trim().toLowerCase()
     const meta = metaByName[key]
-    if (rarityFilter) {
+    if (rarityFilters.length > 0) {
       const rarity = String(meta?.rarity || '').trim().toLowerCase()
-      if (rarity !== rarityFilter) return false
+      if (!rarityFilters.includes(rarity)) return false
     }
-    if (setFilter) {
+    if (setFilters.length > 0) {
       const setCode = String(meta?.set_code || '').trim().toLowerCase()
-      if (setCode !== setFilter) return false
+      if (!setFilters.includes(setCode)) return false
     }
     return true
   }
@@ -247,7 +264,11 @@ export default function VisualDeckBuilder({ token, messages, decklist, onDeckCha
     [BOARD_MAIN]: boardItems[BOARD_MAIN].filter(matchesFilters),
     [BOARD_SIDE]: boardItems[BOARD_SIDE].filter(matchesFilters),
     [BOARD_MAYBE]: boardItems[BOARD_MAYBE].filter(matchesFilters),
-  }), [boardItems, rarityFilter, setFilter, metaByName])
+  }), [boardItems, rarityFilters, setFilters, metaByName])
+
+  function toggleValue(setter, value) {
+    setter(prev => prev.includes(value) ? prev.filter(item => item !== value) : [...prev, value])
+  }
 
   const stats = useMemo(() => {
     const count = b => boardItems[b].reduce((sum, c) => sum + c.quantity, 0)
@@ -319,6 +340,10 @@ export default function VisualDeckBuilder({ token, messages, decklist, onDeckCha
   }
 
   const activeCard = cards.find(c => c.id === activeId)
+  const activeMeta = activeCard?.meta || {}
+  const activeRarity = String(activeMeta.rarity || '').trim().toUpperCase()
+  const activeSetCode = String(activeMeta.set_code || '').trim().toUpperCase()
+  const activeRarityClass = badgeClassName(activeRarity)
 
   return (
     <div className="card">
@@ -336,17 +361,35 @@ export default function VisualDeckBuilder({ token, messages, decklist, onDeckCha
       <div className="form-row-inline" style={{ gap: 8, marginBottom: 12 }}>
         <div className="form-row" style={{ flex: 1, marginBottom: 0 }}>
           <label>{messages?.builderFilterRarity || 'Rarity'}</label>
-          <select value={rarityFilter} onChange={e => setRarityFilter(e.target.value)}>
-            <option value="">{messages?.builderFilterAll || 'All'}</option>
-            {rarityOptions.map(v => <option key={v} value={v}>{v}</option>)}
-          </select>
+          <div className="builder-chip-row">
+            <button type="button" className={`builder-chip${rarityFilters.length === 0 ? ' active' : ''}`} onClick={() => setRarityFilters([])}>{messages?.builderFilterAll || 'All'}</button>
+            {rarityOptions.map(v => (
+              <button
+                type="button"
+                key={v}
+                className={`builder-chip${rarityFilters.includes(v) ? ' active' : ''}`}
+                onClick={() => toggleValue(setRarityFilters, v)}
+              >
+                {v}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="form-row" style={{ flex: 1, marginBottom: 0 }}>
           <label>{messages?.builderFilterSet || 'Edition (set)'}</label>
-          <select value={setFilter} onChange={e => setSetFilter(e.target.value)}>
-            <option value="">{messages?.builderFilterAll || 'All'}</option>
-            {setOptions.map(v => <option key={v} value={v}>{v.toUpperCase()}</option>)}
-          </select>
+          <div className="builder-chip-row builder-chip-row-scroll">
+            <button type="button" className={`builder-chip${setFilters.length === 0 ? ' active' : ''}`} onClick={() => setSetFilters([])}>{messages?.builderFilterAll || 'All'}</button>
+            {setOptions.map(v => (
+              <button
+                type="button"
+                key={v}
+                className={`builder-chip${setFilters.includes(v) ? ' active' : ''}`}
+                onClick={() => toggleValue(setSetFilters, v)}
+              >
+                {v.toUpperCase()}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
       {(metaLoading || metaError) && (
@@ -368,7 +411,7 @@ export default function VisualDeckBuilder({ token, messages, decklist, onDeckCha
               <div key={board} className="builder-column" id={board}>
                 <div className="builder-column-header">
                   <span>{boardTitle(board, messages)}</span>
-                  <span>{items.length}</span>
+                  <span>{items.length}{(boardItems[board].length !== items.length) ? ` / ${boardItems[board].length}` : ''}</span>
                 </div>
                 <SortableContext items={items.map(i => i.id)} strategy={rectSortingStrategy}>
                   <DroppableBoard board={board}>
@@ -395,6 +438,12 @@ export default function VisualDeckBuilder({ token, messages, decklist, onDeckCha
             <div className="builder-card builder-card-overlay">
               <div className="builder-card-qty">{activeCard.quantity}x</div>
               <div className="builder-card-name">{activeCard.name}</div>
+              {(activeRarity || activeSetCode) && (
+                <div className="builder-card-badges">
+                  {activeRarity && <span className={`builder-badge rarity-${activeRarityClass}`}>{activeRarity}</span>}
+                  {activeSetCode && <span className="builder-badge builder-badge-set">{activeSetCode}</span>}
+                </div>
+              )}
             </div>
           ) : null}
         </DragOverlay>

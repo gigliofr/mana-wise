@@ -90,6 +90,13 @@ function pickCardFaces(card) {
   return deduped
 }
 
+function badgeClassName(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+}
+
 function readCache(key) {
   const record = previewCache.get(key)
   if (!record) return null
@@ -235,7 +242,7 @@ async function resolvePreview(cardName, token) {
   }
 }
 
-export default function CardHoverPreview({ cardName, token, messages, children }) {
+export default function CardHoverPreview({ cardName, token, messages, metadata, children }) {
   const normalized = useMemo(() => normalizeCardName(cardName), [cardName])
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -335,6 +342,12 @@ export default function CardHoverPreview({ cardName, token, messages, children }
   const shownFace = hasMultipleFaces ? faces[faceIndex % faces.length] : null
   const shownImage = shownFace?.image_url || preview?.image_url || ''
   const shownFaceName = shownFace?.name || preview?.name || ''
+  const meta = metadata || {}
+  const rarity = String(meta.rarity || '').trim().toUpperCase()
+  const setCode = String(meta.set_code || '').trim().toUpperCase()
+  const collectorNumber = String(meta.collector_number || '').trim().toUpperCase()
+  const rarityClass = badgeClassName(rarity)
+  const hasMetaBadges = Boolean(rarity || setCode || collectorNumber)
 
   return (
     <span
@@ -484,6 +497,13 @@ export default function CardHoverPreview({ cardName, token, messages, children }
           {!loading && !error && preview && (
             <div>
               <div style={{ fontWeight: 700, fontSize: '.92rem', marginBottom: 2 }}>{preview.name}</div>
+              {hasMetaBadges && (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+                  {rarity && <span className={`builder-badge rarity-${rarityClass}`} title={messages?.cardPreviewRarity || 'Rarity'}>{rarity}</span>}
+                  {setCode && <span className="builder-badge builder-badge-set" title={messages?.cardPreviewSet || 'Set'}>{setCode}</span>}
+                  {collectorNumber && <span className="builder-badge" title={messages?.cardPreviewCollector || 'Collector number'}>{collectorNumber}</span>}
+                </div>
+              )}
               {hasMultipleFaces && shownFaceName && shownFaceName !== preview.name && (
                 <div style={{ color: 'var(--muted)', fontSize: '.76rem', marginBottom: 6 }}>
                   {messages?.cardPreviewFace || 'Face'}: {shownFaceName}

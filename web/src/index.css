@@ -1085,6 +1085,7 @@ button {
   gap: 8px;
   cursor: grab;
   box-shadow: 0 1px 0 rgba(255,255,255,.03) inset;
+  flex-wrap: wrap;
 }
 
 .builder-card:active {
@@ -1110,6 +1111,76 @@ button {
   font-size: .84rem;
   color: var(--text);
   line-height: 1.2;
+}
+
+.builder-card-badges {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.builder-badge {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 7px;
+  font-size: .64rem;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: rgba(255,255,255,.02);
+}
+
+.builder-badge-set {
+  border-color: rgba(229,162,42,.45);
+  color: var(--accent);
+}
+
+.builder-badge.rarity-common {
+  border-color: rgba(136,136,170,.5);
+}
+
+.builder-badge.rarity-uncommon {
+  border-color: rgba(76,149,255,.55);
+  color: #78aaf8;
+}
+
+.builder-badge.rarity-rare {
+  border-color: rgba(229,162,42,.55);
+  color: #f0c060;
+}
+
+.builder-badge.rarity-mythic {
+  border-color: rgba(229,85,85,.6);
+  color: #ff9c86;
+}
+
+.builder-chip-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.builder-chip-row-scroll {
+  max-height: 96px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.builder-chip {
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,.03);
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: .74rem;
+}
+
+.builder-chip.active {
+  border-color: var(--primary-h);
+  background: rgba(124,92,191,.16);
+  color: var(--text);
 }
 
 /* ── Mulligan assistant ── */
