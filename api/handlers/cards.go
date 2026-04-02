@@ -20,6 +20,23 @@ type CardsHandler struct {
 	resolveCard *usecase.ResolveCardByNameUseCase
 }
 
+type cardMetadataBatchRequest struct {
+	Names []string `json:"names"`
+}
+
+type cardMetadataItem struct {
+	CardID          string `json:"card_id,omitempty"`
+	Name            string `json:"name"`
+	Rarity          string `json:"rarity,omitempty"`
+	SetCode         string `json:"set_code,omitempty"`
+	CollectorNumber string `json:"collector_number,omitempty"`
+}
+
+type cardMetadataBatchResponse struct {
+	Items   []cardMetadataItem `json:"items"`
+	Missing []string           `json:"missing,omitempty"`
+}
+
 // NewCardsHandler creates a CardsHandler.
 func NewCardsHandler(cardRepo domain.CardRepository, resolveCard *usecase.ResolveCardByNameUseCase) *CardsHandler {
 	return &CardsHandler{cardRepo: cardRepo, resolveCard: resolveCard}
@@ -44,6 +61,73 @@ func (h *CardsHandler) SearchByName(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	jsonOK(w, card)
+}
+
+// MetadataBatch handles POST /cards/metadata/batch.
+func (h *CardsHandler) MetadataBatch(w http.ResponseWriter, r *http.Request) {
+	if h.cardRepo == nil {
+		jsonError(w, "card repository unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	var req cardMetadataBatchRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	cleaned := make([]string, 0, len(req.Names))
+	seen := map[string]bool{}
+	for _, raw := range req.Names {
+		name := strings.TrimSpace(raw)
+		if name == "" {
+			continue
+		}
+		key := strings.ToLower(name)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		cleaned = append(cleaned, name)
+	}
+	if len(cleaned) == 0 {
+		jsonError(w, "names must contain at least one non-empty card name", http.StatusBadRequest)
+		return
+	}
+
+	cards, err := h.cardRepo.FindByNames(r.Context(), cleaned)
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	byName := map[string]*domain.Card{}
+	for _, c := range cards {
+		if c == nil {
+			continue
+		}
+		byName[strings.ToLower(strings.TrimSpace(c.Name))] = c
+	}
+
+	items := make([]cardMetadataItem, 0, len(cleaned))
+	missing := make([]string, 0)
+	for _, name := range cleaned {
+		key := strings.ToLower(name)
+		card := byName[key]
+		if card == nil {
+			missing = append(missing, name)
+			continue
+		}
+		items = append(items, cardMetadataItem{
+			CardID:          card.ID,
+			Name:            card.Name,
+			Rarity:          strings.ToLower(strings.TrimSpace(card.Rarity)),
+			SetCode:         strings.ToLower(strings.TrimSpace(card.SetCode)),
+			CollectorNumber: strings.TrimSpace(card.CollectorNumber),
+		})
+	}
+
+	jsonOK(w, cardMetadataBatchResponse{Items: items, Missing: missing})
 }
 
 // GetCard handles GET /cards/{id}.

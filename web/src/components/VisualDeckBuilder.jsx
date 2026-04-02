@@ -139,6 +139,11 @@ export default function VisualDeckBuilder({ token, messages, decklist, onDeckCha
   const uidRef = useRef(1)
   const [cards, setCards] = useState([])
   const [activeId, setActiveId] = useState(null)
+  const [metaByName, setMetaByName] = useState({})
+  const [metaLoading, setMetaLoading] = useState(false)
+  const [metaError, setMetaError] = useState('')
+  const [rarityFilter, setRarityFilter] = useState('')
+  const [setFilter, setSetFilter] = useState('')
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
 
@@ -151,11 +156,98 @@ export default function VisualDeckBuilder({ token, messages, decklist, onDeckCha
     setCards(next)
   }, [decklist])
 
+  useEffect(() => {
+    let cancelled = false
+    const names = Array.from(new Set(cards.map(c => String(c.name || '').trim()).filter(Boolean)))
+    if (!token || names.length === 0) {
+      setMetaByName({})
+      setMetaError('')
+      setMetaLoading(false)
+      return
+    }
+
+    async function loadMetadata() {
+      setMetaLoading(true)
+      setMetaError('')
+      try {
+        const res = await fetch('/api/v1/cards/metadata/batch', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ names }),
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data?.error || messages?.builderMetadataLoadFailed || 'Metadata load failed')
+        const nextMap = {}
+        for (const item of (data?.items || [])) {
+          const key = String(item?.name || '').trim().toLowerCase()
+          if (!key) continue
+          nextMap[key] = item
+        }
+        if (!cancelled) {
+          setMetaByName(nextMap)
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setMetaError(err?.message || messages?.builderMetadataLoadFailed || 'Metadata load failed')
+          setMetaByName({})
+        }
+      } finally {
+        if (!cancelled) setMetaLoading(false)
+      }
+    }
+
+    loadMetadata()
+    return () => {
+      cancelled = true
+    }
+  }, [cards, token, messages?.builderMetadataLoadFailed])
+
   const boardItems = useMemo(() => ({
     [BOARD_MAIN]: cards.filter(c => c.board === BOARD_MAIN),
     [BOARD_SIDE]: cards.filter(c => c.board === BOARD_SIDE),
     [BOARD_MAYBE]: cards.filter(c => c.board === BOARD_MAYBE),
   }), [cards])
+
+  const rarityOptions = useMemo(() => {
+    const values = new Set()
+    for (const key of Object.keys(metaByName)) {
+      const r = String(metaByName[key]?.rarity || '').trim().toLowerCase()
+      if (r) values.add(r)
+    }
+    return Array.from(values).sort()
+  }, [metaByName])
+
+  const setOptions = useMemo(() => {
+    const values = new Set()
+    for (const key of Object.keys(metaByName)) {
+      const s = String(metaByName[key]?.set_code || '').trim().toLowerCase()
+      if (s) values.add(s)
+    }
+    return Array.from(values).sort()
+  }, [metaByName])
+
+  const matchesFilters = (card) => {
+    const key = String(card?.name || '').trim().toLowerCase()
+    const meta = metaByName[key]
+    if (rarityFilter) {
+      const rarity = String(meta?.rarity || '').trim().toLowerCase()
+      if (rarity !== rarityFilter) return false
+    }
+    if (setFilter) {
+      const setCode = String(meta?.set_code || '').trim().toLowerCase()
+      if (setCode !== setFilter) return false
+    }
+    return true
+  }
+
+  const visibleBoardItems = useMemo(() => ({
+    [BOARD_MAIN]: boardItems[BOARD_MAIN].filter(matchesFilters),
+    [BOARD_SIDE]: boardItems[BOARD_SIDE].filter(matchesFilters),
+    [BOARD_MAYBE]: boardItems[BOARD_MAYBE].filter(matchesFilters),
+  }), [boardItems, rarityFilter, setFilter, metaByName])
 
   const stats = useMemo(() => {
     const count = b => boardItems[b].reduce((sum, c) => sum + c.quantity, 0)
@@ -241,6 +333,28 @@ export default function VisualDeckBuilder({ token, messages, decklist, onDeckCha
         <div className="builder-stat"><strong>{stats.maybe}</strong><span>{boardTitle(BOARD_MAYBE, messages)}</span></div>
       </div>
 
+      <div className="form-row-inline" style={{ gap: 8, marginBottom: 12 }}>
+        <div className="form-row" style={{ flex: 1, marginBottom: 0 }}>
+          <label>{messages?.builderFilterRarity || 'Rarity'}</label>
+          <select value={rarityFilter} onChange={e => setRarityFilter(e.target.value)}>
+            <option value="">{messages?.builderFilterAll || 'All'}</option>
+            {rarityOptions.map(v => <option key={v} value={v}>{v}</option>)}
+          </select>
+        </div>
+        <div className="form-row" style={{ flex: 1, marginBottom: 0 }}>
+          <label>{messages?.builderFilterSet || 'Edition (set)'}</label>
+          <select value={setFilter} onChange={e => setSetFilter(e.target.value)}>
+            <option value="">{messages?.builderFilterAll || 'All'}</option>
+            {setOptions.map(v => <option key={v} value={v}>{v.toUpperCase()}</option>)}
+          </select>
+        </div>
+      </div>
+      {(metaLoading || metaError) && (
+        <div style={{ color: 'var(--muted)', fontSize: '.82rem', marginBottom: 10 }}>
+          {metaLoading ? (messages?.builderMetadataLoading || 'Loading card metadata...') : metaError}
+        </div>
+      )}
+
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
@@ -249,7 +363,7 @@ export default function VisualDeckBuilder({ token, messages, decklist, onDeckCha
       >
         <div className="builder-columns">
           {BOARD_ORDER.map(board => {
-            const items = boardItems[board]
+            const items = visibleBoardItems[board]
             return (
               <div key={board} className="builder-column" id={board}>
                 <div className="builder-column-header">

@@ -60,6 +60,7 @@ web/              → Vite + React SPA
 | GET    | `/api/v1/users/me/notifications` | JWT | User notification feed for banlist/rotation events with replacement suggestions |
 | POST   | `/api/v1/webhooks/scryfall` | — | Ingest external card legality events (banlist/rotation) into notification store |
 | GET    | `/api/v1/cards/search?name=...` | JWT | Resolve card by name with fuzzy fallback |
+| POST   | `/api/v1/cards/metadata/batch` | JWT | Resolve metadata batch (rarity, set, collector number) by card names |
 | GET    | `/api/v1/cards/by-name/price-trend?name=...` | JWT | Price trend by card name |
 | GET    | `/api/v1/cards/by-name/synergies?name=...&n=10` | JWT | Synergies by card name |
 | GET    | `/api/v1/cards/{id}` | JWT | Card detail |

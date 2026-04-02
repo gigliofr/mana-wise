@@ -493,7 +493,7 @@ export default function DeckLibrary({
                   <button
                     type="button"
                     className="btn-ghost"
-                    onClick={() => onSelectDeck?.(deckToDecklist(deck), deck.format || 'standard')}
+                    onClick={() => onSelectDeck?.(deckToDecklist(deck), deck.format || 'standard', deck)}
                   >
                     {messages.useDeck}
                   </button>

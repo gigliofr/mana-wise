@@ -294,6 +294,11 @@ export const translations = {
     noNotificationsYet: 'Nessuna notifica al momento.',
     builderProOnlyTitle: 'Builder avanzato (Pro)',
     builderProOnlyBody: 'Il Visual Deck Builder con funzioni avanzate è disponibile nel piano Pro.',
+    builderFilterRarity: 'Rarita',
+    builderFilterSet: 'Edizione (set)',
+    builderFilterAll: 'Tutte',
+    builderMetadataLoading: 'Caricamento metadati carte...',
+    builderMetadataLoadFailed: 'Caricamento metadati builder non riuscito',
     // Deck library
     deckLibraryTitle: 'Libreria Mazzi',
     currentDeck: 'Mazzo corrente',
@@ -692,6 +697,11 @@ export const translations = {
     noNotificationsYet: 'No notifications yet.',
     builderProOnlyTitle: 'Advanced Builder (Pro)',
     builderProOnlyBody: 'Visual Deck Builder advanced functions are available on Pro plan.',
+    builderFilterRarity: 'Rarity',
+    builderFilterSet: 'Edition (set)',
+    builderFilterAll: 'All',
+    builderMetadataLoading: 'Loading card metadata...',
+    builderMetadataLoadFailed: 'Builder metadata loading failed',
     // Deck library
     deckLibraryTitle: 'Deck Library',
     currentDeck: 'Current deck',

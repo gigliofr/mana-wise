@@ -103,6 +103,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 
 			// Cards.
 			r.Get("/cards/search", cardsH.SearchByName)
+			r.Post("/cards/metadata/batch", cardsH.MetadataBatch)
 			r.Get("/cards/by-name/price-trend", cardsH.PriceTrendByName)
 			r.Get("/cards/by-name/synergies", cardsH.SynergiesByName)
 			r.Get("/cards/{id}", cardsH.GetCard)

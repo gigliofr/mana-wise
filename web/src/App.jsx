@@ -24,8 +24,12 @@ function App() {
   })
   const messages = translations[locale] || translations.it
   const [activeTool, setActiveTool] = useState('analyzer')
-  const [sharedDecklist, setSharedDecklist] = useState('')
-  const [sharedFormat, setSharedFormat] = useState('standard')
+  const [deckWorkspace, setDeckWorkspace] = useState({
+    decklist: '',
+    format: 'standard',
+    deckId: '',
+    deckName: '',
+  })
   const currentPath = window.location.pathname.toLowerCase()
   const isLegalPage = ['/privacy', '/cookie', '/contatti'].includes(currentPath)
   const hasActivePro = user?.plan === 'pro' && (!user?.pro_until || new Date(user.pro_until) > new Date())
@@ -171,11 +175,16 @@ function App() {
             token={token}
             user={user}
             messages={messages}
-            currentDecklist={sharedDecklist}
-            currentFormat={sharedFormat}
-            onSelectDeck={(decklist, format) => {
-              setSharedDecklist(decklist)
-              setSharedFormat(format)
+            currentDecklist={deckWorkspace.decklist}
+            currentFormat={deckWorkspace.format}
+            onSelectDeck={(decklist, format, deck) => {
+              setDeckWorkspace(prev => ({
+                ...prev,
+                decklist,
+                format,
+                deckId: deck?.id || '',
+                deckName: deck?.name || '',
+              }))
             }}
           />
 
@@ -198,10 +207,10 @@ function App() {
               user={user}
               locale={locale}
               messages={messages}
-              decklist={sharedDecklist}
-              format={sharedFormat}
-              onDeckChange={setSharedDecklist}
-              onFormatChange={setSharedFormat}
+              decklist={deckWorkspace.decklist}
+              format={deckWorkspace.format}
+              onDeckChange={nextDecklist => setDeckWorkspace(prev => ({ ...prev, decklist: nextDecklist }))}
+              onFormatChange={nextFormat => setDeckWorkspace(prev => ({ ...prev, format: nextFormat }))}
             />
           )}
           {activeTool === 'builder' && (
@@ -209,8 +218,8 @@ function App() {
               <VisualDeckBuilder
                 token={token}
                 messages={messages}
-                decklist={sharedDecklist}
-                onDeckChange={setSharedDecklist}
+                decklist={deckWorkspace.decklist}
+                onDeckChange={nextDecklist => setDeckWorkspace(prev => ({ ...prev, decklist: nextDecklist }))}
               />
             ) : (
               <div className="card">
@@ -228,8 +237,8 @@ function App() {
             <MatchupSimulator
               token={token}
               user={user}
-              decklist={sharedDecklist}
-              format={sharedFormat}
+              decklist={deckWorkspace.decklist}
+              format={deckWorkspace.format}
               messages={messages}
             />
           )}
@@ -237,8 +246,8 @@ function App() {
             <SideboardCoach
               token={token}
               user={user}
-              decklist={sharedDecklist}
-              format={sharedFormat}
+              decklist={deckWorkspace.decklist}
+              format={deckWorkspace.format}
               messages={messages}
             />
           )}
@@ -246,8 +255,8 @@ function App() {
             <MulliganAssistant
               token={token}
               user={user}
-              decklist={sharedDecklist}
-              format={sharedFormat}
+              decklist={deckWorkspace.decklist}
+              format={deckWorkspace.format}
               messages={messages}
             />
           )}
