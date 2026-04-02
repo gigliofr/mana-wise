@@ -397,7 +397,6 @@ export default function DeckLibrary({
                 {(() => {
                   const normalizedFormat = (deck.format || 'standard').toLowerCase()
                   const deckLegalityEntry = deckLegality[deck.id]
-                  const hasLegalityData = Boolean(deckLegalityEntry)
                   const isLegalityLoading = deckLegalityEntry?.loading === true
                   const isLegalityUnavailable = deckLegalityEntry?.unavailable === true
                   const legality = deckLegalityEntry?.formats?.[normalizedFormat]
@@ -409,7 +408,7 @@ export default function DeckLibrary({
                     : formatIsLegal === false
                       ? 'var(--red)'
                       : 'var(--muted)'
-                  const chipText = isLegalityLoading && !hasLegalityData
+                  const chipText = isLegalityLoading
                     ? messages.loading
                     : isLegalityUnavailable
                       ? (messages.legalityUnavailableShort || 'N/D')
