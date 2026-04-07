@@ -92,17 +92,17 @@ func Load() (*Config, error) {
 	cfg.Server.LogLevel = getEnv("LOG_LEVEL", "INFO")
 
 	// MongoDB
-	cfg.MongoDB.URI = os.Getenv("MONGODB_URI")
+	cfg.MongoDB.URI = firstNonEmptyEnv("MONGODB_URI", "DATABASE_URL", "MONGO_URL", "MONGODB_URL")
 	if cfg.MongoDB.URI == "" {
-		return nil, fmt.Errorf("MONGODB_URI is required")
+		return nil, fmt.Errorf("MongoDB URI is required: set one of MONGODB_URI, DATABASE_URL, MONGO_URL, MONGODB_URL")
 	}
 	cfg.MongoDB.Database = getEnv("MONGODB_DB_NAME", "manawise")
 	cfg.MongoDB.TLSCertFile = strings.TrimSpace(os.Getenv("MONGODB_TLS_CERT_FILE"))
 
 	// JWT
-	cfg.JWT.Secret = os.Getenv("JWT_SECRET")
+	cfg.JWT.Secret = strings.TrimSpace(firstNonEmptyEnv("JWT_SECRET", "SECRET", "APP_SECRET"))
 	if cfg.JWT.Secret == "" {
-		return nil, fmt.Errorf("JWT_SECRET is required")
+		return nil, fmt.Errorf("JWT signing secret is required: set one of JWT_SECRET, SECRET, APP_SECRET")
 	}
 	expiry, err := strconv.Atoi(getEnv("JWT_EXPIRY_HOURS", "72"))
 	if err != nil {
@@ -214,4 +214,13 @@ func normalizeAIMode(mode string) string {
 	default:
 		return "hybrid_prefer_external"
 	}
+}
+
+func firstNonEmptyEnv(keys ...string) string {
+	for _, key := range keys {
+		if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+			return v
+		}
+	}
+	return ""
 }
