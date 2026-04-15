@@ -110,4 +110,39 @@ describe('SideboardCoach', () => {
       expect(screen.getByText('Planning failed')).toBeInTheDocument()
     })
   })
+
+  it('still runs planning when background saved-decks load fails', async () => {
+    const fetchMock = vi.fn(async (url, options = {}) => {
+      if (url === '/api/v1/decks' && options.method === 'GET') {
+        throw new Error('network down')
+      }
+      if (url === '/api/v1/sideboard/plan' && options.method === 'POST') {
+        return jsonResponse({
+          matchup: 'aggro',
+          ins: [{ qty: 1, card: 'Abrade', reason: 'Utility removal' }],
+          outs: [{ qty: 1, card: 'Negate', reason: 'Narrow in matchup' }],
+          notes: ['Play to board early.'],
+        })
+      }
+      throw new Error(`Unhandled request: ${String(url)} ${String(options.method)}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(
+      <SideboardCoach
+        token="token-123"
+        user={{ id: 'user-1' }}
+        decklist={'4 Lightning Bolt\n20 Mountain'}
+        format="modern"
+        messages={messages}
+      />,
+    )
+
+    fireEvent.change(screen.getByPlaceholderText('2 Abrade'), { target: { value: '2 Abrade' } })
+    fireEvent.click(screen.getByRole('button', { name: /run plan/i }))
+
+    await waitFor(() => {
+      expect(screen.getByText('Play to board early.')).toBeInTheDocument()
+    })
+  })
 })

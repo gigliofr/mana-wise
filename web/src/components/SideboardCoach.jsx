@@ -33,13 +33,16 @@ export default function SideboardCoach({ token, user, decklist: decklistProp, fo
       if (!token) return
       setLoadingSavedDecks(true)
       try {
-        const { data } = await apiRequest('/decks', { token })
+        const { res, data } = await apiRequest('/decks', { token })
+        if (!res.ok || cancelled) return
         if (cancelled) return
         const allDecks = Array.isArray(data) ? data : []
         const ownedDecks = user?.id
           ? allDecks.filter(d => d?.user_id === user.id)
           : allDecks
         setSavedDecks(ownedDecks)
+      } catch {
+        // Keep main flow usable even if saved-decks background load fails.
       } finally {
         if (!cancelled) setLoadingSavedDecks(false)
       }
