@@ -1034,20 +1034,32 @@ const tdStyle = {
   padding: '8px 8px',
 }
 
-function AIPanel({ text, error, source, result, messages }) {
-  const sourceLabel = source
-    ? messages.aiSourceUsed(source)
+export function AIPanel({ text, error, source, result, messages }) {
+  const normalizedSource = String(source || '').trim()
+  const sourceLabel = normalizedSource
+    ? messages.aiSourceUsed(normalizedSource)
     : messages.aiSourceUsed(messages.aiSourceUnknown)
+  const internalSource = normalizedSource.startsWith('internal_rules')
+  const fallbackActive = Boolean(error) && internalSource
+  const statusLabel = fallbackActive
+    ? messages.aiStatusFallback
+    : internalSource
+      ? messages.aiStatusInternal
+      : messages.aiStatusExternal
+  const statusToneClass = fallbackActive ? 'warn' : internalSource ? 'info' : 'ok'
 
   if (!text) {
     const fallbackLines = buildLocalSummary(result, messages)
     return (
       <div>
+        <div className="ai-meta-row">
+          <span className="ai-badge">{messages.localSummaryBadge}</span>
+          <span className={`ai-status-pill ${statusToneClass}`}>{statusLabel}</span>
+        </div>
         <div className="banner banner-warn" style={{ marginBottom: 12 }}>
           <strong>{messages.aiUnavailable}</strong>
           <div style={{ marginTop: 6 }}>{error || messages.aiFallbackNote}</div>
         </div>
-        <span className="ai-badge">{messages.localSummaryBadge}</span>
         <div className="ai-source-label">{messages.aiSourceUsed(messages.aiSourceInternal)}</div>
         <div className="ai-box">
           <strong>{messages.localSummaryTitle}</strong>
@@ -1062,8 +1074,17 @@ function AIPanel({ text, error, source, result, messages }) {
   const aiTextLines = String(text || '').split('\n')
   return (
     <div>
-      <span className="ai-badge">{messages.aiBadge}</span>
+      <div className="ai-meta-row">
+        <span className="ai-badge">{messages.aiBadge}</span>
+        <span className={`ai-status-pill ${statusToneClass}`}>{statusLabel}</span>
+      </div>
       <div className="ai-source-label">{sourceLabel}</div>
+      {fallbackActive && (
+        <div className="banner banner-warn" style={{ marginBottom: 12 }}>
+          <strong>{messages.aiFallbackActiveTitle}</strong>
+          <div style={{ marginTop: 6 }}>{error}</div>
+        </div>
+      )}
       <div className="ai-box">
         {aiTextLines.map((line, idx) => (
           <div key={`ai-line-${idx}`}>{renderManaSymbolsInText(line, 14)}</div>

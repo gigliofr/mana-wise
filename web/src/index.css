@@ -529,6 +529,37 @@ button {
   color: var(--muted);
   margin-bottom: 10px;
 }
+.ai-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.ai-status-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: .68rem;
+  font-weight: 700;
+  letter-spacing: .2px;
+  text-transform: uppercase;
+}
+.ai-status-pill.ok {
+  background: rgba(46, 204, 113, .16);
+  color: var(--green);
+  border: 1px solid rgba(46, 204, 113, .35);
+}
+.ai-status-pill.info {
+  background: rgba(52, 152, 219, .16);
+  color: #3498db;
+  border: 1px solid rgba(52, 152, 219, .35);
+}
+.ai-status-pill.warn {
+  background: rgba(243, 156, 18, .16);
+  color: var(--orange);
+  border: 1px solid rgba(243, 156, 18, .35);
+}
 
 /* ── Suggestions list ── */
 .suggestion-list { list-style: none; padding: 0; }
