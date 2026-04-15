@@ -222,7 +222,7 @@ export default function Analyzer({ token, user, locale, messages, decklist: deck
         if (typeof data?.remaining === 'number') {
           setRemaining(data.remaining)
         }
-        throw new Error(data.error || messages.analysisFailed)
+        throw new Error(data?.error || messages.analysisFailed)
       }
 
       setResult(data)

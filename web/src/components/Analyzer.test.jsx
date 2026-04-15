@@ -109,4 +109,42 @@ describe('Analyzer', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/v1/analyze', expect.objectContaining({ method: 'POST' }))
     expect(fetchMock).toHaveBeenCalledWith('/api/v1/deck/classify', expect.objectContaining({ method: 'POST' }))
   })
+
+  it('falls back to generic message when analyze error response is non-json', async () => {
+    const fetchMock = vi.fn(async (url, options = {}) => {
+      if (url === '/api/v1/decks' && options.method === 'GET') {
+        return jsonResponse([])
+      }
+      if (url === '/api/v1/analyze' && options.method === 'POST') {
+        return {
+          ok: false,
+          status: 500,
+          headers: { get: () => 'text/plain' },
+          text: vi.fn().mockResolvedValue('internal error'),
+        }
+      }
+      if (url === '/api/v1/deck/classify' && options.method === 'POST') {
+        return jsonResponse({ archetype: 'aggro' })
+      }
+      throw new Error(`Unhandled request: ${String(url)} ${String(options.method)}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(
+      <Analyzer
+        token="token-123"
+        user={{ id: 'user-1', plan: 'pro' }}
+        locale="en"
+        messages={messages}
+        decklist={'4 Lightning Bolt\n20 Mountain'}
+        format="modern"
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /analyze deck/i }))
+
+    await waitFor(() => {
+      expect(screen.getByText('Analysis failed')).toBeInTheDocument()
+    })
+  })
 })
