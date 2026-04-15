@@ -406,5 +406,20 @@ func jsonOK(w http.ResponseWriter, v interface{}) {
 func jsonError(w http.ResponseWriter, msg string, code int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	fmt.Fprintf(w, `{"error":"%s"}`, msg)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"error":  msg,
+		"code":   statusCodeSlug(code),
+		"status": code,
+	})
+}
+
+func statusCodeSlug(code int) string {
+	status := strings.ToLower(strings.TrimSpace(http.StatusText(code)))
+	if status == "" {
+		return "unknown_error"
+	}
+	status = strings.ReplaceAll(status, "-", " ")
+	status = strings.ReplaceAll(status, "  ", " ")
+	status = strings.ReplaceAll(status, " ", "_")
+	return status
 }

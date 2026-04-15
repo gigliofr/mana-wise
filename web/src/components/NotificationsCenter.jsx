@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-
-const API = '/api/v1'
+import { apiRequest, throwIfNotOK } from '../lib/apiClient'
 
 export default function NotificationsCenter({ token, locale, messages }) {
   const [items, setItems] = useState([])
@@ -23,11 +22,8 @@ export default function NotificationsCenter({ token, locale, messages }) {
       setLoading(true)
       setError('')
       try {
-        const res = await fetch(`${API}/users/me/notifications`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
-        const data = await res.json()
-        if (!res.ok) throw new Error(data?.error || messages.notificationsLoadFailed || 'Failed to load notifications')
+        const { res, data } = await apiRequest('/users/me/notifications', { token })
+        throwIfNotOK(res, data, messages.notificationsLoadFailed || 'Failed to load notifications')
         if (!cancelled) {
           setItems(Array.isArray(data?.items) ? data.items : [])
         }

@@ -24,17 +24,36 @@ type DeckHandler struct {
 	analyze  *usecase.AnalyzeDeckUseCase
 	classify *usecase.DeckClassifierUseCase
 	mulligan *usecase.MulliganAssistantUseCase
+	tracker  domain.AnalyticsTracker
 }
 
 // NewDeckHandler creates a DeckHandler.
 func NewDeckHandler(repo domain.DeckRepository, userRepo domain.UserRepository, cardRepo domain.CardRepository, analyze *usecase.AnalyzeDeckUseCase, classify *usecase.DeckClassifierUseCase, mulligan *usecase.MulliganAssistantUseCase) *DeckHandler {
-	return &DeckHandler{repo: repo, userRepo: userRepo, cardRepo: cardRepo, analyze: analyze, classify: classify, mulligan: mulligan}
+	return &DeckHandler{
+		repo:     repo,
+		userRepo: userRepo,
+		cardRepo: cardRepo,
+		analyze:  analyze,
+		classify: classify,
+		mulligan: mulligan,
+		tracker:  domain.NoopAnalyticsTracker{},
+	}
+}
+
+// WithTracker sets the analytics tracker for this handler.
+func (h *DeckHandler) WithTracker(tracker domain.AnalyticsTracker) *DeckHandler {
+	if tracker == nil {
+		h.tracker = domain.NoopAnalyticsTracker{}
+		return h
+	}
+	h.tracker = tracker
+	return h
 }
 
 type deckLegalityResponse struct {
-	DeckID       string                               `json:"deck_id"`
+	DeckID       string                                `json:"deck_id"`
 	Formats      map[string]usecase.DeckLegalityResult `json:"formats"`
-	CheckedAtUTC string                               `json:"checked_at"`
+	CheckedAtUTC string                                `json:"checked_at"`
 }
 
 type deckAnalysisResponse struct {
@@ -52,13 +71,13 @@ type deckAnalysisResponse struct {
 }
 
 type deckSynergiesResponse struct {
-	DeckID       string             `json:"deck_id"`
-	Combos       []deckCombo        `json:"combos"`
-	SynergyScore int                `json:"synergy_score"`
-	Packages     []synergyPackage   `json:"packages"`
-	RankingMode  string             `json:"ranking_mode,omitempty"`
-	EmbeddingCoverage float64       `json:"embedding_coverage,omitempty"`
-	CheckedAtUTC string             `json:"checked_at"`
+	DeckID            string           `json:"deck_id"`
+	Combos            []deckCombo      `json:"combos"`
+	SynergyScore      int              `json:"synergy_score"`
+	Packages          []synergyPackage `json:"packages"`
+	RankingMode       string           `json:"ranking_mode,omitempty"`
+	EmbeddingCoverage float64          `json:"embedding_coverage,omitempty"`
+	CheckedAtUTC      string           `json:"checked_at"`
 }
 
 type deckPriceCardLine struct {
@@ -86,27 +105,41 @@ type deckPriceResponse struct {
 	CheckedAtUTC      string              `json:"checked_at"`
 }
 
+type deckSummaryResponse struct {
+	DeckID         string                                `json:"deck_id"`
+	Name           string                                `json:"name"`
+	Format         string                                `json:"format"`
+	MainboardCards int                                   `json:"mainboard_cards"`
+	SideboardCards int                                   `json:"sideboard_cards"`
+	TotalCards     int                                   `json:"total_cards"`
+	EstimatedUSD   float64                               `json:"estimated_usd"`
+	EstimatedEUR   float64                               `json:"estimated_eur"`
+	MissingPrices  []string                              `json:"missing_prices,omitempty"`
+	Legality       map[string]usecase.DeckLegalityResult `json:"legality"`
+	CheckedAtUTC   string                                `json:"checked_at"`
+}
+
 type deckBudgetReplacement struct {
-	Card               string  `json:"card"`
-	Qty                int     `json:"qty"`
-	CurrentUnitUSD     float64 `json:"current_unit_usd"`
-	SuggestedCard      string  `json:"suggested_card"`
-	SuggestedUnitUSD   float64 `json:"suggested_unit_usd"`
+	Card                string  `json:"card"`
+	Qty                 int     `json:"qty"`
+	CurrentUnitUSD      float64 `json:"current_unit_usd"`
+	SuggestedCard       string  `json:"suggested_card"`
+	SuggestedUnitUSD    float64 `json:"suggested_unit_usd"`
 	EstimatedSavingsUSD float64 `json:"estimated_savings_usd"`
-	SimilarityScore    float64 `json:"similarity_score"`
-	Reason             string  `json:"reason"`
+	SimilarityScore     float64 `json:"similarity_score"`
+	Reason              string  `json:"reason"`
 }
 
 type deckBudgetResponse struct {
-	DeckID             string                  `json:"deck_id"`
-	TargetUSD          float64                 `json:"target_usd"`
-	CurrentTotalUSD    float64                 `json:"current_total_usd"`
-	EstimatedNewTotalUSD float64               `json:"estimated_new_total_usd"`
-	RequiredSavingsUSD float64                 `json:"required_savings_usd"`
-	EstimatedSavingsUSD float64                `json:"estimated_savings_usd"`
-	Achievable         bool                    `json:"achievable"`
-	Replacements       []deckBudgetReplacement `json:"replacements"`
-	CheckedAtUTC       string                  `json:"checked_at"`
+	DeckID               string                  `json:"deck_id"`
+	TargetUSD            float64                 `json:"target_usd"`
+	CurrentTotalUSD      float64                 `json:"current_total_usd"`
+	EstimatedNewTotalUSD float64                 `json:"estimated_new_total_usd"`
+	RequiredSavingsUSD   float64                 `json:"required_savings_usd"`
+	EstimatedSavingsUSD  float64                 `json:"estimated_savings_usd"`
+	Achievable           bool                    `json:"achievable"`
+	Replacements         []deckBudgetReplacement `json:"replacements"`
+	CheckedAtUTC         string                  `json:"checked_at"`
 }
 
 type deckCombo struct {
@@ -124,14 +157,14 @@ type synergyPackage struct {
 }
 
 type curveTypeBucket struct {
-	CMC          int `json:"cmc"`
-	Creatures    int `json:"creatures"`
-	Instants     int `json:"instants"`
-	Sorceries    int `json:"sorceries"`
-	Enchantments int `json:"enchantments"`
-	Artifacts    int `json:"artifacts"`
+	CMC           int `json:"cmc"`
+	Creatures     int `json:"creatures"`
+	Instants      int `json:"instants"`
+	Sorceries     int `json:"sorceries"`
+	Enchantments  int `json:"enchantments"`
+	Artifacts     int `json:"artifacts"`
 	Planeswalkers int `json:"planeswalkers"`
-	Total        int `json:"total"`
+	Total         int `json:"total"`
 }
 
 type deckSimulateRequest struct {
@@ -142,9 +175,9 @@ type deckSimulateRequest struct {
 }
 
 type deckSideboardSuggestRequest struct {
-	Format           string `json:"format,omitempty"`
+	Format            string `json:"format,omitempty"`
 	OpponentArchetype string `json:"opponent_archetype,omitempty"`
-	MetaSnapshot     string `json:"meta_snapshot,omitempty"`
+	MetaSnapshot      string `json:"meta_snapshot,omitempty"`
 }
 
 type sideboardSuggestion struct {
@@ -155,27 +188,27 @@ type sideboardSuggestion struct {
 }
 
 type deckSideboardSuggestResponse struct {
-	DeckID       string                     `json:"deck_id"`
-	Format       string                     `json:"format"`
-	MetaSnapshot string                     `json:"meta_snapshot,omitempty"`
-	Suggestions  []sideboardSuggestion      `json:"suggestions"`
-	TotalCards   int                        `json:"total_cards"`
-	GenerationMode string                   `json:"generation_mode"`
-	Plan         usecase.SideboardPlanResult `json:"plan"`
-	CheckedAtUTC string                     `json:"checked_at"`
+	DeckID         string                      `json:"deck_id"`
+	Format         string                      `json:"format"`
+	MetaSnapshot   string                      `json:"meta_snapshot,omitempty"`
+	Suggestions    []sideboardSuggestion       `json:"suggestions"`
+	TotalCards     int                         `json:"total_cards"`
+	GenerationMode string                      `json:"generation_mode"`
+	Plan           usecase.SideboardPlanResult `json:"plan"`
+	CheckedAtUTC   string                      `json:"checked_at"`
 }
 
 type deckSimulateResponse struct {
-	DeckID          string                      `json:"deck_id"`
-	KeepProbability float64                     `json:"keep_probability"`
-	AvgLandsT1      float64                     `json:"avg_lands_t1"`
-	PTwoLandsT2     float64                     `json:"p_two_lands_t2"`
-	POneDrop        float64                     `json:"p_one_drop"`
-	CurveOutT4      float64                     `json:"curve_out_t4"`
-	Recommendation  string                      `json:"recommendation"`
-	Reasoning       usecase.MulliganReasoning   `json:"reasoning"`
+	DeckID          string                           `json:"deck_id"`
+	KeepProbability float64                          `json:"keep_probability"`
+	AvgLandsT1      float64                          `json:"avg_lands_t1"`
+	PTwoLandsT2     float64                          `json:"p_two_lands_t2"`
+	POneDrop        float64                          `json:"p_one_drop"`
+	CurveOutT4      float64                          `json:"curve_out_t4"`
+	Recommendation  string                           `json:"recommendation"`
+	Reasoning       usecase.MulliganReasoning        `json:"reasoning"`
 	Raw             usecase.MulliganSimulationResult `json:"raw"`
-	CheckedAtUTC    string                      `json:"checked_at"`
+	CheckedAtUTC    string                           `json:"checked_at"`
 }
 
 const targetSideboardSize = 15
@@ -196,11 +229,11 @@ type deckHistoryResponse struct {
 }
 
 type deckRestoreResponse struct {
-	DeckID         string             `json:"deck_id"`
-	RestoredFromV  int                `json:"restored_from_v"`
-	CurrentVersion int                `json:"current_version"`
+	DeckID         string              `json:"deck_id"`
+	RestoredFromV  int                 `json:"restored_from_v"`
+	CurrentVersion int                 `json:"current_version"`
 	Changes        []domain.DeckChange `json:"changes"`
-	Note           string             `json:"note,omitempty"`
+	Note           string              `json:"note,omitempty"`
 }
 
 // List handles GET /api/v1/decks — returns all decks owned by the authenticated user.
@@ -334,6 +367,80 @@ func (h *DeckHandler) Price(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// Summary handles GET /api/v1/decks/{id}/summary.
+func (h *DeckHandler) Summary(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.UserIDFromContext(r.Context())
+	id := chi.URLParam(r, "id")
+
+	if h.cardRepo == nil {
+		jsonError(w, "card repository unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	deck, err := h.repo.FindByID(r.Context(), id)
+	if err != nil {
+		jsonError(w, "failed to retrieve deck", http.StatusInternalServerError)
+		return
+	}
+	if deck == nil {
+		jsonError(w, "deck not found", http.StatusNotFound)
+		return
+	}
+	if deck.UserID != userID && !deck.IsPublic {
+		jsonError(w, "deck not found", http.StatusNotFound)
+		return
+	}
+
+	cards, quantities, err := h.resolveDeckCards(r, deck)
+	if err != nil {
+		jsonError(w, err.Error(), http.StatusUnprocessableEntity)
+		return
+	}
+
+	mainboardCards := 0
+	sideboardCards := 0
+	totalUSD := 0.0
+	totalEUR := 0.0
+	missingPrices := []string{}
+
+	for _, entry := range deck.Cards {
+		if strings.TrimSpace(entry.CardName) == "" || entry.Quantity <= 0 {
+			continue
+		}
+		if entry.IsSideboard {
+			sideboardCards += entry.Quantity
+		} else {
+			mainboardCards += entry.Quantity
+		}
+
+		card, resolveErr := h.resolveDeckCardEntry(r, entry)
+		if resolveErr != nil {
+			jsonError(w, resolveErr.Error(), http.StatusUnprocessableEntity)
+			return
+		}
+		usd, eur, _ := extractCardUnitPrices(card)
+		totalUSD += usd * float64(entry.Quantity)
+		totalEUR += eur * float64(entry.Quantity)
+		if usd == 0 && eur == 0 {
+			missingPrices = append(missingPrices, strings.TrimSpace(entry.CardName))
+		}
+	}
+
+	jsonOK(w, deckSummaryResponse{
+		DeckID:         deck.ID,
+		Name:           deck.Name,
+		Format:         deck.Format,
+		MainboardCards: mainboardCards,
+		SideboardCards: sideboardCards,
+		TotalCards:     mainboardCards + sideboardCards,
+		EstimatedUSD:   round4(totalUSD),
+		EstimatedEUR:   round4(totalEUR),
+		MissingPrices:  missingPrices,
+		Legality:       usecase.DetermineDeckLegalityAllFormats(cards, quantities),
+		CheckedAtUTC:   time.Now().UTC().Format(time.RFC3339),
+	})
+}
+
 // Budget handles GET /api/v1/decks/{id}/budget?target=200.
 func (h *DeckHandler) Budget(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.UserIDFromContext(r.Context())
@@ -370,10 +477,10 @@ func (h *DeckHandler) Budget(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type pricedDeckEntry struct {
-		card     *domain.Card
-		entry    domain.DeckCard
-		unitUSD  float64
-		lineUSD  float64
+		card    *domain.Card
+		entry   domain.DeckCard
+		unitUSD float64
+		lineUSD float64
 	}
 
 	priced := make([]pricedDeckEntry, 0, len(deck.Cards))
@@ -398,15 +505,15 @@ func (h *DeckHandler) Budget(w http.ResponseWriter, r *http.Request) {
 	requiredSavings := round4(currentTotalUSD - targetUSD)
 	if requiredSavings <= 0 {
 		jsonOK(w, deckBudgetResponse{
-			DeckID:              deck.ID,
-			TargetUSD:           round4(targetUSD),
-			CurrentTotalUSD:     currentTotalUSD,
+			DeckID:               deck.ID,
+			TargetUSD:            round4(targetUSD),
+			CurrentTotalUSD:      currentTotalUSD,
 			EstimatedNewTotalUSD: currentTotalUSD,
-			RequiredSavingsUSD:  0,
-			EstimatedSavingsUSD: 0,
-			Achievable:          true,
-			Replacements:        []deckBudgetReplacement{},
-			CheckedAtUTC:        time.Now().UTC().Format(time.RFC3339),
+			RequiredSavingsUSD:   0,
+			EstimatedSavingsUSD:  0,
+			Achievable:           true,
+			Replacements:         []deckBudgetReplacement{},
+			CheckedAtUTC:         time.Now().UTC().Format(time.RFC3339),
 		})
 		return
 	}
@@ -623,13 +730,13 @@ func (h *DeckHandler) Synergies(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jsonOK(w, deckSynergiesResponse{
-		DeckID:       deck.ID,
-		Combos:       combos,
-		SynergyScore: score,
-		Packages:     pkgs,
-		RankingMode:  mode,
+		DeckID:            deck.ID,
+		Combos:            combos,
+		SynergyScore:      score,
+		Packages:          pkgs,
+		RankingMode:       mode,
 		EmbeddingCoverage: coverage,
-		CheckedAtUTC: time.Now().UTC().Format(time.RFC3339),
+		CheckedAtUTC:      time.Now().UTC().Format(time.RFC3339),
 	})
 }
 
@@ -839,15 +946,22 @@ func (h *DeckHandler) SideboardSuggest(w http.ResponseWriter, r *http.Request) {
 	}
 	suggestions = trimmed
 
+	_ = h.tracker.Track(r.Context(), userID, "sideboard_suggest_generated", map[string]interface{}{
+		"format":             format,
+		"opponent_archetype": req.OpponentArchetype,
+		"total_cards":        totalCards,
+		"generation_mode":    generationMode,
+	})
+
 	jsonOK(w, deckSideboardSuggestResponse{
-		DeckID:       deck.ID,
-		Format:       format,
-		MetaSnapshot: strings.TrimSpace(req.MetaSnapshot),
-		Suggestions:  suggestions,
-		TotalCards:   totalCards,
+		DeckID:         deck.ID,
+		Format:         format,
+		MetaSnapshot:   strings.TrimSpace(req.MetaSnapshot),
+		Suggestions:    suggestions,
+		TotalCards:     totalCards,
 		GenerationMode: generationMode,
-		Plan:         plan,
-		CheckedAtUTC: time.Now().UTC().Format(time.RFC3339),
+		Plan:           plan,
+		CheckedAtUTC:   time.Now().UTC().Format(time.RFC3339),
 	})
 }
 
@@ -1484,12 +1598,12 @@ func (h *DeckHandler) Create(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC()
 	initialSnapshot := cloneDeckCards(req.Cards)
 	deck := &domain.Deck{
-		ID:          uuid.New().String(),
-		UserID:      userID,
-		Name:        req.Name,
-		Format:      req.Format,
-		Cards:       req.Cards,
-		Version:     1,
+		ID:      uuid.New().String(),
+		UserID:  userID,
+		Name:    req.Name,
+		Format:  req.Format,
+		Cards:   req.Cards,
+		Version: 1,
 		History: []domain.DeckVersion{{
 			V:        1,
 			Date:     now,
@@ -1507,6 +1621,14 @@ func (h *DeckHandler) Create(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "failed to save deck", http.StatusInternalServerError)
 		return
 	}
+
+	_ = h.tracker.Track(r.Context(), userID, "deck_saved", map[string]interface{}{
+		"plan":         plan,
+		"format":       req.Format,
+		"cards":        len(req.Cards),
+		"is_public":    req.IsPublic,
+		"deck_version": deck.Version,
+	})
 
 	w.WriteHeader(http.StatusCreated)
 	jsonOK(w, deck)

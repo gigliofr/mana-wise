@@ -18,6 +18,7 @@ import (
 	"github.com/manawise/api/infrastructure/analytics"
 	"github.com/manawise/api/infrastructure/llm"
 	"github.com/manawise/api/infrastructure/mongodb"
+	"github.com/manawise/api/infrastructure/notifications"
 	"github.com/manawise/api/infrastructure/ota"
 	"github.com/manawise/api/infrastructure/scryfall"
 	"github.com/manawise/api/usecase"
@@ -31,6 +32,7 @@ func main() {
 
 	log.Printf("🔧 Environment: %s | Port: %s", cfg.Server.Environment, cfg.Server.Port)
 	log.Printf("🔎 Mongo target: %s", sanitizeMongoURI(cfg.MongoDB.URI))
+	logConfigChecklist(cfg)
 
 	// ── MongoDB ──────────────────────────────────────────────────────────────
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
@@ -64,7 +66,13 @@ func main() {
 	if err != nil {
 		log.Fatalf("deck repo: %v", err)
 	}
+	passwordResetTokenRepo, err := mongodb.NewPasswordResetTokenRepository(setupCtx, mongoClient)
+	if err != nil {
+		log.Fatalf("password reset token repo: %v", err)
+	}
 	log.Println("✅ Repositories ready")
+
+	mailer := notifications.NewEmailSenderFromEnv()
 
 	// ── Scryfall client ───────────────────────────────────────────────────────
 	scryfallClient := scryfall.NewClient(
@@ -80,14 +88,14 @@ func main() {
 	mulliganUC := usecase.NewMulliganAssistantUseCase(cardRepo)
 	matchupUC := usecase.NewMatchupSimulatorUseCase(cardRepo)
 	deckClassifyUC := usecase.NewDeckClassifierUseCase(cardRepo)
-	
+
 	// EDH Power Level Scoring
 	impactScoreUC := &usecase.ImpactScoreUseCase{
 		Weights: domain.DefaultImpactWeights(),
 	}
 	powerLevelUC := &usecase.PowerLevelUseCase{}
 	scoreUC := usecase.NewScoreUseCase(impactScoreUC, powerLevelUC)
-	
+
 	var embedBatchUC *usecase.EmbedBatchUseCase
 	var otaUC *usecase.OTAUpdateUseCase
 	log.Printf("✅ Worker pool size: %d", cfg.Worker.PoolSize)
@@ -141,13 +149,15 @@ func main() {
 	log.Printf("✅ AI suggester ready (mode: %s, internal_rules: %t)", cfg.LLM.AIMode, cfg.LLM.InternalRulesEnabled)
 
 	// ── Analytics tracker (optional) ─────────────────────────────────────────
-	var tracker domain.AnalyticsTracker = domain.NoopAnalyticsTracker{}
+	var baseTracker domain.AnalyticsTracker = domain.NoopAnalyticsTracker{}
 	if cfg.Analytics.Provider == "posthog" && cfg.Analytics.APIKey != "" {
-		tracker = analytics.NewPostHogTracker(cfg.Analytics.APIKey, cfg.Analytics.Host)
+		baseTracker = analytics.NewPostHogTracker(cfg.Analytics.APIKey, cfg.Analytics.Host)
 		log.Println("✅ Analytics tracker enabled (PostHog)")
 	} else {
 		log.Println("ℹ️  Analytics tracker disabled")
 	}
+	runtimeMetrics := analytics.NewRuntimeMetricsTracker(baseTracker)
+	var tracker domain.AnalyticsTracker = runtimeMetrics
 
 	// ── OTA storage/use case ────────────────────────────────────────────────
 	otaRepo, err := ota.NewStorageRepository(cfg.OTA.StorageDir)
@@ -158,23 +168,26 @@ func main() {
 
 	// ── Router ───────────────────────────────────────────────────────────────
 	router := api.NewRouter(api.RouterDeps{
-		CardRepo:       cardRepo,
-		UserRepo:       userRepo,
-		DeckRepo:       deckRepo,
-		AnalyzeUC:      analyzeUC,
-		SideboardUC:    sideboardUC,
-		MulliganUC:     mulliganUC,
-		MatchupUC:      matchupUC,
-		DeckClassifyUC: deckClassifyUC,
-		ScoreUC:        scoreUC,
-		ImpactScoreUC:  impactScoreUC,
-		AISuggester:    aiSuggester,
-		EmbedBatchUC:   embedBatchUC,
-		ResolveCardUC:  resolveCardUC,
-		OTAUC:          otaUC,
-		Analytics:      tracker,
-		JWTSecret:      cfg.JWT.Secret,
-		ExpiryHours:    cfg.JWT.ExpiryHours,
+		CardRepo:         cardRepo,
+		UserRepo:         userRepo,
+		DeckRepo:         deckRepo,
+		AnalyzeUC:        analyzeUC,
+		SideboardUC:      sideboardUC,
+		MulliganUC:       mulliganUC,
+		MatchupUC:        matchupUC,
+		DeckClassifyUC:   deckClassifyUC,
+		ScoreUC:          scoreUC,
+		ImpactScoreUC:    impactScoreUC,
+		AISuggester:      aiSuggester,
+		EmbedBatchUC:     embedBatchUC,
+		ResolveCardUC:    resolveCardUC,
+		OTAUC:            otaUC,
+		Analytics:        tracker,
+		AnalyticsMetrics: runtimeMetrics,
+		PasswordResetRepo: passwordResetTokenRepo,
+		Mailer:            mailer,
+		JWTSecret:        cfg.JWT.Secret,
+		ExpiryHours:      cfg.JWT.ExpiryHours,
 	})
 
 	// ── HTTP server ───────────────────────────────────────────────────────────
@@ -250,4 +263,24 @@ func sanitizeMongoURI(raw string) string {
 		return host + ":" + port
 	}
 	return host
+}
+
+func logConfigChecklist(cfg *config.Config) {
+	if cfg == nil {
+		return
+	}
+	env := strings.ToLower(strings.TrimSpace(cfg.Server.Environment))
+	if env == "" || env == "development" || env == "dev" {
+		return
+	}
+
+	if strings.TrimSpace(os.Getenv("MANAWISE_ALLOWED_ORIGINS")) == "" {
+		log.Println("⚠️  MANAWISE_ALLOWED_ORIGINS not set: cross-origin requests are blocked by default in non-development environments")
+	}
+	if len(strings.TrimSpace(cfg.JWT.Secret)) < 32 {
+		log.Println("⚠️  JWT_SECRET appears short (<32 chars): use a stronger secret in production")
+	}
+	if cfg.Analytics.Provider == "posthog" && strings.TrimSpace(cfg.Analytics.APIKey) == "" {
+		log.Println("⚠️  ANALYTICS_PROVIDER=posthog but POSTHOG_API_KEY is empty")
+	}
 }

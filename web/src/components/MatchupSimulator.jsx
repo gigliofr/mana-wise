@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
+import { apiRequest, throwIfNotOK } from '../lib/apiClient'
 
-const API = '/api/v1'
 const ARCHETYPES = ['aggro', 'midrange', 'control', 'combo', 'ramp']
 const FORMATS = ['standard', 'pioneer', 'modern', 'legacy', 'vintage', 'commander', 'pauper']
 
@@ -31,10 +31,7 @@ export default function MatchupSimulator({ token, user, decklist: decklistProp, 
     let cancelled = false
     async function loadDecks() {
       try {
-        const res = await fetch(`${API}/decks`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
-        const data = await res.json()
+        const { res, data } = await apiRequest('/decks', { token })
         if (res.ok && !cancelled) {
           const allDecks = Array.isArray(data) ? data : []
           const ownedDecks = user?.id
@@ -62,22 +59,18 @@ export default function MatchupSimulator({ token, user, decklist: decklistProp, 
     setResult(null)
     setLoading(true)
     try {
-      const res = await fetch(`${API}/matchup/simulate`, {
+      const { res, data } = await apiRequest('/matchup/simulate', {
+        token,
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
+        body: {
           decklist,
           sideboard_decklist: sideboard || undefined,
           format,
           opponents,
           on_play: onPlay,
-        }),
+        },
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || messages.matchupFailed)
+      throwIfNotOK(res, data, messages.matchupFailed)
       setResult(data)
     } catch (err) {
       setError(err.message)

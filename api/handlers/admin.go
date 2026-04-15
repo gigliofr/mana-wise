@@ -12,11 +12,12 @@ import (
 // AdminHandler provides admin-only operations.
 type AdminHandler struct {
 	userRepo domain.UserRepository
+	metrics  domain.AnalyticsMetricsProvider
 }
 
 // NewAdminHandler creates an AdminHandler.
-func NewAdminHandler(userRepo domain.UserRepository) *AdminHandler {
-	return &AdminHandler{userRepo: userRepo}
+func NewAdminHandler(userRepo domain.UserRepository, metrics domain.AnalyticsMetricsProvider) *AdminHandler {
+	return &AdminHandler{userRepo: userRepo, metrics: metrics}
 }
 
 // UpdateUserPlanRequest is the JSON body for POST /admin/user/plan.
@@ -62,6 +63,18 @@ func (h *AdminHandler) UpdateUserPlan(w http.ResponseWriter, r *http.Request) {
 	jsonOK(w, map[string]interface{}{
 		"email": user.Email,
 		"plan":  user.Plan,
+	})
+}
+
+// FunnelMetrics handles GET /admin/metrics/funnel (secret-key protected).
+func (h *AdminHandler) FunnelMetrics(w http.ResponseWriter, r *http.Request) {
+	if h.metrics == nil {
+		jsonError(w, "metrics provider unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	jsonOK(w, map[string]interface{}{
+		"snapshot": h.metrics.Snapshot(),
 	})
 }
 

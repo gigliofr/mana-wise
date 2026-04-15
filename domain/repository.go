@@ -30,6 +30,13 @@ type UserRepository interface {
 	CheckAndIncrementDailyAnalyses(ctx context.Context, userID, today string, limit int) (bool, error)
 }
 
+// PasswordResetTokenRepository defines persistence operations for one-time
+// password reset tokens.
+type PasswordResetTokenRepository interface {
+	Create(ctx context.Context, token *PasswordResetToken) error
+	Consume(ctx context.Context, token string) (*PasswordResetToken, error)
+}
+
 // DeckRepository defines persistence operations for decks.
 type DeckRepository interface {
 	FindByID(ctx context.Context, id string) (*Deck, error)

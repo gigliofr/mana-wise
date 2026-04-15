@@ -41,12 +41,15 @@ web/              → Vite + React SPA
 | GET    | `/api/v1/meta/{format}` | — | Meta snapshot with archetype distribution and trend data (formats: modern, legacy, pioneer, standard) |
 | POST   | `/api/v1/auth/register` | — | Register |
 | POST   | `/api/v1/auth/login` | — | Login |
+| POST   | `/api/v1/auth/forgot-password` | — | Request password reset email (always returns accepted) |
+| POST   | `/api/v1/auth/reset-password` | — | Reset password using one-time token |
 | GET    | `/api/v1/auth/me` | JWT | Current user |
 | POST   | `/api/v1/analyze` | JWT + Freemium | Analyze decklist |
 | POST   | `/api/v1/matchup/simulate` | JWT | Simulate matchup matrix (play/draw aware, meta-weighted, weakness diagnosis) |
 | POST   | `/api/v1/sideboard/plan` | JWT | Build matchup-specific sideboard ins/outs |
 | POST   | `/api/v1/mulligan/simulate` | JWT | Monte Carlo keep-rate simulation by hand size |
 | POST   | `/api/v1/deck/classify` | JWT | Classify deck fingerprint (archetype, color identity, curve, confidence) |
+| GET    | `/api/v1/decks/{id}/summary` | JWT | Aggregated deck snapshot (cards count, legality map, estimated prices, missing prices) |
 | GET    | `/api/v1/decks/{id}/price` | JWT | Deck-centric price aggregation (USD/EUR totals + per-card lines, main/sideboard split) |
 | GET    | `/api/v1/decks/{id}/budget?target=200` | JWT | Budget optimizer with replacement suggestions to reach target USD |
 | GET    | `/api/v1/decks/{id}/analysis` | JWT | Deterministic analysis + optional fingerprint for a saved deck |
@@ -71,6 +74,7 @@ web/              → Vite + React SPA
 | POST   | `/api/v1/ota/release` | JWT | Publish OTA firmware release (checksum-verified) |
 | POST   | `/api/v1/ota/report-boot` | JWT | Report boot status; failed triggers rollback |
 | GET    | `/api/v1/ota/manifest` | JWT | Current/previous OTA release metadata |
+| GET    | `/api/v1/admin/metrics/funnel` | `X-Admin-Secret` | Runtime funnel snapshot (event counters, AI fallback counters, forwarding errors) |
 
 `POST /api/v1/embed/batch` body:
 
@@ -131,6 +135,19 @@ Every `/api/v1/analyze` response includes `"ai_source"` indicating which tier pr
 See `.env.example` for all variables.  
 Required: `MONGODB_URI`, `JWT_SECRET`.  
 Optional: `OPENAI_API_KEY` or `GEMINI_API_KEY` (AI suggestions fall back to internal rules if absent).
+
+### Runtime / CORS variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MANAWISE_ALLOWED_ORIGINS` | `*` in development, empty in non-development | Comma-separated allowlist of origins for CORS. In non-development, when empty, cross-origin requests are blocked by default. |
+| `SMTP_HOST` | — | SMTP host for transactional auth emails |
+| `SMTP_PORT` | — | SMTP port |
+| `SMTP_USER` | — | SMTP username |
+| `SMTP_KEY` | — | SMTP password/API key |
+| `MAIL_FROM` | — | Sender email address |
+| `FRONTEND_RESET_PASSWORD_URL` | `/reset-password` fallback | Optional absolute frontend URL used in reset email links |
+| `PASSWORD_RESET_TOKEN_TTL_MINUTES` | `30` | Password reset token expiry in minutes |
 
 ### Key AI variables
 
@@ -206,6 +223,19 @@ Tracked events:
 - `analysis_completed`
 - `daily_limit_reached`
 - `upgrade_clicked`
+- `deck_saved`
+- `sideboard_suggest_generated`
+
+Runtime metrics endpoint (`GET /api/v1/admin/metrics/funnel`) returns an in-memory snapshot with:
+
+- `total_events`
+- `event_counts`
+- `analysis_fallbacks`
+- `analysis_by_ai_source`
+- `forwarding_errors`
+- `last_event_at_unix_ms`
+
+Use header `X-Admin-Secret` with the value of `ADMIN_SECRET`.
 
 ## OTA (secure update flow)
 

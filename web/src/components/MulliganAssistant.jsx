@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
+import { apiRequest, throwIfNotOK } from '../lib/apiClient'
 
-const API = '/api/v1'
 const FORMATS = ['standard', 'pioneer', 'modern', 'legacy', 'vintage', 'commander', 'pauper']
 const ARCHETYPES = ['', 'aggro', 'midrange', 'control', 'combo', 'ramp']
 
@@ -29,24 +29,28 @@ export default function MulliganAssistant({ token, user, decklist: decklistProp,
   }, [formatProp])
 
   useEffect(() => {
-    if (!token) return
-    setLoadingSavedDecks(true)
-    fetch(`${API}/decks`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then(r => r.json())
-      .then(decks => {
-        const allDecks = Array.isArray(decks) ? decks : []
+    let cancelled = false
+    async function loadDecks() {
+      if (!token) return
+      setLoadingSavedDecks(true)
+      try {
+        const { data } = await apiRequest('/decks', { token })
+        if (cancelled) return
+        const allDecks = Array.isArray(data) ? data : []
         const ownedDecks = user?.id
           ? allDecks.filter(d => d?.user_id === user.id)
           : allDecks
         setSavedDecks(ownedDecks)
-        setLoadingSavedDecks(false)
-      })
-      .catch(err => {
+      } catch (err) {
         console.error('Failed to load saved decks:', err)
-        setLoadingSavedDecks(false)
-      })
+      } finally {
+        if (!cancelled) setLoadingSavedDecks(false)
+      }
+    }
+    loadDecks()
+    return () => {
+      cancelled = true
+    }
   }, [token, user?.id])
 
   async function runSimulation(e) {
@@ -62,16 +66,12 @@ export default function MulliganAssistant({ token, user, decklist: decklistProp,
         iterations: Number(iterations) || 1000,
       }
       if (archetype) payload.archetype = archetype
-      const res = await fetch(`${API}/mulligan/simulate`, {
+      const { res, data } = await apiRequest('/mulligan/simulate', {
+        token,
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(payload),
+        body: payload,
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || messages.mulliganFailed)
+      throwIfNotOK(res, data, messages.mulliganFailed)
       setResult(data)
     } catch (err) {
       setError(err.message)

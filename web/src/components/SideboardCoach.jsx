@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import CardHoverPreview from './CardHoverPreview'
+import { apiRequest, throwIfNotOK } from '../lib/apiClient'
 
-const API = '/api/v1'
 const ARCHETYPES = ['aggro', 'midrange', 'control', 'combo', 'ramp']
 const FORMATS = ['standard', 'pioneer', 'modern', 'legacy', 'vintage', 'commander', 'pauper']
 
@@ -28,19 +28,26 @@ export default function SideboardCoach({ token, user, decklist: decklistProp, fo
     }
   }, [formatProp])
   useEffect(() => {
-    if (!token) return
-    setLoadingSavedDecks(true)
-    fetch(`${API}/decks`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => r.json())
-      .then(decks => {
-        const allDecks = Array.isArray(decks) ? decks : []
+    let cancelled = false
+    async function loadDecks() {
+      if (!token) return
+      setLoadingSavedDecks(true)
+      try {
+        const { data } = await apiRequest('/decks', { token })
+        if (cancelled) return
+        const allDecks = Array.isArray(data) ? data : []
         const ownedDecks = user?.id
           ? allDecks.filter(d => d?.user_id === user.id)
           : allDecks
         setSavedDecks(ownedDecks)
-        setLoadingSavedDecks(false)
-      })
-      .catch(() => setLoadingSavedDecks(false))
+      } finally {
+        if (!cancelled) setLoadingSavedDecks(false)
+      }
+    }
+    loadDecks()
+    return () => {
+      cancelled = true
+    }
   }, [token, user?.id])
 
   async function runPlan(e) {
@@ -49,21 +56,17 @@ export default function SideboardCoach({ token, user, decklist: decklistProp, fo
     setResult(null)
     setLoading(true)
     try {
-      const res = await fetch(`${API}/sideboard/plan`, {
+      const { res, data } = await apiRequest('/sideboard/plan', {
+        token,
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
+        body: {
           main_decklist: mainDecklist,
           sideboard_decklist: sideboard,
           opponent_archetype: opponent,
           format,
-        }),
+        },
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error || messages.sideboardFailed)
+      throwIfNotOK(res, data, messages.sideboardFailed)
       setResult(data)
     } catch (err) {
       setError(err.message)

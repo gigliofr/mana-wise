@@ -17,23 +17,26 @@ import (
 
 // RouterDeps groups all handler dependencies.
 type RouterDeps struct {
-	CardRepo       domain.CardRepository
-	UserRepo       domain.UserRepository
-	DeckRepo       domain.DeckRepository
-	AnalyzeUC      *usecase.AnalyzeDeckUseCase
-	AISuggester    *usecase.AISuggester
-	EmbedBatchUC   *usecase.EmbedBatchUseCase
-	ResolveCardUC  *usecase.ResolveCardByNameUseCase
-	SideboardUC    *usecase.SideboardCoachUseCase
-	MulliganUC     *usecase.MulliganAssistantUseCase
-	MatchupUC      *usecase.MatchupSimulatorUseCase
-	DeckClassifyUC *usecase.DeckClassifierUseCase
-	OTAUC          *usecase.OTAUpdateUseCase
-	ScoreUC        *usecase.ScoreUseCase
-	ImpactScoreUC  *usecase.ImpactScoreUseCase
-	Analytics      domain.AnalyticsTracker
-	JWTSecret      string
-	ExpiryHours    int
+	CardRepo         domain.CardRepository
+	UserRepo         domain.UserRepository
+	DeckRepo         domain.DeckRepository
+	AnalyzeUC        *usecase.AnalyzeDeckUseCase
+	AISuggester      *usecase.AISuggester
+	EmbedBatchUC     *usecase.EmbedBatchUseCase
+	ResolveCardUC    *usecase.ResolveCardByNameUseCase
+	SideboardUC      *usecase.SideboardCoachUseCase
+	MulliganUC       *usecase.MulliganAssistantUseCase
+	MatchupUC        *usecase.MatchupSimulatorUseCase
+	DeckClassifyUC   *usecase.DeckClassifierUseCase
+	OTAUC            *usecase.OTAUpdateUseCase
+	ScoreUC          *usecase.ScoreUseCase
+	ImpactScoreUC    *usecase.ImpactScoreUseCase
+	Analytics        domain.AnalyticsTracker
+	AnalyticsMetrics domain.AnalyticsMetricsProvider
+	PasswordResetRepo domain.PasswordResetTokenRepository
+	Mailer            domain.EmailSender
+	JWTSecret        string
+	ExpiryHours      int
 }
 
 // NewRouter builds and returns the chi router with all routes registered.
@@ -48,7 +51,9 @@ func NewRouter(deps RouterDeps) http.Handler {
 	r.Use(corsMiddleware)
 
 	// Instantiate handlers.
-	authH := handlers.NewAuthHandler(deps.UserRepo, deps.JWTSecret, deps.ExpiryHours)
+	authH := handlers.NewAuthHandler(deps.UserRepo, deps.JWTSecret, deps.ExpiryHours).
+		WithPasswordResetRepo(deps.PasswordResetRepo).
+		WithMailer(deps.Mailer)
 	analyzeH := handlers.NewAnalyzeHandler(deps.AnalyzeUC, deps.AISuggester, deps.UserRepo, deps.Analytics)
 	cardsH := handlers.NewCardsHandler(deps.CardRepo, deps.ResolveCardUC)
 	sideboardH := handlers.NewSideboardCoachHandler(deps.SideboardUC)
@@ -58,14 +63,14 @@ func NewRouter(deps RouterDeps) http.Handler {
 	embedH := handlers.NewEmbedBatchHandler(deps.EmbedBatchUC)
 	otaH := handlers.NewOTAHandler(deps.OTAUC)
 	analyticsH := handlers.NewAnalyticsHandler(deps.Analytics)
-	adminH := handlers.NewAdminHandler(deps.UserRepo)
+	adminH := handlers.NewAdminHandler(deps.UserRepo, deps.AnalyticsMetrics)
 	scoreH := handlers.NewScoreHandler(deps.AnalyzeUC, deps.ScoreUC, deps.ImpactScoreUC, deps.UserRepo)
 	metaH := handlers.NewMetaHandler()
 	notificationH := handlers.NewNotificationHandler(deps.DeckRepo, deps.CardRepo)
 	var deckH *handlers.DeckHandler
 	var deckImportExportH *handlers.DeckImportExportHandler
 	if deps.DeckRepo != nil {
-		deckH = handlers.NewDeckHandler(deps.DeckRepo, deps.UserRepo, deps.CardRepo, deps.AnalyzeUC, deps.DeckClassifyUC, deps.MulliganUC)
+		deckH = handlers.NewDeckHandler(deps.DeckRepo, deps.UserRepo, deps.CardRepo, deps.AnalyzeUC, deps.DeckClassifyUC, deps.MulliganUC).WithTracker(deps.Analytics)
 		deckImportExportH = handlers.NewDeckImportExportHandler(deps.DeckRepo, deps.UserRepo, deps.CardRepo, deps.ResolveCardUC)
 	}
 
@@ -84,6 +89,8 @@ func NewRouter(deps RouterDeps) http.Handler {
 		r.Route("/auth", func(r chi.Router) {
 			r.With(authRateMW).Post("/register", authH.Register)
 			r.With(authRateMW).Post("/login", authH.Login)
+			r.With(authRateMW).Post("/forgot-password", authH.ForgotPassword)
+			r.With(authRateMW).Post("/reset-password", authH.ResetPassword)
 			r.With(jwtMW).Get("/me", authH.Me)
 			r.With(jwtMW).Post("/plan", authH.UpdatePlan)
 		})
@@ -117,6 +124,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 				r.Get("/decks", deckH.List)
 				r.Post("/decks", deckH.Create)
 				r.Get("/decks/{id}", deckH.Get)
+				r.Get("/decks/{id}/summary", deckH.Summary)
 				r.Get("/decks/{id}/price", deckH.Price)
 				r.Get("/decks/{id}/budget", deckH.Budget)
 				r.Get("/decks/{id}/analysis", deckH.Analysis)
@@ -147,6 +155,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 		r.Route("/admin", func(r chi.Router) {
 			r.Use(handlers.AdminSecretMiddleware)
 			r.Post("/user/plan", adminH.UpdateUserPlan)
+			r.Get("/metrics/funnel", adminH.FunnelMetrics)
 		})
 	})
 
@@ -187,14 +196,63 @@ func spaFallbackHandler(distDir string) http.Handler {
 // corsMiddleware sets permissive CORS headers for development.
 // In production, restrict AllowedOrigins to the actual domain.
 func corsMiddleware(next http.Handler) http.Handler {
+	allowedOrigins := allowedOriginsFromEnv()
+	allowAny := len(allowedOrigins) == 1 && allowedOrigins[0] == "*"
+	allowedSet := map[string]bool{}
+	for _, origin := range allowedOrigins {
+		allowedSet[origin] = true
+	}
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+		origin := strings.TrimSpace(r.Header.Get("Origin"))
+		allowOrigin := ""
+		if allowAny {
+			allowOrigin = "*"
+		} else if origin != "" && allowedSet[origin] {
+			allowOrigin = origin
+		}
+
+		if allowOrigin != "" {
+			w.Header().Set("Access-Control-Allow-Origin", allowOrigin)
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+			w.Header().Set("Vary", "Origin")
+		}
+
 		if r.Method == http.MethodOptions {
+			if origin != "" && allowOrigin == "" {
+				http.Error(w, `{"error":"origin not allowed"}`, http.StatusForbidden)
+				return
+			}
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func allowedOriginsFromEnv() []string {
+	raw := strings.TrimSpace(os.Getenv("MANAWISE_ALLOWED_ORIGINS"))
+	if raw == "" {
+		env := strings.ToLower(strings.TrimSpace(os.Getenv("ENVIRONMENT")))
+		if env == "" || env == "development" || env == "dev" {
+			return []string{"*"}
+		}
+		// Production-safe default: no cross-origin access unless explicitly allowlisted.
+		return []string{}
+	}
+
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		origin := strings.TrimSpace(p)
+		if origin == "" {
+			continue
+		}
+		if origin == "*" {
+			return []string{"*"}
+		}
+		out = append(out, origin)
+	}
+	return out
 }

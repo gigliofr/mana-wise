@@ -16,6 +16,7 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import CardHoverPreview from './CardHoverPreview'
+import { apiRequest, throwIfNotOK } from '../lib/apiClient'
 
 const BOARD_MAIN = 'main'
 const BOARD_SIDE = 'side'
@@ -187,16 +188,12 @@ export default function VisualDeckBuilder({ token, messages, decklist, onDeckCha
       setMetaLoading(true)
       setMetaError('')
       try {
-        const res = await fetch('/api/v1/cards/metadata/batch', {
+        const { res, data } = await apiRequest('/cards/metadata/batch', {
+          token,
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ names }),
+          body: { names },
         })
-        const data = await res.json()
-        if (!res.ok) throw new Error(data?.error || messages?.builderMetadataLoadFailed || 'Metadata load failed')
+        throwIfNotOK(res, data, messages?.builderMetadataLoadFailed || 'Metadata load failed')
         const nextMap = {}
         for (const item of (data?.items || [])) {
           const key = String(item?.name || '').trim().toLowerCase()

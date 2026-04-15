@@ -12,7 +12,11 @@ function ScorePanel({ scoreDetail = null, loading = false, error = null, token, 
   if (loading) {
     return (
       <div className="flex justify-center items-center p-8">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
+        <div
+          className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"
+          role="progressbar"
+          aria-label="Loading score details"
+        />
       </div>
     );
   }
@@ -74,9 +78,9 @@ function ScorePanel({ scoreDetail = null, loading = false, error = null, token, 
           Probability of drawing optimal, insufficient, or excessive mana in your opening hand and first draws
         </p>
         <ManaChart 
-          manaScrew={manaScrew}
-          manaFlood={manaFlood}
-          sweetSpot={sweetSpot}
+          manaScrew={mana_screw}
+          manaFlood={mana_flood}
+          sweetSpot={sweet_spot}
         />
       </div>
 

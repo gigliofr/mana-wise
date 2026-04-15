@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
+import { apiRequest } from '../lib/apiClient'
 
-const API = '/api/v1'
 const previewCache = new Map()
 const STICKY_PREF_KEY = 'mw_card_preview_sticky_default'
 const CACHE_MAX_ENTRIES = 220
@@ -174,14 +174,8 @@ async function fetchFromScryfallSearch(cardName) {
 
 async function fetchFromBackend(cardName, token) {
   if (!token) throw new Error('missing_token')
-  const url = `${API}/cards/search?name=${encodeURIComponent(cardName)}`
-  const res = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  })
+  const { res, data } = await apiRequest(`/cards/search?name=${encodeURIComponent(cardName)}`, { token })
   if (!res.ok) throw new Error('backend_not_found')
-  const data = await res.json()
   return {
     name: data?.name || cardName,
     mana_cost: data?.mana_cost || '',

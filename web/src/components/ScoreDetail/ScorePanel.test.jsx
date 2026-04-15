@@ -60,12 +60,12 @@ describe('ScorePanel Integration Tests', () => {
     expect(screen.getByText(/Deck Score Analysis/)).toBeInTheDocument();
 
     // Check Power Level section
-    expect(screen.getByText(/Power Level/)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Power Level' })).toBeInTheDocument();
 
     // Check Mana Distribution section
     expect(screen.getByText(/Mana Distribution Analysis/)).toBeInTheDocument();
-    expect(screen.getByText(/15\.2%/)).toBeInTheDocument(); // Mana Screw
-    expect(screen.getByText(/76\.1%/)).toBeInTheDocument(); // Sweet Spot
+    expect(screen.getAllByText(/15\.2%/)[0]).toBeInTheDocument(); // Mana Screw
+    expect(screen.getAllByText(/76\.1%/)[0]).toBeInTheDocument(); // Sweet Spot
 
     // Check Mana Curve section
     expect(screen.getByText(/Mana Curve & Tipping Point/)).toBeInTheDocument();
@@ -115,7 +115,7 @@ describe('ScorePanel Integration Tests', () => {
 
     // Verify prices are displayed
     expect(screen.getByText(/15\.00/)).toBeInTheDocument();
-    expect(screen.getByText(/5\.00/)).toBeInTheDocument();
+    expect(screen.getByText('$5.00', { selector: 'td' })).toBeInTheDocument();
   });
 
   it('handles missing optional fields gracefully', () => {

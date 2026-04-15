@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import CardHoverPreview from './CardHoverPreview'
-
-const API = '/api/v1'
+import { apiRequest, throwIfNotOK } from '../lib/apiClient'
 
 export default function DeckLibrary({
   token,
@@ -20,11 +19,18 @@ export default function DeckLibrary({
   const [page, setPage] = useState(0)
   const [expandedDecks, setExpandedDecks] = useState({})
   const [deckLegality, setDeckLegality] = useState({})
+  const [deckSummaries, setDeckSummaries] = useState({})
   const [cardMetadata, setCardMetadata] = useState({})
 
   const ITEMS_PER_PAGE = 3
-  const paginatedDecks = decks.slice(page * ITEMS_PER_PAGE, (page + 1) * ITEMS_PER_PAGE)
-  const totalPages = Math.ceil(decks.length / ITEMS_PER_PAGE)
+  const paginatedDecks = useMemo(
+    () => decks.slice(page * ITEMS_PER_PAGE, (page + 1) * ITEMS_PER_PAGE),
+    [decks, page],
+  )
+  const totalPages = useMemo(
+    () => Math.ceil(decks.length / ITEMS_PER_PAGE),
+    [decks],
+  )
 
   const isPro = (user?.plan || '').toLowerCase() === 'pro'
   const canSaveMore = isPro || decks.length < 1
@@ -43,11 +49,8 @@ export default function DeckLibrary({
       setLoading(true)
       setError('')
       try {
-        const res = await fetch(`${API}/decks`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
-        const data = await res.json()
-        if (!res.ok) throw new Error(data.error || messages.deckLoadFailed)
+        const { res, data } = await apiRequest('/decks', { token })
+        throwIfNotOK(res, data, messages.deckLoadFailed)
         if (!cancelled) {
           const allDecks = Array.isArray(data) ? data : []
           const ownedDecks = user?.id
@@ -70,9 +73,9 @@ export default function DeckLibrary({
   useEffect(() => {
     let cancelled = false
 
-    async function ensureLegality() {
+    async function ensureDeckSummaries() {
       const pending = paginatedDecks
-        .filter(deck => deck?.id && !deckLegality[deck.id])
+        .filter(deck => deck?.id && !deckSummaries[deck.id])
         .map(deck => deck.id)
 
       if (pending.length === 0) return
@@ -96,12 +99,32 @@ export default function DeckLibrary({
       await Promise.all(
         pending.map(async deckID => {
           try {
-            const res = await fetch(`${API}/decks/${deckID}/legality`, {
-              headers: { Authorization: `Bearer ${token}` },
-            })
-            const data = await res.json()
-            if (!res.ok) throw new Error(data.error || 'legality fetch failed')
-            const formatMap = data?.formats || {}
+            const { res: summaryRes, data: summaryData } = await apiRequest(`/decks/${deckID}/summary`, { token })
+            let formatMap = {}
+
+            if (summaryRes.ok) {
+              if (!cancelled) {
+                setDeckSummaries(prev => ({
+                  ...prev,
+                  [deckID]: summaryData,
+                }))
+              }
+              formatMap = summaryData?.legality || {}
+            } else {
+              const { res, data } = await apiRequest(`/decks/${deckID}/legality`, { token })
+              throwIfNotOK(res, data, 'legality fetch failed')
+              formatMap = data?.formats || {}
+              if (!cancelled) {
+                setDeckSummaries(prev => ({
+                  ...prev,
+                  [deckID]: {
+                    deck_id: deckID,
+                    legality: formatMap,
+                  },
+                }))
+              }
+            }
+
             const cardIllegalByFormat = {}
             Object.keys(formatMap).forEach(fmt => {
               const illegal = formatMap?.[fmt]?.illegal_cards || []
@@ -140,11 +163,11 @@ export default function DeckLibrary({
       )
     }
 
-    ensureLegality()
+    ensureDeckSummaries()
     return () => {
       cancelled = true
     }
-  }, [paginatedDecks, token])
+  }, [paginatedDecks, token, deckSummaries])
 
   useEffect(() => {
     let cancelled = false
@@ -162,16 +185,12 @@ export default function DeckLibrary({
       }
 
       try {
-        const res = await fetch(`${API}/cards/metadata/batch`, {
+        const { res, data } = await apiRequest('/cards/metadata/batch', {
+          token,
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ names }),
+          body: { names },
         })
-        const data = await res.json()
-        if (!res.ok) throw new Error(data?.error || 'metadata fetch failed')
+        throwIfNotOK(res, data, 'metadata fetch failed')
 
         const next = {}
         for (const item of (data?.items || [])) {
@@ -274,21 +293,17 @@ export default function DeckLibrary({
       }
       const deckName = (name || '').trim() || `${messages.defaultDeckName} ${new Date().toISOString().slice(0, 10)}`
       try {
-        const res = await fetch(`${API}/decks`, {
+        const { res, data } = await apiRequest('/decks', {
+          token,
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
+          body: {
             name: deckName,
             format: currentFormat || 'standard',
             cards,
             is_public: false,
-          }),
+          },
         })
-        const data = await res.json()
-        if (!res.ok) throw new Error(data.error || messages.deckSaveFailed)
+        throwIfNotOK(res, data, messages.deckSaveFailed)
         setDecks(prev => [data, ...prev])
         setName('')
         setEditedDecklist('')
@@ -302,21 +317,24 @@ export default function DeckLibrary({
   async function deleteDeck(id) {
     setError('')
     try {
-      const res = await fetch(`${API}/decks/${id}`, {
+      const { res, data } = await apiRequest(`/decks/${id}`, {
+        token,
         method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
       })
       if (!res.ok && res.status !== 204) {
-        let msg = messages.deckDeleteFailed
-        try {
-          const data = await res.json()
-          msg = data.error || msg
-        } catch {
-          // ignore json parse failures
-        }
-        throw new Error(msg)
+        throw new Error(data?.error || messages.deckDeleteFailed)
       }
       setDecks(prev => prev.filter(d => d.id !== id))
+      setDeckLegality(prev => {
+        const next = { ...prev }
+        delete next[id]
+        return next
+      })
+      setDeckSummaries(prev => {
+        const next = { ...prev }
+        delete next[id]
+        return next
+      })
     } catch (err) {
       setError(err.message)
     }
@@ -474,6 +492,8 @@ export default function DeckLibrary({
                   const chipTitle = isLegalityUnavailable
                     ? (messages.legalityUnavailableHint || 'Verifica legalita non disponibile per questo mazzo')
                     : undefined
+                  const summary = deckSummaries[deck.id]
+                  const estimatedUSD = Number(summary?.estimated_usd || 0)
 
                   return (
                 <div>
@@ -495,6 +515,11 @@ export default function DeckLibrary({
                     >
                       {chipText}
                     </span>
+                    {estimatedUSD > 0 && (
+                      <span style={{ fontSize: '.72rem', color: 'var(--muted)' }} title="Estimated deck value in USD">
+                        {`~$${estimatedUSD.toFixed(2)}`}
+                      </span>
+                    )}
                   </div>
                   <div style={{ marginTop: 6, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                     {(isDeckExpanded(deck.id) ? mainDeckCards(deck) : mainDeckCards(deck).slice(0, 6)).map((c, idx) => {

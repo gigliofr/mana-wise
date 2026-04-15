@@ -99,9 +99,11 @@ func (h *AnalyzeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.UserIDFromContext(r.Context())
 	plan := middleware.PlanFromContext(r.Context())
 	_ = h.tracker.Track(r.Context(), userID, "analysis_completed", map[string]interface{}{
-		"format":     req.Format,
-		"plan":       plan,
-		"latency_ms": result.Result.LatencyMs,
+		"format":      req.Format,
+		"plan":        plan,
+		"latency_ms":  result.Result.LatencyMs,
+		"ai_source":   aiSource,
+		"ai_fallback": strings.TrimSpace(aiError) != "",
 	})
 
 	legality := usecase.DetermineDeckLegalityAllFormats(result.RawCards, result.Quantities)

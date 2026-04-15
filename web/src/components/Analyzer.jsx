@@ -3,8 +3,8 @@ import ManaCurveChart from './ManaCurveChart'
 import InteractionPanel from './InteractionPanel'
 import CardHoverPreview from './CardHoverPreview'
 import { ManaSymbol, ManaSymbolGroup, isManaColorCode } from './ManaSymbol'
+import { apiRequest } from '../lib/apiClient'
 
-const API = '/api/v1'
 const FORMATS = ['standard', 'pioneer', 'modern', 'legacy', 'vintage', 'commander', 'pauper']
 
 const SAMPLE_DECK_STANDARD = `// Sample Modern Burn deck
@@ -147,10 +147,7 @@ export default function Analyzer({ token, user, locale, messages, decklist: deck
     async function loadDecks() {
       setLoadingSavedDecks(true)
       try {
-        const res = await fetch(`${API}/decks`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
-        const data = await res.json()
+        const { res, data } = await apiRequest('/decks', { token })
         if (res.ok && !cancelled) {
           const allDecks = Array.isArray(data) ? data : []
           const ownedDecks = user?.id
@@ -183,13 +180,10 @@ export default function Analyzer({ token, user, locale, messages, decklist: deck
   async function onUpgradeClick(e) {
     e.preventDefault()
     try {
-      await fetch(`${API}/analytics/upgrade-click`, {
+      await apiRequest('/analytics/upgrade-click', {
+        token,
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({ source: 'analyzer_banner' }),
+        body: { source: 'analyzer_banner' },
       })
     } catch {
       // Best-effort tracking.
@@ -204,22 +198,18 @@ export default function Analyzer({ token, user, locale, messages, decklist: deck
     setFingerprint(null)
     setLoading(true)
     try {
-      const headers = {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-        'Accept-Language': locale || 'it',
-      }
-
       const [analysisOutcome, fingerprintOutcome] = await Promise.allSettled([
-        fetch(`${API}/analyze`, {
+        apiRequest('/analyze', {
+          token,
           method: 'POST',
-          headers,
-          body: JSON.stringify({ decklist, format, locale }),
+          headers: { 'Accept-Language': locale || 'it' },
+          body: { decklist, format, locale },
         }),
-        fetch(`${API}/deck/classify`, {
+        apiRequest('/deck/classify', {
+          token,
           method: 'POST',
-          headers,
-          body: JSON.stringify({ decklist, format }),
+          headers: { 'Accept-Language': locale || 'it' },
+          body: { decklist, format },
         }),
       ])
 
@@ -227,8 +217,7 @@ export default function Analyzer({ token, user, locale, messages, decklist: deck
         throw new Error(messages.analysisFailed)
       }
 
-      const res = analysisOutcome.value
-      const data = await res.json()
+      const { res, data } = analysisOutcome.value
       if (!res.ok) {
         if (typeof data?.remaining === 'number') {
           setRemaining(data.remaining)
@@ -240,8 +229,7 @@ export default function Analyzer({ token, user, locale, messages, decklist: deck
       setTab('mana')
 
       if (fingerprintOutcome.status === 'fulfilled') {
-        const fingerprintRes = fingerprintOutcome.value
-        const fingerprintData = await fingerprintRes.json()
+        const { res: fingerprintRes, data: fingerprintData } = fingerprintOutcome.value
         if (fingerprintRes.ok) {
           setFingerprint(fingerprintData)
         }
