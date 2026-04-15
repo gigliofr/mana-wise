@@ -111,6 +111,12 @@ AI rollout smoke-check helper:
 ./scripts/verify_ai_rollout.ps1 -ApiBaseUrl "http://localhost:8080/api/v1" -Token "<JWT>" -Calls 10
 ```
 
+Unified release verification helper:
+
+```powershell
+./scripts/verify_release.ps1
+```
+
 ## AI pipeline
 
 ManaWise uses a multi-tier AI routing system controlled by environment variables.

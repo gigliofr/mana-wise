@@ -12,6 +12,18 @@ Scope: Gradual rollout for AI suggestions pipeline (`/api/v1/analyze`)
 - `cd web && npm test`
 - `cd web && npm run build`
 
+Unified local verification command:
+
+```powershell
+./scripts/verify_release.ps1
+```
+
+With AI smoke and metrics:
+
+```powershell
+./scripts/verify_release.ps1 -Token "<JWT>" -AdminSecret "<ADMIN_SECRET>"
+```
+
 ## 2) Environment baseline
 Recommended baseline before progressive rollout:
 
