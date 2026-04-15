@@ -136,6 +136,31 @@ See `.env.example` for all variables.
 Required: `MONGODB_URI`, `JWT_SECRET`.  
 Optional: `OPENAI_API_KEY` or `GEMINI_API_KEY` (AI suggestions fall back to internal rules if absent).
 
+### Coolify / single-service deployment
+
+If you deploy ManaWise as a single service in Coolify, set at least:
+
+```text
+PORT=8080
+ENVIRONMENT=production
+LOG_LEVEL=INFO
+APP_TIMEZONE=Europe/Rome
+MONGODB_URI=...
+MONGODB_DB_NAME=manawise
+JWT_SECRET=...
+JWT_EXPIRY_HOURS=72
+MANAWISE_ALLOWED_ORIGINS=https://your-frontend-domain
+FRONTEND_RESET_PASSWORD_URL=https://your-frontend-domain
+PASSWORD_RESET_TOKEN_TTL_MINUTES=30
+SMTP_HOST=...
+SMTP_PORT=587
+SMTP_USER=...
+SMTP_KEY=...
+MAIL_FROM=...
+```
+
+Email handling uses the same SMTP variables as the previous deployment flow, so reset and transactional mails keep working with the same provider settings.
+
 ### Runtime / CORS variables
 
 | Variable | Default | Description |
