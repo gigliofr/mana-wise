@@ -2,7 +2,7 @@
 
 Versione: 1.0  
 Data: 2026-03-16  
-Stato: Proposto (pronto per esecuzione)
+Stato: In esecuzione avanzata (A+B+C+D+E quasi completate)
 
 ## 1) Obiettivo generale
 Realizzare una pipeline AI robusta e sostenibile che:
@@ -218,16 +218,22 @@ Rollback:
 - impostare AI_MODE=internal_only (safe mode immediato).
 
 ## 12) Checklist esecutiva
-- [ ] Definire env e parsing config nuovi.
-- [ ] Implementare adapter provider secondario.
-- [ ] Implementare policy fallback + retry/cooldown.
-- [ ] Implementare motore internal rules V1.
-- [ ] Integrare AI_MODE router.
-- [ ] Aggiornare risposta API con ai_source.
-- [ ] Aggiornare UI con stato sorgente e messaggi fallback.
-- [ ] Scrivere test unit/integration/snapshot.
-- [ ] Aggiornare README e runbook operativo.
+- [x] Definire env e parsing config nuovi.
+- [x] Implementare adapter provider secondario.
+- [x] Implementare policy fallback + retry/cooldown.
+- [x] Implementare motore internal rules V1.
+- [x] Integrare AI_MODE router.
+- [x] Aggiornare risposta API con ai_source.
+- [x] Aggiornare UI con stato sorgente e messaggi fallback.
+- [x] Scrivere test unit/integration/snapshot.
+- [x] Aggiornare README e runbook operativo.
 - [ ] Eseguire rollout graduale.
+
+### Aggiornamento stato (2026-04-16)
+- Completato hardening AI multi-tier con fallback configurabile (`AI_FALLBACK_ON_STATUS`, `AI_FALLBACK_ON_TIMEOUT_MS`).
+- Completati test unitari fallback chain primario/secondario/interno e snapshot UI fallback.
+- Completato runbook operativo fallback AI e allineamento documentazione principale.
+- Rimane operativo solo il rollout graduale su ambienti con monitoraggio KPI post-rilascio.
 
 ## 13) Allegato operativo (sottomissione)
 Per sottomissioni future allegare questo file insieme a:
