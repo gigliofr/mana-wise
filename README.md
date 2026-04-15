@@ -105,6 +105,12 @@ For local testing you can switch a user plan quickly:
 ./scripts/set_user_plan.ps1 -Email "you@example.com" -Plan pro
 ```
 
+AI rollout smoke-check helper:
+
+```powershell
+./scripts/verify_ai_rollout.ps1 -ApiBaseUrl "http://localhost:8080/api/v1" -Token "<JWT>" -Calls 10
+```
+
 ## AI pipeline
 
 ManaWise uses a multi-tier AI routing system controlled by environment variables.

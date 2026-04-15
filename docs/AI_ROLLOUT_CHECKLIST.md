@@ -34,6 +34,17 @@ LLM_SECONDARY_MODEL=gpt-4o-mini
 ## 3) Dev rollout (100%)
 1. Deploy with baseline config.
 2. Execute 10-20 manual `/api/v1/analyze` calls across at least 2 formats.
+	Optional helper script:
+
+```powershell
+./scripts/verify_ai_rollout.ps1 -ApiBaseUrl "http://localhost:8080/api/v1" -Token "<JWT>" -Calls 10
+```
+
+	With metrics snapshot:
+
+```powershell
+./scripts/verify_ai_rollout.ps1 -ApiBaseUrl "http://localhost:8080/api/v1" -Token "<JWT>" -Calls 10 -AdminSecret "<ADMIN_SECRET>"
+```
 3. Validate responses include `ai_source` for every call.
 4. Simulate provider failure and validate fallback:
 - response still contains suggestions
