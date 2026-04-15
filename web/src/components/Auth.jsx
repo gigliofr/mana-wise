@@ -82,12 +82,15 @@ export default function Auth({ onLogin, locale, messages, onLocaleChange }) {
       throwIfNotOK(res, data, 'Request failed')
 
       if (mode === 'login' || mode === 'register') {
+        if (!data?.token || !data?.user) {
+          throw new Error('Request failed')
+        }
         onLogin(data.token, data.user)
         return
       }
 
       if (mode === 'forgot') {
-        setSuccess(data.message || messages.resetLinkSent)
+        setSuccess(data?.message || messages.resetLinkSent)
         return
       }
 

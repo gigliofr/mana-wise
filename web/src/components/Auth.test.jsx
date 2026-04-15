@@ -83,6 +83,24 @@ describe('Auth reset flow', () => {
     }))
   })
 
+  it('uses generic reset success message when forgot-password response is non-json', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      headers: { get: () => 'text/plain' },
+      text: vi.fn().mockResolvedValue('accepted'),
+    }))
+
+    renderAuth()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Forgot password?' }))
+    fireEvent.change(screen.getByPlaceholderText('you@example.com'), { target: { value: 'user@example.com' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Send reset link' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('If the email exists, you will receive a password reset link.')).toBeInTheDocument()
+    })
+  })
+
   it('shows password complexity guidance in register mode', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -147,6 +165,28 @@ describe('Auth reset flow', () => {
     })
 
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('shows fallback error when register response is non-json', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: { get: () => 'text/plain' },
+      text: vi.fn().mockResolvedValue('ok'),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderAuth()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sign up free' }))
+    fireEvent.change(screen.getByPlaceholderText('Your name'), { target: { value: 'User Name' } })
+    fireEvent.change(screen.getByPlaceholderText('you@example.com'), { target: { value: 'user@example.com' } })
+    fireEvent.change(screen.getAllByPlaceholderText('••••••••')[0], { target: { value: 'NewPass123!' } })
+    fireEvent.change(screen.getAllByPlaceholderText('••••••••')[1], { target: { value: 'NewPass123!' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create account' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('Request failed')).toBeInTheDocument()
+    })
   })
 
   it('submits reset token and new password from query param', async () => {
