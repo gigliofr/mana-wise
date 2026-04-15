@@ -65,6 +65,16 @@ func NewAnalyzeDeckUseCase(fetcher CardFetcher, cardRepo domain.CardRepository, 
 // Execute runs the full deterministic analysis pipeline and returns an AnalyzeDeckResponse.
 // It respects ctx deadlines so callers can impose an overall timeout.
 func (uc *AnalyzeDeckUseCase) Execute(ctx context.Context, req AnalyzeDeckRequest) (*AnalyzeDeckResponse, error) {
+	if uc == nil {
+		return nil, fmt.Errorf("analyze usecase is nil")
+	}
+	if uc.fetcher == nil {
+		return nil, fmt.Errorf("card fetcher is not configured")
+	}
+	if uc.cardRepo == nil {
+		return nil, fmt.Errorf("card repository is not configured")
+	}
+
 	if !domain.IsValidFormat(req.Format) {
 		return nil, fmt.Errorf("unsupported format: %s", req.Format)
 	}
@@ -120,6 +130,9 @@ func (uc *AnalyzeDeckUseCase) Execute(ctx context.Context, req AnalyzeDeckReques
 
 	dbIndex := make(map[string]*domain.Card, len(dbCards))
 	for _, c := range dbCards {
+		if c == nil {
+			continue
+		}
 		dbIndex[c.Name] = c
 		dbIndex[strings.ToLower(c.Name)] = c
 	}
@@ -203,6 +216,9 @@ func (uc *AnalyzeDeckUseCase) Execute(ctx context.Context, req AnalyzeDeckReques
 				}
 				return nil, fmt.Errorf("resolve card %q: %w", r.Input.name, r.Err)
 			}
+			if r.Output == nil {
+				return nil, fmt.Errorf("resolve card %q: resolver returned nil output", r.Input.name)
+			}
 			entryCardMap[r.Input.identityKey()] = r.Output
 			// Keep lookup keyed by the original decklist name to support fuzzy/localized matches.
 			dbIndex[r.Input.name] = r.Output
@@ -229,6 +245,9 @@ func (uc *AnalyzeDeckUseCase) Execute(ctx context.Context, req AnalyzeDeckReques
 		if !ok {
 			return nil, fmt.Errorf("card not found: %q", e.name)
 		}
+		if card == nil {
+			return nil, fmt.Errorf("card resolved as nil: %q", e.name)
+		}
 		if !seenMain[card.ID] {
 			mainCards = append(mainCards, card)
 			seenMain[card.ID] = true
@@ -251,6 +270,9 @@ func (uc *AnalyzeDeckUseCase) Execute(ctx context.Context, req AnalyzeDeckReques
 			if !ok {
 				return nil, fmt.Errorf("sideboard card not found: %q", e.name)
 			}
+			if card == nil {
+				return nil, fmt.Errorf("sideboard card resolved as nil: %q", e.name)
+			}
 			sbQty[card.ID] += e.qty
 		}
 		sideboardInfo = &SideboardInfo{Quantities: sbQty, TotalCards: sideboardTotal}
@@ -271,6 +293,9 @@ func (uc *AnalyzeDeckUseCase) Execute(ctx context.Context, req AnalyzeDeckReques
 			}
 			if !ok {
 				return nil, fmt.Errorf("commander card not found: %q", e.name)
+			}
+			if card == nil {
+				return nil, fmt.Errorf("commander card resolved as nil: %q", e.name)
 			}
 			if !seen[card.ID] {
 				cmdCards = append(cmdCards, card)

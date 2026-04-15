@@ -40,6 +40,7 @@ func (f *fakeCardFetcher) GetCardBySetCollector(ctx context.Context, setCode, co
 type fakeCardRepo struct {
 	byName map[string]*domain.Card
 	upsert []*domain.Card
+	findByNamesResult []*domain.Card
 }
 
 func (r *fakeCardRepo) FindByID(ctx context.Context, id string) (*domain.Card, error) {
@@ -58,6 +59,9 @@ func (r *fakeCardRepo) FindByName(ctx context.Context, name string) (*domain.Car
 }
 
 func (r *fakeCardRepo) FindByNames(ctx context.Context, names []string) ([]*domain.Card, error) {
+	if r.findByNamesResult != nil {
+		return r.findByNamesResult, nil
+	}
 	out := make([]*domain.Card, 0, len(names))
 	for _, n := range names {
 		if c, ok := r.byName[n]; ok {
@@ -193,5 +197,39 @@ func TestAnalyzeDeckExecute_ReturnsErrorWhenResolverReturnsNilCard(t *testing.T)
 	})
 	if err == nil {
 		t.Fatal("expected error when resolver returns nil card")
+	}
+}
+
+func TestAnalyzeDeckExecute_DBReturnsNilCardEntry_DoesNotPanic(t *testing.T) {
+	fetcher := &fakeCardFetcher{
+		exact: map[string]*scryfall.ScryfallCard{
+			"Lightning Bolt": {
+				ID:         "bolt-1",
+				Name:       "Lightning Bolt",
+				CMC:        1,
+				TypeLine:   "Instant",
+				OracleText: "Deal 3 damage to any target.",
+				Colors:     []string{"R"},
+				Legalities: map[string]string{"standard": "not_legal", "modern": "legal"},
+			},
+		},
+		fuzzy: map[string]*scryfall.ScryfallCard{},
+		bySet: map[string]*scryfall.ScryfallCard{},
+	}
+	repo := &fakeCardRepo{
+		byName:            map[string]*domain.Card{},
+		findByNamesResult: []*domain.Card{nil},
+	}
+	uc := NewAnalyzeDeckUseCase(fetcher, repo, 2)
+
+	resp, err := uc.Execute(context.Background(), AnalyzeDeckRequest{
+		Decklist: "4 Lightning Bolt",
+		Format:   "modern",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp == nil || len(resp.RawCards) == 0 {
+		t.Fatalf("expected resolved cards, got %+v", resp)
 	}
 }

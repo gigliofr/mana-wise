@@ -80,6 +80,10 @@ func (h *AnalyzeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, err.Error(), http.StatusUnprocessableEntity)
 		return
 	}
+	if result == nil {
+		jsonError(w, "analysis unavailable", http.StatusInternalServerError)
+		return
+	}
 
 	// LLM suggestions (best-effort — do not fail the request if LLM is unavailable).
 	var aiSuggestions string
