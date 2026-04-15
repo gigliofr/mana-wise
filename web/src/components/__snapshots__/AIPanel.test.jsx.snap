@@ -1,0 +1,92 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`AIPanel > shows external status without warning when source is external and no error 1`] = `
+<DocumentFragment>
+  <div>
+    <div
+      class="ai-meta-row"
+    >
+      <span
+        class="ai-badge"
+      >
+        AI ASSISTANT
+      </span>
+      <span
+        class="ai-status-pill ok"
+      >
+        External AI
+      </span>
+    </div>
+    <div
+      class="ai-source-label"
+    >
+      Suggestion source: openai:gpt-4o-mini
+    </div>
+    <div
+      class="ai-box"
+    >
+      <div>
+        <span>
+          1) CUT: X ADD: Y WHY: curve
+        </span>
+      </div>
+    </div>
+  </div>
+</DocumentFragment>
+`;
+
+exports[`AIPanel > shows fallback status and warning when internal source has provider error 1`] = `
+<DocumentFragment>
+  <div>
+    <div
+      class="ai-meta-row"
+    >
+      <span
+        class="ai-badge"
+      >
+        AI ASSISTANT
+      </span>
+      <span
+        class="ai-status-pill warn"
+      >
+        Fallback active
+      </span>
+    </div>
+    <div
+      class="ai-source-label"
+    >
+      Suggestion source: internal_rules
+    </div>
+    <div
+      class="banner banner-warn"
+      style="margin-bottom: 12px;"
+    >
+      <strong>
+        Local suggestions used after provider error
+      </strong>
+      <div
+        style="margin-top: 6px;"
+      >
+        LLM unavailable (falling back to internal rules): quota exceeded
+      </div>
+    </div>
+    <div
+      class="ai-box"
+    >
+      <div>
+        <span>
+          1) Cut A, add 
+        </span>
+        <img
+          alt="B"
+          loading="lazy"
+          src="https://svgs.scryfall.io/card-symbols/B.svg"
+          style="width: 14px; height: 14px; min-width: 14px; display: inline-block; vertical-align: middle;"
+          title="B"
+        />
+        <span />
+      </div>
+    </div>
+  </div>
+</DocumentFragment>
+`;

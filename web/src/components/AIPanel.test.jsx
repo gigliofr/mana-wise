@@ -19,7 +19,7 @@ const messages = {
 
 describe('AIPanel', () => {
   it('shows fallback status and warning when internal source has provider error', () => {
-    render(
+    const { asFragment } = render(
       <AIPanel
         text={'1) Cut A, add B'}
         error={'LLM unavailable (falling back to internal rules): quota exceeded'}
@@ -33,10 +33,11 @@ describe('AIPanel', () => {
     expect(screen.getByText('Suggestion source: internal_rules')).toBeInTheDocument()
     expect(screen.getByText('Local suggestions used after provider error')).toBeInTheDocument()
     expect(screen.getByText(/quota exceeded/i)).toBeInTheDocument()
+    expect(asFragment()).toMatchSnapshot()
   })
 
   it('shows external status without warning when source is external and no error', () => {
-    render(
+    const { asFragment } = render(
       <AIPanel
         text={'1) CUT: X ADD: Y WHY: curve'}
         error={''}
@@ -49,5 +50,6 @@ describe('AIPanel', () => {
     expect(screen.getByText('External AI')).toBeInTheDocument()
     expect(screen.getByText('Suggestion source: openai:gpt-4o-mini')).toBeInTheDocument()
     expect(screen.queryByText('Local suggestions used after provider error')).not.toBeInTheDocument()
+    expect(asFragment()).toMatchSnapshot()
   })
 })
