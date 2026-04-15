@@ -16,9 +16,9 @@ import (
 
 // DeckImportExportHandler handles import/export operations for decks.
 type DeckImportExportHandler struct {
-	deckRepo     domain.DeckRepository
-	userRepo     domain.UserRepository
-	cardRepo     domain.CardRepository
+	deckRepo      domain.DeckRepository
+	userRepo      domain.UserRepository
+	cardRepo      domain.CardRepository
 	resolveCardUC *usecase.ResolveCardByNameUseCase
 }
 
@@ -38,9 +38,9 @@ func NewDeckImportExportHandler(
 }
 
 type deckImportRequest struct {
-	Format   string `json:"format"`   // arena, mtgo, moxfield, text, archidekt
-	Data     string `json:"data"`     // Raw decklist text
-	DeckName string `json:"deck_name,omitempty"` // Optional deck name
+	Format   string `json:"format"`
+	Data     string `json:"data"`
+	DeckName string `json:"deck_name,omitempty"`
 }
 
 type deckImportResponse struct {
@@ -51,49 +51,49 @@ type deckImportResponse struct {
 	Warnings    []string `json:"warnings,omitempty"`
 }
 
+func jsonErrorResponse(w http.ResponseWriter, msg string, code int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	_ = json.NewEncoder(w).Encode(map[string]any{"error": msg, "code": code, "status": code})
+}
+
 // Import parses a decklist in various formats and creates a deck.
 // POST /api/v1/decks/import
 func (h *DeckImportExportHandler) Import(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.UserIDFromContext(r.Context())
 	if userID == "" {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		jsonErrorResponse(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 
 	var req deckImportRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+		jsonErrorResponse(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	// Normalize and validate format
 	format := strings.ToLower(strings.TrimSpace(req.Format))
 	if format == "" {
 		format = "text"
 	}
 
-	// Get appropriate parser
 	parser := GetParserForFormat(format)
-
-	// Parse the decklist
 	entries, warnings, err := parser.Parse(req.Data)
 	if err != nil {
-		http.Error(w, "failed to parse decklist: "+err.Error(), http.StatusBadRequest)
+		jsonErrorResponse(w, "failed to parse decklist: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	if len(entries) == 0 {
-		http.Error(w, "no cards parsed from input", http.StatusBadRequest)
+		jsonErrorResponse(w, "no cards parsed from input", http.StatusBadRequest)
 		return
 	}
 
-	// Resolve card names and create DeckCard entries
 	deckCards := make([]domain.DeckCard, 0)
 	mainCount := 0
 	sideCount := 0
 
 	for _, entry := range entries {
-		// Attempt to resolve card by name
 		card, err := h.resolveCardUC.Execute(r.Context(), entry.CardName)
 		if err != nil || card == nil {
 			warnings = append(warnings, fmt.Sprintf("Could not resolve card '%s'; skipping", entry.CardName))
@@ -117,31 +117,28 @@ func (h *DeckImportExportHandler) Import(w http.ResponseWriter, r *http.Request)
 	}
 
 	if len(deckCards) == 0 {
-		http.Error(w, "no cards could be resolved from decklist", http.StatusBadRequest)
+		jsonErrorResponse(w, "no cards could be resolved from decklist", http.StatusBadRequest)
 		return
 	}
 
-	// Create deck name (use provided name or generate default)
 	deckName := strings.TrimSpace(req.DeckName)
 	if deckName == "" {
 		deckName = fmt.Sprintf("Imported Deck (%s)", strings.ToUpper(format))
 	}
 
-	// Create new deck
 	newDeck := &domain.Deck{
 		ID:        uuid.New().String(),
 		UserID:    userID,
 		Name:      deckName,
-		Format:    "unknown", // Format inference optional for future
+		Format:    "unknown",
 		Cards:     deckCards,
 		IsPublic:  false,
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
 
-	// Store deck
 	if err := h.deckRepo.Create(r.Context(), newDeck); err != nil {
-		http.Error(w, "failed to save deck: "+err.Error(), http.StatusInternalServerError)
+		jsonErrorResponse(w, "failed to save deck: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -155,14 +152,14 @@ func (h *DeckImportExportHandler) Import(w http.ResponseWriter, r *http.Request)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 type deckExportResponse struct {
-	Format     string `json:"format"`
-	DeckName   string `json:"deck_name"`
-	Data       string `json:"data"`
-	CardCount  int    `json:"card_count"`
+	Format    string `json:"format"`
+	DeckName  string `json:"deck_name"`
+	Data      string `json:"data"`
+	CardCount int    `json:"card_count"`
 }
 
 // Export generates a decklist in the requested format.
@@ -170,41 +167,34 @@ type deckExportResponse struct {
 func (h *DeckImportExportHandler) Export(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.UserIDFromContext(r.Context())
 	if userID == "" {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		jsonErrorResponse(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	// Get deck ID from URL parameter
 	deckID := chi.URLParam(r, "id")
 	if deckID == "" {
-		http.Error(w, "missing deck id", http.StatusBadRequest)
+		jsonErrorResponse(w, "missing deck id", http.StatusBadRequest)
 		return
 	}
 
-	// Get export format from query
 	format := r.URL.Query().Get("format")
 	if format == "" {
 		format = "text"
 	}
 	format = strings.ToLower(strings.TrimSpace(format))
 
-	// Get deck from repository
 	deck, err := h.deckRepo.FindByID(r.Context(), deckID)
 	if err != nil || deck == nil {
-		http.Error(w, "deck not found", http.StatusNotFound)
+		jsonErrorResponse(w, "deck not found", http.StatusNotFound)
 		return
 	}
 
-	// Verify ownership
 	if deck.UserID != userID {
-		http.Error(w, "forbidden", http.StatusForbidden)
+		jsonErrorResponse(w, "forbidden", http.StatusForbidden)
 		return
 	}
 
-	// Get appropriate exporter
 	exporter := GetExporterForFormat(format)
-
-	// Export
 	data := exporter.Export(deck.Cards, false)
 
 	resp := deckExportResponse{
@@ -216,5 +206,5 @@ func (h *DeckImportExportHandler) Export(w http.ResponseWriter, r *http.Request)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(resp)
 }

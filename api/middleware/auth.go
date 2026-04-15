@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
@@ -40,6 +41,12 @@ func GenerateToken(userID, email, plan, secret string, expiryHours int) (string,
 	return token.SignedString([]byte(secret))
 }
 
+func writeJSONError(w http.ResponseWriter, msg string, code int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	_ = json.NewEncoder(w).Encode(map[string]any{"error": msg, "code": code, "status": code})
+}
+
 // JWTAuth is HTTP middleware that validates Bearer tokens. Sets user_id and plan
 // in the request context. Returns 401 if the token is missing or invalid.
 func JWTAuth(secret string) func(http.Handler) http.Handler {
@@ -47,13 +54,13 @@ func JWTAuth(secret string) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authHeader := r.Header.Get("Authorization")
 			if authHeader == "" {
-				http.Error(w, `{"error":"missing authorization header"}`, http.StatusUnauthorized)
+				writeJSONError(w, "missing authorization header", http.StatusUnauthorized)
 				return
 			}
 
 			parts := strings.SplitN(authHeader, " ", 2)
 			if len(parts) != 2 || !strings.EqualFold(parts[0], "bearer") {
-				http.Error(w, `{"error":"invalid authorization format"}`, http.StatusUnauthorized)
+				writeJSONError(w, "invalid authorization format", http.StatusUnauthorized)
 				return
 			}
 
@@ -66,7 +73,7 @@ func JWTAuth(secret string) func(http.Handler) http.Handler {
 				return []byte(secret), nil
 			})
 			if err != nil || !token.Valid {
-				http.Error(w, `{"error":"invalid or expired token"}`, http.StatusUnauthorized)
+				writeJSONError(w, "invalid or expired token", http.StatusUnauthorized)
 				return
 			}
 

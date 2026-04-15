@@ -46,7 +46,6 @@ func NewRouter(deps RouterDeps) http.Handler {
 	// Global middleware.
 	r.Use(chimiddleware.Logger)
 	r.Use(chimiddleware.Recoverer)
-	r.Use(chimiddleware.RequestID)
 	r.Use(chimiddleware.RealIP)
 	r.Use(corsMiddleware)
 

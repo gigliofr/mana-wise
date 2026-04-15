@@ -1,7 +1,7 @@
 package middleware
 
 import (
-	"fmt"
+	"encoding/json"
 	"net/http"
 	"time"
 
@@ -19,13 +19,13 @@ func FreemiumGate(userRepo domain.UserRepository, tracker domain.AnalyticsTracke
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			userID := UserIDFromContext(r.Context())
 			if userID == "" {
-				http.Error(w, `{"error":"unauthenticated"}`, http.StatusUnauthorized)
+				writeJSONError(w, "unauthenticated", http.StatusUnauthorized)
 				return
 			}
 
 			user, err := userRepo.FindByID(r.Context(), userID)
 			if err != nil || user == nil {
-				http.Error(w, `{"error":"user not found"}`, http.StatusUnauthorized)
+				writeJSONError(w, "user not found", http.StatusUnauthorized)
 				return
 			}
 
@@ -35,21 +35,16 @@ func FreemiumGate(userRepo domain.UserRepository, tracker domain.AnalyticsTracke
 			}
 
 			if user.Plan == domain.PlanPro && user.ProUntil != nil && !user.ProUntil.After(time.Now().UTC()) {
-				// Pro expired: downgrade to free for future sessions.
 				user.Plan = domain.PlanFree
 				user.ProUntil = nil
 				_ = userRepo.Update(r.Context(), user)
 			}
 
 			plan := string(user.Plan)
-
 			today := domain.CurrentBusinessDay()
-			// Atomic check-and-increment: quota is reserved only if the DB
-			// update succeeds, preventing concurrent requests from bypassing
-			// the daily limit.
 			allowed, err := userRepo.CheckAndIncrementDailyAnalyses(r.Context(), userID, today, domain.FreeDailyLimit)
 			if err != nil {
-				http.Error(w, `{"error":"quota check failed"}`, http.StatusInternalServerError)
+				writeJSONError(w, "quota check failed", http.StatusInternalServerError)
 				return
 			}
 			if !allowed {
@@ -59,8 +54,12 @@ func FreemiumGate(userRepo domain.UserRepository, tracker domain.AnalyticsTracke
 				})
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusTooManyRequests)
-				fmt.Fprintf(w, `{"error":"daily limit reached","limit":%d,"remaining":0,"upgrade_url":"/upgrade"}`,
-					domain.FreeDailyLimit)
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"error":       "daily limit reached",
+					"limit":       domain.FreeDailyLimit,
+					"remaining":   0,
+					"upgrade_url": "/upgrade",
+				})
 				return
 			}
 

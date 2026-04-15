@@ -9,7 +9,7 @@ import (
 // ipBucketState holds the sliding-window state for a single IP.
 type ipBucketState struct {
 	mu         sync.Mutex
-	timestamps []time.Time // arrival times of recent requests; compacted on each check
+	timestamps []time.Time
 }
 
 // rateLimiter is a per-IP sliding-window rate limiter.
@@ -26,7 +26,6 @@ func newRateLimiter(window time.Duration, limit int) *rateLimiter {
 		window:  window,
 		limit:   limit,
 	}
-	// Background goroutine that removes stale IP buckets every 5 minutes.
 	go func() {
 		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
@@ -53,7 +52,6 @@ func (rl *rateLimiter) Allow(ip string) bool {
 	now := time.Now()
 	cutoff := now.Add(-rl.window)
 
-	// Compact old entries.
 	valid := b.timestamps[:0]
 	for _, t := range b.timestamps {
 		if t.After(cutoff) {
@@ -69,7 +67,6 @@ func (rl *rateLimiter) Allow(ip string) bool {
 	return true
 }
 
-// evict removes IP buckets whose last request is older than 2× the window.
 func (rl *rateLimiter) evict() {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
@@ -89,9 +86,9 @@ func AuthRateLimit(window time.Duration, limit int) func(http.Handler) http.Hand
 	rl := newRateLimiter(window, limit)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			ip := r.RemoteAddr // chi's RealIP middleware already normalised this
+			ip := r.RemoteAddr
 			if !rl.Allow(ip) {
-				http.Error(w, `{"error":"too many requests"}`, http.StatusTooManyRequests)
+				writeJSONError(w, "too many requests", http.StatusTooManyRequests)
 				return
 			}
 			next.ServeHTTP(w, r)
