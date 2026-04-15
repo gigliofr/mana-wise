@@ -223,7 +223,9 @@ func corsMiddleware(next http.Handler) http.Handler {
 
 		if r.Method == http.MethodOptions {
 			if origin != "" && allowOrigin == "" {
-				http.Error(w, `{"error":"origin not allowed"}`, http.StatusForbidden)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusForbidden)
+				_, _ = w.Write([]byte(`{"error":"origin not allowed"}`))
 				return
 			}
 			w.WriteHeader(http.StatusNoContent)

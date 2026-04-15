@@ -88,7 +88,7 @@ func AdminSecretMiddleware(next http.Handler) http.Handler {
 
 		authHeader := r.Header.Get("X-Admin-Secret")
 		if authHeader != secret {
-			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+			jsonError(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 
