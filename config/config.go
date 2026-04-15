@@ -59,6 +59,8 @@ type LLMConfig struct {
 	SecondaryModel       string
 	AIMode               string // "external_only" | "internal_only" | "hybrid_prefer_external" | "hybrid_prefer_internal"
 	InternalRulesEnabled bool
+	FallbackOnStatus     []int
+	FallbackOnTimeout    bool
 	MaxTokens            int
 	Timeout              time.Duration
 	CacheTTL             time.Duration
@@ -160,12 +162,33 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("AI_INTERNAL_RULES_ENABLED must be true or false: %w", err)
 	}
 	cfg.LLM.InternalRulesEnabled = internalEnabled
+
+	fallbackStatuses, err := parseStatusCodeList(getEnv("AI_FALLBACK_ON_STATUS", "429,500,502,503,504"))
+	if err != nil {
+		return nil, fmt.Errorf("AI_FALLBACK_ON_STATUS must be a comma-separated list of valid HTTP status codes: %w", err)
+	}
+	cfg.LLM.FallbackOnStatus = fallbackStatuses
+
+	timeoutMsRaw := strings.TrimSpace(os.Getenv("AI_FALLBACK_ON_TIMEOUT_MS"))
+	cfg.LLM.Timeout = 15 * time.Second
+	cfg.LLM.FallbackOnTimeout = true
+	if timeoutMsRaw != "" {
+		timeoutMs, parseErr := strconv.Atoi(timeoutMsRaw)
+		if parseErr != nil {
+			return nil, fmt.Errorf("AI_FALLBACK_ON_TIMEOUT_MS must be a valid integer (milliseconds): %w", parseErr)
+		}
+		if timeoutMs <= 0 {
+			cfg.LLM.FallbackOnTimeout = false
+		} else {
+			cfg.LLM.Timeout = time.Duration(timeoutMs) * time.Millisecond
+		}
+	}
+
 	maxTokens, err := strconv.Atoi(getEnv("LLM_MAX_TOKENS", "1000"))
 	if err != nil {
 		return nil, fmt.Errorf("LLM_MAX_TOKENS must be a valid integer: %w", err)
 	}
 	cfg.LLM.MaxTokens = maxTokens
-	cfg.LLM.Timeout = 15 * time.Second
 	cfg.LLM.CacheTTL = 1 * time.Hour
 
 	// Worker
@@ -223,4 +246,29 @@ func firstNonEmptyEnv(keys ...string) string {
 		}
 	}
 	return ""
+}
+
+func parseStatusCodeList(raw string) ([]int, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return []int{}, nil
+	}
+
+	parts := strings.Split(raw, ",")
+	out := make([]int, 0, len(parts))
+	for _, part := range parts {
+		v := strings.TrimSpace(part)
+		if v == "" {
+			continue
+		}
+		code, err := strconv.Atoi(v)
+		if err != nil {
+			return nil, err
+		}
+		if code < 100 || code > 599 {
+			return nil, fmt.Errorf("status %d out of HTTP range", code)
+		}
+		out = append(out, code)
+	}
+	return out, nil
 }

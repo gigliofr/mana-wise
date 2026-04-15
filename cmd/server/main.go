@@ -145,7 +145,8 @@ func main() {
 		embedBatchUC = usecase.NewEmbedBatchUseCase(cardRepo, secondaryLLM, cfg.Worker.PoolSize)
 	}
 
-	aiSuggester := usecase.NewAISuggester(cfg.LLM.AIMode, primaryLLM, secondaryLLM, cfg.LLM.InternalRulesEnabled)
+	aiSuggester := usecase.NewAISuggester(cfg.LLM.AIMode, primaryLLM, secondaryLLM, cfg.LLM.InternalRulesEnabled).
+		WithFallbackPolicy(cfg.LLM.FallbackOnStatus, cfg.LLM.FallbackOnTimeout)
 	log.Printf("✅ AI suggester ready (mode: %s, internal_rules: %t)", cfg.LLM.AIMode, cfg.LLM.InternalRulesEnabled)
 
 	// ── Analytics tracker (optional) ─────────────────────────────────────────

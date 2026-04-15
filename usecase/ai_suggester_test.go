@@ -174,3 +174,40 @@ func TestBuildDeterministicCoachingFooter_ItalianLocale(t *testing.T) {
 		t.Fatalf("expected italian footer label, got: %s", footer)
 	}
 }
+
+func TestAISuggester_FallbackPolicy_StatusCodes(t *testing.T) {
+	s := NewAISuggester(AIModeHybridPreferExternal, nil, nil, true).WithFallbackPolicy([]int{503}, true)
+
+	if s.shouldFallbackOnExternalError(context.DeadlineExceeded) == false {
+		t.Fatal("expected timeout errors to fallback when enabled")
+	}
+	if s.shouldFallbackOnExternalError(assertErr("provider returned status code: 429")) {
+		t.Fatal("did not expect fallback for 429 when only 503 is allowed")
+	}
+	if !s.shouldFallbackOnExternalError(assertErr("provider returned status code: 503")) {
+		t.Fatal("expected fallback for configured status 503")
+	}
+}
+
+func TestAISuggester_FallbackPolicy_TimeoutDisabled(t *testing.T) {
+	s := NewAISuggester(AIModeHybridPreferExternal, nil, nil, true).WithFallbackPolicy([]int{429}, false)
+
+	if s.shouldFallbackOnExternalError(assertErr("context deadline exceeded")) {
+		t.Fatal("did not expect timeout fallback when disabled")
+	}
+	if !s.shouldFallbackOnExternalError(assertErr("provider quota exceeded (429)")) {
+		t.Fatal("expected 429 fallback when configured")
+	}
+}
+
+func assertErr(msg string) error {
+	return &testErr{msg: msg}
+}
+
+type testErr struct {
+	msg string
+}
+
+func (e *testErr) Error() string {
+	return e.msg
+}

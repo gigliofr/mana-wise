@@ -181,14 +181,18 @@ Email handling uses the same SMTP variables as the previous deployment flow, so 
 |----------|---------|-------------|
 | `AI_MODE` | `hybrid_prefer_external` | Routing mode (see above) |
 | `AI_INTERNAL_RULES_ENABLED` | `true` | Enable deterministic fallback engine |
-| `LLM_PROVIDER` | `gemini` | Primary LLM provider (`gemini` / `openai_compatible`) |
-| `LLM_API_KEY` | — | Primary provider API key |
-| `LLM_BASE_URL` | — | Primary provider base URL (optional for Gemini) |
-| `LLM_MODEL` | — | Primary model name |
+| `AI_FALLBACK_ON_STATUS` | `429,500,502,503,504` | Comma-separated HTTP status codes that trigger fallback to internal rules in `hybrid_prefer_external` |
+| `AI_FALLBACK_ON_TIMEOUT_MS` | `15000` | External provider timeout in ms; when > 0, timeout also triggers fallback to internal rules |
+| `LLM_PROVIDER` | `openai` | Primary LLM provider (`openai` / `gemini`) |
+| `OPENAI_API_KEY` | — | OpenAI-compatible provider API key (used when `LLM_PROVIDER=openai`) |
+| `OPENAI_BASE_URL` | — | OpenAI-compatible provider base URL (optional) |
+| `GEMINI_API_KEY` | — | Gemini API key (used when `LLM_PROVIDER=gemini`) |
+| `GEMINI_OPENAI_BASE_URL` | `https://generativelanguage.googleapis.com/v1beta/openai` | Gemini OpenAI-compatible endpoint |
+| `LLM_MODEL` | `gpt-4o-mini` | Primary model name |
 | `LLM_SECONDARY_PROVIDER` | — | Secondary provider (optional) |
 | `LLM_SECONDARY_API_KEY` | — | Secondary API key |
 | `LLM_SECONDARY_BASE_URL` | — | Secondary base URL |
-| `LLM_SECONDARY_MODEL` | — | Secondary model name |
+| `LLM_SECONDARY_MODEL` | `gpt-4o-mini` | Secondary model name |
 
 ## Tests
 

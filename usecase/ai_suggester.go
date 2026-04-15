@@ -3,6 +3,8 @@ package usecase
 import (
 	"context"
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/gigliofr/mana-wise/domain"
@@ -22,6 +24,8 @@ type AISuggester struct {
 	primary        *llm.Connector
 	secondary      *llm.Connector
 	internalEnable bool
+	fallbackStatus map[int]bool
+	fallbackOnTimeout bool
 }
 
 // NewAISuggester creates an AI suggester with runtime routing rules.
@@ -32,12 +36,29 @@ func NewAISuggester(mode string, primary, secondary *llm.Connector, internalEnab
 	default:
 		mode = AIModeHybridPreferExternal
 	}
+	defaultFallbackStatus := map[int]bool{429: true, 500: true, 502: true, 503: true, 504: true}
 	return &AISuggester{
 		mode:           mode,
 		primary:        primary,
 		secondary:      secondary,
 		internalEnable: internalEnable,
+		fallbackStatus: defaultFallbackStatus,
+		fallbackOnTimeout: true,
 	}
+}
+
+// WithFallbackPolicy configures which external failures should trigger internal fallback.
+func (s *AISuggester) WithFallbackPolicy(statusCodes []int, fallbackOnTimeout bool) *AISuggester {
+	if s == nil {
+		return s
+	}
+	statusMap := make(map[int]bool, len(statusCodes))
+	for _, code := range statusCodes {
+		statusMap[code] = true
+	}
+	s.fallbackStatus = statusMap
+	s.fallbackOnTimeout = fallbackOnTimeout
+	return s
 }
 
 // Suggest returns AI suggestions, source, external-provider warning, and a hard error.
@@ -79,6 +100,10 @@ func (s *AISuggester) Suggest(ctx context.Context, decklist, format, locale stri
 			err = extErr
 			return
 		}
+		if !s.shouldFallbackOnExternalError(extErr) {
+			err = extErr
+			return
+		}
 		var internalErr error
 		text, source, internalErr = s.tryInternal(format, locale, analysis, cards)
 		if internalErr != nil {
@@ -89,6 +114,61 @@ func (s *AISuggester) Suggest(ctx context.Context, decklist, format, locale stri
 		externalErr = extErr
 		return
 	}
+}
+
+func (s *AISuggester) shouldFallbackOnExternalError(err error) bool {
+	if err == nil {
+		return false
+	}
+	lower := strings.ToLower(err.Error())
+
+	if s.fallbackOnTimeout {
+		if strings.Contains(lower, "context deadline exceeded") || strings.Contains(lower, "timeout") || strings.Contains(lower, "timed out") {
+			return true
+		}
+	}
+
+	if strings.Contains(lower, "resource_exhausted") || strings.Contains(lower, "quota") || strings.Contains(lower, "too many requests") {
+		return s.fallbackStatus[429]
+	}
+
+	if strings.Contains(lower, "service unavailable") || strings.Contains(lower, "bad gateway") || strings.Contains(lower, "gateway timeout") || strings.Contains(lower, "provider unavailable") {
+		for _, code := range []int{503, 502, 504} {
+			if s.fallbackStatus[code] {
+				return true
+			}
+		}
+	}
+
+	for _, code := range extractStatusCodesFromError(err.Error()) {
+		if s.fallbackStatus[code] {
+			return true
+		}
+	}
+
+	return false
+}
+
+func extractStatusCodesFromError(msg string) []int {
+	re := regexp.MustCompile(`\b([1-5]\d\d)\b`)
+	matches := re.FindAllStringSubmatch(msg, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	seen := map[int]bool{}
+	out := make([]int, 0, len(matches))
+	for _, m := range matches {
+		if len(m) != 2 {
+			continue
+		}
+		code, err := strconv.Atoi(m[1])
+		if err != nil || seen[code] {
+			continue
+		}
+		seen[code] = true
+		out = append(out, code)
+	}
+	return out
 }
 
 func (s *AISuggester) tryExternalChain(ctx context.Context, hash, decklist, format, locale string, analysis *domain.AnalysisResult, cards []*domain.Card) (string, string, error) {
