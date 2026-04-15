@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/manawise/api/domain"
+	"github.com/gigliofr/mana-wise/domain"
 )
 
 // minimalAnalysis returns a non-nil AnalysisResult with balanced metrics

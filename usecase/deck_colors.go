@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/manawise/api/domain"
+	"github.com/gigliofr/mana-wise/domain"
 )
 
 var colorCategoryCapabilities = map[string]map[domain.InteractionCategory]float64{

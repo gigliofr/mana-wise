@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/manawise/api/domain"
+	"github.com/gigliofr/mana-wise/domain"
 )
 
 // OTAUpdateUseCase provides secure OTA publish and rollback operations.

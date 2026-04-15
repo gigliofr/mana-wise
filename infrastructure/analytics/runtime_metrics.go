@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/manawise/api/domain"
+	"github.com/gigliofr/mana-wise/domain"
 )
 
 // RuntimeMetricsTracker records lightweight in-process metrics while forwarding events to a delegate tracker.

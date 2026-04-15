@@ -12,16 +12,16 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/manawise/api/api"
-	"github.com/manawise/api/config"
-	"github.com/manawise/api/domain"
-	"github.com/manawise/api/infrastructure/analytics"
-	"github.com/manawise/api/infrastructure/llm"
-	"github.com/manawise/api/infrastructure/mongodb"
-	"github.com/manawise/api/infrastructure/notifications"
-	"github.com/manawise/api/infrastructure/ota"
-	"github.com/manawise/api/infrastructure/scryfall"
-	"github.com/manawise/api/usecase"
+	"github.com/gigliofr/mana-wise/api"
+	"github.com/gigliofr/mana-wise/config"
+	"github.com/gigliofr/mana-wise/domain"
+	"github.com/gigliofr/mana-wise/infrastructure/analytics"
+	"github.com/gigliofr/mana-wise/infrastructure/llm"
+	"github.com/gigliofr/mana-wise/infrastructure/mongodb"
+	"github.com/gigliofr/mana-wise/infrastructure/notifications"
+	"github.com/gigliofr/mana-wise/infrastructure/ota"
+	"github.com/gigliofr/mana-wise/infrastructure/scryfall"
+	"github.com/gigliofr/mana-wise/usecase"
 )
 
 func main() {

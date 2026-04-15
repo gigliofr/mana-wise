@@ -3,7 +3,7 @@ package usecase
 import (
 	"math"
 
-	"github.com/manawise/api/domain"
+	"github.com/gigliofr/mana-wise/domain"
 )
 
 // ImpactScoreUseCase calcola l'Impact Score per una lista di carte.

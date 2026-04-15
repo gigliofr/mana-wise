@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/manawise/api/domain"
+	"github.com/gigliofr/mana-wise/domain"
 	"golang.org/x/crypto/bcrypt"
 )
 

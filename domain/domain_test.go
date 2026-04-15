@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/manawise/api/domain"
+	"github.com/gigliofr/mana-wise/domain"
 )
 
 func TestBusinessDayForTime_EuropeRome(t *testing.T) {

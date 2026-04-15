@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/manawise/api/usecase"
+	"github.com/gigliofr/mana-wise/usecase"
 )
 
 // DeckClassifyRequest is the API payload for deck classification.

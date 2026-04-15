@@ -3,7 +3,7 @@ package usecase
 import (
 	"testing"
 
-	"github.com/manawise/api/domain"
+	"github.com/gigliofr/mana-wise/domain"
 )
 
 func TestGetManaProducingColors_LlanowarElves(t *testing.T) {

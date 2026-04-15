@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/manawise/api/domain"
+	"github.com/gigliofr/mana-wise/domain"
 )
 
 // Test parsers

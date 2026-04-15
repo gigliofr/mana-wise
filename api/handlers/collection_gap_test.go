@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/manawise/api/api/middleware"
-	"github.com/manawise/api/domain"
+	"github.com/gigliofr/mana-wise/api/middleware"
+	"github.com/gigliofr/mana-wise/domain"
 )
 
 func runCollectionGapRequest(t *testing.T, h *DeckHandler, path string) *httptest.ResponseRecorder {

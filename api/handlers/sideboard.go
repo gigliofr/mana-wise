@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/manawise/api/usecase"
+	"github.com/gigliofr/mana-wise/usecase"
 )
 
 // SideboardCoachRequest is the payload for matchup sideboard planning.

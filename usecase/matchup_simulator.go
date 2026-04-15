@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/manawise/api/domain"
+	"github.com/gigliofr/mana-wise/domain"
 )
 
 // MatchupSimulatorUseCase estimates pre-sideboard matchup win rates.

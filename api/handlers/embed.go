@@ -6,7 +6,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/manawise/api/usecase"
+	"github.com/gigliofr/mana-wise/usecase"
 )
 
 // EmbedBatchHandler handles POST /embed/batch.

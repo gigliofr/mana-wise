@@ -9,10 +9,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
-	"github.com/manawise/api/api/handlers"
-	"github.com/manawise/api/api/middleware"
-	"github.com/manawise/api/domain"
-	"github.com/manawise/api/usecase"
+	"github.com/gigliofr/mana-wise/api/handlers"
+	"github.com/gigliofr/mana-wise/api/middleware"
+	"github.com/gigliofr/mana-wise/domain"
+	"github.com/gigliofr/mana-wise/usecase"
 )
 
 // RouterDeps groups all handler dependencies.
@@ -144,10 +144,12 @@ func NewRouter(deps RouterDeps) http.Handler {
 			// Analytics.
 			r.Post("/analytics/upgrade-click", analyticsH.UpgradeClick)
 
-			// OTA (secure by JWT; in production restrict to admin/service accounts).
-			r.Post("/ota/release", otaH.PublishRelease)
-			r.Post("/ota/report-boot", otaH.ReportBoot)
-			r.Get("/ota/manifest", otaH.Manifest)
+			// OTA routes can be disabled in non-firmware deployments.
+			if otaEnabledFromEnv() {
+				r.Post("/ota/release", otaH.PublishRelease)
+				r.Post("/ota/report-boot", otaH.ReportBoot)
+				r.Get("/ota/manifest", otaH.Manifest)
+			}
 		})
 
 		// Admin endpoints — protected by ADMIN_SECRET header.
@@ -254,4 +256,13 @@ func allowedOriginsFromEnv() []string {
 		out = append(out, origin)
 	}
 	return out
+}
+
+func otaEnabledFromEnv() bool {
+	raw := strings.ToLower(strings.TrimSpace(os.Getenv("OTA_ENABLED")))
+	if raw == "" {
+		// Keep current behavior unless explicitly disabled.
+		return true
+	}
+	return raw == "1" || raw == "true" || raw == "yes" || raw == "on"
 }

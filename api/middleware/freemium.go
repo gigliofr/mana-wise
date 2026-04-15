@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/manawise/api/domain"
+	"github.com/gigliofr/mana-wise/domain"
 )
 
 // FreemiumGate is an HTTP middleware that enforces daily analysis limits

@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/manawise/api/domain"
+	"github.com/gigliofr/mana-wise/domain"
 )
 
 // IllegalCardIssue describes why a specific card entry violates format legality.

@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/manawise/api/domain"
-	"github.com/manawise/api/usecase"
+	"github.com/gigliofr/mana-wise/domain"
+	"github.com/gigliofr/mana-wise/usecase"
 )
 
 // TestScoreEndpointIntegration validates the POST /score endpoint returns properly structured ScoreDetail.

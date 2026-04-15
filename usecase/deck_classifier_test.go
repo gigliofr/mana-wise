@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/manawise/api/usecase"
+	"github.com/gigliofr/mana-wise/usecase"
 )
 
 func TestDeckClassifier_AggroDeck(t *testing.T) {

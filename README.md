@@ -173,6 +173,7 @@ Email handling uses the same SMTP variables as the previous deployment flow, so 
 | `MAIL_FROM` | — | Sender email address |
 | `FRONTEND_RESET_PASSWORD_URL` | `/reset-password` fallback | Optional absolute frontend URL used in reset email links |
 | `PASSWORD_RESET_TOKEN_TTL_MINUTES` | `30` | Password reset token expiry in minutes |
+| `OTA_ENABLED` | `true` | Enable OTA firmware endpoints (`/ota/release`, `/ota/report-boot`, `/ota/manifest`). Set `false` for pure MTG deployments. |
 
 ### Key AI variables
 

@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/manawise/api/api/middleware"
-	"github.com/manawise/api/domain"
+	"github.com/gigliofr/mana-wise/api/middleware"
+	"github.com/gigliofr/mana-wise/domain"
 )
 
 // AnalyticsHandler records user product events.

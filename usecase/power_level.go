@@ -1,6 +1,6 @@
 package usecase
 
-import "github.com/manawise/api/domain"
+import "github.com/gigliofr/mana-wise/domain"
 
 // PowerLevelResult contiene il punteggio aggregato del mazzo.
 type PowerLevelResult struct {

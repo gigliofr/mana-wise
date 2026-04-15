@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/manawise/api/usecase"
+	"github.com/gigliofr/mana-wise/usecase"
 )
 
 // TestHypergeometricDistribution verifies the hypergeometric PMF calculation.

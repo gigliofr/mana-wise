@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/manawise/api/api/middleware"
-	"github.com/manawise/api/domain"
+	"github.com/gigliofr/mana-wise/api/middleware"
+	"github.com/gigliofr/mana-wise/domain"
 	"golang.org/x/crypto/bcrypt"
 )
 

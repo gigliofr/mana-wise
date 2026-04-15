@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/manawise/api/infrastructure/cache"
+	"github.com/gigliofr/mana-wise/infrastructure/cache"
 )
 
 func TestCache_SetAndGet(t *testing.T) {

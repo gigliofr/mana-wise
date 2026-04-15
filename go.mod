@@ -1,4 +1,4 @@
-module github.com/manawise/api
+module github.com/gigliofr/mana-wise
 
 go 1.22
 

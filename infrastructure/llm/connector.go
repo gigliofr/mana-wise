@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/manawise/api/domain"
-	"github.com/manawise/api/infrastructure/cache"
+	"github.com/gigliofr/mana-wise/domain"
+	"github.com/gigliofr/mana-wise/infrastructure/cache"
 	openai "github.com/sashabaranov/go-openai"
 )
 

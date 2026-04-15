@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/manawise/api/usecase"
+	"github.com/gigliofr/mana-wise/usecase"
 )
 
 func TestWorkerPool_AllSucceed(t *testing.T) {

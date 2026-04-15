@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/manawise/api/domain"
-	"github.com/manawise/api/infrastructure/scryfall"
+	"github.com/gigliofr/mana-wise/domain"
+	"github.com/gigliofr/mana-wise/infrastructure/scryfall"
 )
 
 // CardNameFetcher resolves cards by exact and fuzzy name from external APIs.

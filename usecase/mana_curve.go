@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/manawise/api/domain"
+	"github.com/gigliofr/mana-wise/domain"
 )
 
 // formatParams holds tuning parameters for a given MTG format.

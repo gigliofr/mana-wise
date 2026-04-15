@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/manawise/api/domain"
+	"github.com/gigliofr/mana-wise/domain"
 )
 
 func TestComputePriceTrend_StrictLookbackWindows(t *testing.T) {

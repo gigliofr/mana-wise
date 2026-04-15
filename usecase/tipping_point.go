@@ -1,6 +1,6 @@
 package usecase
 
-import "github.com/manawise/api/domain"
+import "github.com/gigliofr/mana-wise/domain"
 
 // TippingPointResult contiene l'analisi del punto di svolta della curva.
 type TippingPointResult struct {

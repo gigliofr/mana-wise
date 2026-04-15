@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/manawise/api/domain"
+	"github.com/gigliofr/mana-wise/domain"
 )
 
 const manifestFile = "manifest.json"

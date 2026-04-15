@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/manawise/api/domain"
+	"github.com/gigliofr/mana-wise/domain"
 )
 
 // DecklistParser handles parsing various decklist formats.

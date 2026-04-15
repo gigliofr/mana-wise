@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/manawise/api/domain"
+	"github.com/gigliofr/mana-wise/domain"
 )
 
 func makeAnalysis(landCount, idealLand int, avgCMC float64, totalScore float64, breakdowns []domain.InteractionBreakdown) *domain.AnalysisResult {

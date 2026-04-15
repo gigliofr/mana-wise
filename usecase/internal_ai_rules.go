@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/manawise/api/domain"
+	"github.com/gigliofr/mana-wise/domain"
 )
 
 // BuildInternalSuggestions returns concise rule-based suggestions from deterministic analysis.

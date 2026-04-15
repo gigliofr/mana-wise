@@ -3,7 +3,7 @@ package usecase
 import (
 	"context"
 
-	"github.com/manawise/api/domain"
+	"github.com/gigliofr/mana-wise/domain"
 )
 
 // countLandCards conta le terre nel deck dato quantità per carta.

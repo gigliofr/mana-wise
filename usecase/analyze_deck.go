@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/manawise/api/domain"
-	"github.com/manawise/api/infrastructure/scryfall"
+	"github.com/gigliofr/mana-wise/domain"
+	"github.com/gigliofr/mana-wise/infrastructure/scryfall"
 )
 
 // CardFetcher can resolve cards by name (Scryfall or DB).

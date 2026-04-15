@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/manawise/api/api/middleware"
-	"github.com/manawise/api/domain"
-	"github.com/manawise/api/usecase"
+	"github.com/gigliofr/mana-wise/api/middleware"
+	"github.com/gigliofr/mana-wise/domain"
+	"github.com/gigliofr/mana-wise/usecase"
 )
 
 // ScoreRequest is the JSON body for scoring requests.

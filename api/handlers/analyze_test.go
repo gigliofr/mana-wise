@@ -8,10 +8,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/manawise/api/api/middleware"
-	"github.com/manawise/api/domain"
-	"github.com/manawise/api/infrastructure/scryfall"
-	"github.com/manawise/api/usecase"
+	"github.com/gigliofr/mana-wise/api/middleware"
+	"github.com/gigliofr/mana-wise/domain"
+	"github.com/gigliofr/mana-wise/infrastructure/scryfall"
+	"github.com/gigliofr/mana-wise/usecase"
 )
 
 type analyzeMockCardRepo struct {

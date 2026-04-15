@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/manawise/api/usecase"
+	"github.com/gigliofr/mana-wise/usecase"
 )
 
 func TestSideboardCoach_ControlPlanHasInsOuts(t *testing.T) {

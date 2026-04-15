@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/manawise/api/domain"
+	"github.com/gigliofr/mana-wise/domain"
 )
 
 var deckLineRE = regexp.MustCompile(`^(\d+)x?\s+(.+)$`)

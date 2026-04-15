@@ -5,7 +5,7 @@ import (
 	"math"
 	"strings"
 
-	"github.com/manawise/api/domain"
+	"github.com/gigliofr/mana-wise/domain"
 )
 
 // interactionKeywords maps category to oracle-text/type keywords that identify the card.
