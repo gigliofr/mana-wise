@@ -18,6 +18,16 @@ const messages = {
   confirmPassword: 'Confirm password',
   showPassword: 'Show',
   hidePassword: 'Hide',
+  passwordStrengthLabel: 'Password strength',
+  passwordStrengthWeak: 'Weak',
+  passwordStrengthMedium: 'Medium',
+  passwordStrengthStrong: 'Strong',
+  passwordStrengthLength: 'At least 8 characters',
+  passwordStrengthLowercase: 'One lowercase letter',
+  passwordStrengthUppercase: 'One uppercase letter',
+  passwordStrengthNumber: 'One number',
+  passwordStrengthSymbol: 'One symbol',
+  passwordStrengthHint: 'Use a mix of uppercase and lowercase letters, numbers and symbols.',
   forgotPasswordTitle: 'Recover password',
   forgotPasswordCta: 'Forgot password?',
   sendResetLink: 'Send reset link',
@@ -69,6 +79,50 @@ describe('Auth reset flow', () => {
     })
 
     expect(fetch).toHaveBeenCalledWith('/api/v1/auth/forgot-password', expect.objectContaining({
+      method: 'POST',
+    }))
+  })
+
+  it('shows password complexity guidance in register mode', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      headers: { get: () => 'application/json' },
+      json: vi.fn().mockResolvedValue({ token: 'abc', user: { id: 'u1' } }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const onLogin = vi.fn()
+    render(
+      <Auth
+        onLogin={onLogin}
+        locale="en"
+        messages={messages}
+        onLocaleChange={vi.fn()}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sign up free' }))
+
+    expect(screen.getAllByPlaceholderText('••••••••')).toHaveLength(1)
+
+    fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'abc' } })
+
+    expect(screen.getByText('Password strength')).toBeInTheDocument()
+    expect(screen.getByText('Weak')).toBeInTheDocument()
+    expect(screen.getByText('At least 8 characters')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'Abcdef12!' } })
+    expect(screen.getByText('Strong')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByPlaceholderText('you@example.com'), { target: { value: 'user@example.com' } })
+    fireEvent.change(screen.getByPlaceholderText('Your name'), { target: { value: 'User Name' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create account' }))
+
+    await waitFor(() => {
+      expect(onLogin).toHaveBeenCalledWith('abc', { id: 'u1' })
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/auth/register', expect.objectContaining({
       method: 'POST',
     }))
   })

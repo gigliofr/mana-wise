@@ -2,6 +2,24 @@ import { useState } from 'react'
 import { LOCALES } from '../i18n'
 import { apiRequest, throwIfNotOK } from '../lib/apiClient'
 
+const PASSWORD_RULES = [
+  { key: 'length', test: password => password.length >= 8, labelKey: 'passwordStrengthLength' },
+  { key: 'lowercase', test: password => /[a-z]/.test(password), labelKey: 'passwordStrengthLowercase' },
+  { key: 'uppercase', test: password => /[A-Z]/.test(password), labelKey: 'passwordStrengthUppercase' },
+  { key: 'number', test: password => /\d/.test(password), labelKey: 'passwordStrengthNumber' },
+  { key: 'symbol', test: password => /[^A-Za-z0-9]/.test(password), labelKey: 'passwordStrengthSymbol' },
+]
+
+function getPasswordStrength(password) {
+  const checks = PASSWORD_RULES.reduce((acc, rule) => {
+    acc[rule.key] = rule.test(password)
+    return acc
+  }, {})
+  const score = Object.values(checks).filter(Boolean).length
+  const level = score >= 5 ? 'strong' : score >= 3 ? 'medium' : 'weak'
+  return { checks, level, score }
+}
+
 export default function Auth({ onLogin, locale, messages, onLocaleChange }) {
   const [mode, setMode] = useState(() => {
     const token = new URLSearchParams(window.location.search).get('token')
@@ -17,6 +35,11 @@ export default function Auth({ onLogin, locale, messages, onLocaleChange }) {
   function set(field) {
     return e => setForm(f => ({ ...f, [field]: e.target.value }))
   }
+
+  const passwordStrength = mode === 'register' ? getPasswordStrength(form.password) : null
+  const passwordStrengthWidth = passwordStrength
+    ? (passwordStrength.score === 0 ? 0 : Math.max(20, (passwordStrength.score / PASSWORD_RULES.length) * 100))
+    : 0
 
   async function submit(e) {
     e.preventDefault()
@@ -149,6 +172,26 @@ export default function Auth({ onLogin, locale, messages, onLocaleChange }) {
                       {showPassword ? messages.hidePassword : messages.showPassword}
                     </button>
                   </div>
+                  {mode === 'register' && (
+                    <div className={`password-strength password-strength-${passwordStrength.level}`} aria-live="polite">
+                      <div className="password-strength-head">
+                        <span>{messages.passwordStrengthLabel || 'Password strength'}</span>
+                        <strong>{messages[`passwordStrength${passwordStrength.level.charAt(0).toUpperCase()}${passwordStrength.level.slice(1)}`] || passwordStrength.level}</strong>
+                      </div>
+                      <div className="password-strength-bar" aria-hidden="true">
+                        <span style={{ width: `${passwordStrengthWidth}%` }} />
+                      </div>
+                      <ul className="password-strength-list">
+                        {PASSWORD_RULES.map(rule => (
+                          <li key={rule.key} className={passwordStrength.checks[rule.key] ? 'met' : ''}>
+                            <span aria-hidden="true">{passwordStrength.checks[rule.key] ? '✓' : '•'}</span>
+                            <span>{messages[rule.labelKey] || rule.labelKey}</span>
+                          </li>
+                        ))}
+                      </ul>
+                      <p className="password-strength-hint">{messages.passwordStrengthHint || 'Use a mix of uppercase and lowercase letters, numbers and symbols.'}</p>
+                    </div>
+                  )}
                 </div>
               )}
 
