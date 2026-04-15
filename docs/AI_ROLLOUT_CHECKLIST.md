@@ -107,3 +107,11 @@ Then:
 2. Metrics snapshots before/after rollout.
 3. Sample API responses showing `ai_source` and fallback case.
 4. Decision log (provider/model changes, threshold adjustments).
+
+Use this template to standardize the final report: [docs/AI_ROLLOUT_EVIDENCE_TEMPLATE.md](docs/AI_ROLLOUT_EVIDENCE_TEMPLATE.md).
+
+Optional: persist smoke-check output as evidence artifact:
+
+```powershell
+./scripts/verify_ai_rollout.ps1 -ApiBaseUrl "http://localhost:8080/api/v1" -Token "<JWT>" -Calls 10 -AdminSecret "<ADMIN_SECRET>" | Tee-Object -FilePath .\rollout-smoke-output.txt
+```

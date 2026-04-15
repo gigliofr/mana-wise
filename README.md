@@ -138,6 +138,7 @@ Every `/api/v1/analyze` response includes `"ai_source"` indicating which tier pr
 
 Operational fallback and incident procedures are documented in [docs/AI_FALLBACK_RUNBOOK.md](docs/AI_FALLBACK_RUNBOOK.md).
 Gradual environment rollout steps are documented in [docs/AI_ROLLOUT_CHECKLIST.md](docs/AI_ROLLOUT_CHECKLIST.md).
+Evidence/report template for rollout sign-off is available in [docs/AI_ROLLOUT_EVIDENCE_TEMPLATE.md](docs/AI_ROLLOUT_EVIDENCE_TEMPLATE.md).
 
 ## Environment variables
 
