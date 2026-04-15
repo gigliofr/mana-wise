@@ -117,6 +117,12 @@ Unified release verification helper:
 ./scripts/verify_release.ps1
 ```
 
+Generate timestamped rollout evidence file:
+
+```powershell
+./scripts/create_ai_rollout_evidence.ps1 -Owner "your-name"
+```
+
 ## AI pipeline
 
 ManaWise uses a multi-tier AI routing system controlled by environment variables.

@@ -122,6 +122,12 @@ Then:
 
 Use this template to standardize the final report: [docs/AI_ROLLOUT_EVIDENCE_TEMPLATE.md](docs/AI_ROLLOUT_EVIDENCE_TEMPLATE.md).
 
+Quick-start generator (creates timestamped evidence file prefilled with date/commit):
+
+```powershell
+./scripts/create_ai_rollout_evidence.ps1 -Owner "your-name"
+```
+
 Optional: persist smoke-check output as evidence artifact:
 
 ```powershell
