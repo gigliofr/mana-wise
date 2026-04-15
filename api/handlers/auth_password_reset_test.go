@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gigliofr/mana-wise/api/middleware"
 	"github.com/gigliofr/mana-wise/domain"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -240,6 +241,58 @@ func TestResetPassword_InvalidToken(t *testing.T) {
 	rr := httptest.NewRecorder()
 
 	h.ResetPassword(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestRefresh_ReturnsNewTokenForAuthenticatedUser(t *testing.T) {
+	repo := &authResetMockUserRepo{
+		byID: map[string]*domain.User{
+			"u-refresh": {
+				ID:           "u-refresh",
+				Email:        "refresh@example.com",
+				PasswordHash: "hash",
+				Name:         "Refresh User",
+				Plan:         domain.PlanFree,
+			},
+		},
+		byEmail: map[string]*domain.User{},
+	}
+	h := NewAuthHandler(repo, "secret", 24)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/refresh", nil)
+	ctx := context.WithValue(req.Context(), middleware.ContextKeyUserID, "u-refresh")
+	req = req.WithContext(ctx)
+	rr := httptest.NewRecorder()
+
+	h.Refresh(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var payload TokenResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("expected valid json response: %v", err)
+	}
+	if strings.TrimSpace(payload.Token) == "" {
+		t.Fatalf("expected refreshed token in response")
+	}
+	if payload.User == nil || payload.User.ID != "u-refresh" {
+		t.Fatalf("expected refreshed user payload")
+	}
+}
+
+func TestRefresh_Unauthenticated(t *testing.T) {
+	repo := &authResetMockUserRepo{byID: map[string]*domain.User{}, byEmail: map[string]*domain.User{}}
+	h := NewAuthHandler(repo, "secret", 24)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/refresh", nil)
+	rr := httptest.NewRecorder()
+
+	h.Refresh(rr, req)
 
 	if rr.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d body=%s", rr.Code, rr.Body.String())

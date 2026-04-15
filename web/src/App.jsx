@@ -11,6 +11,7 @@ import NotificationsCenter from './components/NotificationsCenter'
 import LegalFooter from './components/LegalFooter'
 import { LegalPage } from './components/LegalPages'
 import { LOCALES, translations } from './i18n'
+import { configureApiAuthSession } from './lib/apiClient'
 
 const TOKEN_KEY = 'manawise_token'
 const USER_KEY  = 'manawise_user'
@@ -59,6 +60,14 @@ function App() {
     localStorage.setItem(LOCALE_KEY, nextLocale)
     setLocale(nextLocale)
   }
+
+  useEffect(() => {
+    configureApiAuthSession({
+      getToken: () => localStorage.getItem(TOKEN_KEY) || '',
+      onSessionUpdate: handleSessionUpdate,
+      onUnauthorized: handleLogout,
+    })
+  }, [token, user])
 
   useEffect(() => {
     if (!token) return

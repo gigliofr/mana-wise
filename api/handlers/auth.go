@@ -88,6 +88,36 @@ type TokenResponse struct {
 	User  *domain.User `json:"user"`
 }
 
+// Refresh handles POST /auth/refresh for authenticated users.
+func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.UserIDFromContext(r.Context())
+	if userID == "" {
+		jsonError(w, "unauthenticated", http.StatusUnauthorized)
+		return
+	}
+
+	user, err := h.userRepo.FindByID(r.Context(), userID)
+	if err != nil || user == nil {
+		jsonError(w, "user not found", http.StatusNotFound)
+		return
+	}
+
+	if user.Plan == domain.PlanPro && user.ProUntil != nil && !user.ProUntil.After(time.Now().UTC()) {
+		user.Plan = domain.PlanFree
+		user.ProUntil = nil
+		_ = h.userRepo.Update(r.Context(), user)
+	}
+
+	user.Remaining = user.RemainingAnalyses(domain.CurrentBusinessDay())
+	token, err := middleware.GenerateToken(user.ID, user.Email, string(user.Plan), h.jwtSecret, h.expiryHours)
+	if err != nil {
+		jsonError(w, "could not generate token", http.StatusInternalServerError)
+		return
+	}
+
+	jsonOK(w, TokenResponse{Token: token, User: user})
+}
+
 // Register handles POST /auth/register.
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	var req RegisterRequest
