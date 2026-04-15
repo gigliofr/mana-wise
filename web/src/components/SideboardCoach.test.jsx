@@ -145,4 +145,44 @@ describe('SideboardCoach', () => {
       expect(screen.getByText('Play to board early.')).toBeInTheDocument()
     })
   })
+
+  it('handles selecting saved deck with missing cards array', async () => {
+    const fetchMock = vi.fn(async (url, options = {}) => {
+      if (url === '/api/v1/decks' && options.method === 'GET') {
+        return jsonResponse([
+          {
+            id: 'deck-1',
+            user_id: 'user-1',
+            name: 'Deck without cards',
+            format: 'modern',
+          },
+        ])
+      }
+      if (url === '/api/v1/sideboard/plan' && options.method === 'POST') {
+        return jsonResponse({ matchup: 'aggro', ins: [], outs: [], notes: [] })
+      }
+      throw new Error(`Unhandled request: ${String(url)} ${String(options.method)}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(
+      <SideboardCoach
+        token="token-123"
+        user={{ id: 'user-1' }}
+        decklist={'4 Lightning Bolt\n20 Mountain'}
+        format="pioneer"
+        messages={messages}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText('Deck without cards (modern)')).toBeInTheDocument()
+    })
+
+    fireEvent.change(screen.getByDisplayValue('Load saved deck'), { target: { value: 'deck-1' } })
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('Modern')).toBeInTheDocument()
+    })
+  })
 })

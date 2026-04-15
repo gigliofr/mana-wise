@@ -109,4 +109,44 @@ describe('MulliganAssistant', () => {
       expect(screen.getByText('Simulation not available')).toBeInTheDocument()
     })
   })
+
+  it('handles selecting saved deck with missing cards array', async () => {
+    const fetchMock = vi.fn(async (url, options = {}) => {
+      if (url === '/api/v1/decks' && options.method === 'GET') {
+        return jsonResponse([
+          {
+            id: 'deck-1',
+            user_id: 'user-1',
+            name: 'Deck without cards',
+            format: 'pioneer',
+          },
+        ])
+      }
+      if (url === '/api/v1/mulligan/simulate' && options.method === 'POST') {
+        return jsonResponse({ recommendation: 'Keep', iterations: 1000, summaries: [] })
+      }
+      throw new Error(`Unhandled request: ${String(url)} ${String(options.method)}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(
+      <MulliganAssistant
+        token="token-123"
+        user={{ id: 'user-1' }}
+        decklist={'4 Lightning Bolt\n20 Mountain'}
+        format="modern"
+        messages={messages}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText('Deck without cards (pioneer)')).toBeInTheDocument()
+    })
+
+    fireEvent.change(screen.getByDisplayValue('Load saved deck'), { target: { value: 'deck-1' } })
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('Pioneer')).toBeInTheDocument()
+    })
+  })
 })

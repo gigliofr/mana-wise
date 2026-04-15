@@ -101,7 +101,8 @@ export default function MulliganAssistant({ token, user, decklist: decklistProp,
             <select onChange={e => {
               const deck = savedDecks.find(d => d.id === e.target.value)
               if (deck) {
-                const formatted = deck.cards.map(c => `${c.quantity || 1} ${c.card_name || c.name || ''}`).join('\n')
+                const cards = Array.isArray(deck.cards) ? deck.cards : []
+                const formatted = cards.map(c => `${c.quantity || 1} ${c.card_name || c.name || ''}`).join('\n')
                 setDecklist(formatted)
                 setFormat(deck.format)
                 e.target.value = ''
