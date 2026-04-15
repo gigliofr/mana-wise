@@ -149,4 +149,38 @@ describe('MulliganAssistant', () => {
       expect(screen.getByDisplayValue('Pioneer')).toBeInTheDocument()
     })
   })
+
+  it('still runs simulation when background saved-decks load fails', async () => {
+    const fetchMock = vi.fn(async (url, options = {}) => {
+      if (url === '/api/v1/decks' && options.method === 'GET') {
+        throw new Error('network down')
+      }
+      if (url === '/api/v1/mulligan/simulate' && options.method === 'POST') {
+        return jsonResponse({
+          recommendation: 'Keep',
+          iterations: 1000,
+          summaries: [{ hand_size: 7, keep_rate: 0.6, avg_lands: 2.3, avg_early_plays: 1.7 }],
+        })
+      }
+      throw new Error(`Unhandled request: ${String(url)} ${String(options.method)}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(
+      <MulliganAssistant
+        token="token-123"
+        user={{ id: 'user-1' }}
+        decklist={'4 Lightning Bolt\n20 Mountain'}
+        format="modern"
+        messages={messages}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /run mulligan/i }))
+
+    await waitFor(() => {
+      expect(screen.getByText(/Recommendation:/)).toBeInTheDocument()
+      expect(screen.getByText('Keep')).toBeInTheDocument()
+    })
+  })
 })
