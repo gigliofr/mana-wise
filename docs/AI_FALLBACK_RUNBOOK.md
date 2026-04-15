@@ -76,3 +76,5 @@ This removes dependency on external providers and guarantees deterministic sugge
 3. Frontend AI panel displays fallback warning and source correctly.
 4. Admin metrics show expected increments in fallback counters.
 5. CI passes (`go test ./...`, frontend `npm test`, `npm run build`).
+
+For progressive deployment across dev/staging/canary/prod, follow [docs/AI_ROLLOUT_CHECKLIST.md](docs/AI_ROLLOUT_CHECKLIST.md).

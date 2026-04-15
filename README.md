@@ -131,6 +131,7 @@ Set `LLM_SECONDARY_PROVIDER` + credentials to chain a second LLM after the prima
 Every `/api/v1/analyze` response includes `"ai_source"` indicating which tier produced the suggestions (e.g. `"gemini"`, `"openai"`, `"internal_rules"`).
 
 Operational fallback and incident procedures are documented in [docs/AI_FALLBACK_RUNBOOK.md](docs/AI_FALLBACK_RUNBOOK.md).
+Gradual environment rollout steps are documented in [docs/AI_ROLLOUT_CHECKLIST.md](docs/AI_ROLLOUT_CHECKLIST.md).
 
 ## Environment variables
 
