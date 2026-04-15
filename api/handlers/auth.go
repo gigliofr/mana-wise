@@ -1,9 +1,14 @@
 package handlers
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
+	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -15,14 +20,35 @@ import (
 
 // AuthHandler handles user registration and login.
 type AuthHandler struct {
-	userRepo    domain.UserRepository
-	jwtSecret   string
-	expiryHours int
+	userRepo      domain.UserRepository
+	resetTokenRepo domain.PasswordResetTokenRepository
+	mailer        domain.EmailSender
+	jwtSecret     string
+	expiryHours   int
 }
 
 // NewAuthHandler creates an AuthHandler.
 func NewAuthHandler(userRepo domain.UserRepository, jwtSecret string, expiryHours int) *AuthHandler {
-	return &AuthHandler{userRepo: userRepo, jwtSecret: jwtSecret, expiryHours: expiryHours}
+	return &AuthHandler{
+		userRepo:    userRepo,
+		mailer:      domain.NoopEmailSender{},
+		jwtSecret:   jwtSecret,
+		expiryHours: expiryHours,
+	}
+}
+
+// WithPasswordResetRepo enables forgot/reset-password token persistence.
+func (h *AuthHandler) WithPasswordResetRepo(repo domain.PasswordResetTokenRepository) *AuthHandler {
+	h.resetTokenRepo = repo
+	return h
+}
+
+// WithMailer enables transactional auth emails.
+func (h *AuthHandler) WithMailer(mailer domain.EmailSender) *AuthHandler {
+	if mailer != nil {
+		h.mailer = mailer
+	}
+	return h
 }
 
 // RegisterRequest is the JSON body for POST /auth/register.
@@ -43,6 +69,17 @@ type UpdatePlanRequest struct {
 type LoginRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
+}
+
+// ForgotPasswordRequest is the JSON body for POST /auth/forgot-password.
+type ForgotPasswordRequest struct {
+	Email string `json:"email"`
+}
+
+// ResetPasswordRequest is the JSON body for POST /auth/reset-password.
+type ResetPasswordRequest struct {
+	Token       string `json:"token"`
+	NewPassword string `json:"new_password"`
 }
 
 // TokenResponse is returned by register and login.
@@ -108,9 +145,124 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 	user.Remaining = user.RemainingAnalyses(domain.CurrentBusinessDay())
 
+	welcomeText := "Welcome to ManaWise. Your account has been created successfully."
+	welcomeHTML := "<p>Welcome to ManaWise.</p><p>Your account has been created successfully.</p>"
+	_ = h.sendEmail(user.Email, "Welcome to ManaWise", welcomeText, welcomeHTML)
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(TokenResponse{Token: token, User: user})
+}
+
+// ForgotPassword handles POST /auth/forgot-password.
+func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
+	var req ForgotPasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	email := strings.ToLower(strings.TrimSpace(req.Email))
+	if email == "" {
+		jsonError(w, "email is required", http.StatusBadRequest)
+		return
+	}
+
+	if h.resetTokenRepo == nil {
+		jsonOK(w, map[string]any{"status": "accepted", "message": "if the email exists, reset instructions will be sent"})
+		return
+	}
+
+	user, err := h.userRepo.FindByEmail(r.Context(), email)
+	if err != nil {
+		jsonError(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	if user != nil {
+		token, err := generateHexToken(24)
+		if err == nil {
+			ttl := passwordResetTokenTTL()
+			expiresAt := time.Now().UTC().Add(ttl)
+			rec := &domain.PasswordResetToken{
+				Token:     token,
+				UserID:    user.ID,
+				Email:     user.Email,
+				Purpose:   "password_reset",
+				ExpiresAt: expiresAt,
+				CreatedAt: time.Now().UTC(),
+			}
+			if err := h.resetTokenRepo.Create(r.Context(), rec); err == nil {
+				resetURL := buildActionURL(strings.TrimSpace(os.Getenv("FRONTEND_RESET_PASSWORD_URL")), "/reset-password", token)
+				log.Printf("[auth] reset-password link generated user=%s url=%s", user.Email, redactActionURLForLog(resetURL))
+				textBody := "We received a password reset request.\nUse this link to reset your password: " + resetURL + "\nExpires at: " + expiresAt.Format(time.RFC3339)
+				htmlBody := "<p>We received a password reset request.</p><p>Use this link to reset your password: <a href=\"" + resetURL + "\">reset password</a></p><p>Expires at: " + expiresAt.Format(time.RFC3339) + "</p>"
+				_ = h.sendEmail(user.Email, "ManaWise password reset", textBody, htmlBody)
+			}
+		}
+	}
+
+	jsonOK(w, map[string]any{"status": "accepted", "message": "if the email exists, reset instructions will be sent"})
+}
+
+// ResetPassword handles POST /auth/reset-password.
+func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
+	var req ResetPasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if len(strings.TrimSpace(req.NewPassword)) < 8 {
+		jsonError(w, "password must be at least 8 characters", http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(req.Token) == "" {
+		jsonError(w, "token is required", http.StatusBadRequest)
+		return
+	}
+	if h.resetTokenRepo == nil {
+		jsonError(w, "password reset is not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	rec, err := h.resetTokenRepo.Consume(r.Context(), strings.TrimSpace(req.Token))
+	if err != nil {
+		jsonError(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if rec == nil || rec.Purpose != "password_reset" {
+		jsonError(w, "invalid or expired token", http.StatusUnauthorized)
+		return
+	}
+
+	user, err := h.userRepo.FindByID(r.Context(), rec.UserID)
+	if err != nil {
+		jsonError(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if user == nil {
+		jsonError(w, "user not found", http.StatusNotFound)
+		return
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(strings.TrimSpace(req.NewPassword)), bcrypt.DefaultCost)
+	if err != nil {
+		jsonError(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	user.PasswordHash = string(hash)
+	user.UpdatedAt = time.Now().UTC()
+	if err := h.userRepo.Update(r.Context(), user); err != nil {
+		jsonError(w, "could not update password", http.StatusInternalServerError)
+		return
+	}
+
+	confirmText := "Your ManaWise password has been changed successfully."
+	confirmHTML := "<p>Your ManaWise password has been changed successfully.</p>"
+	_ = h.sendEmail(user.Email, "ManaWise password changed", confirmText, confirmHTML)
+
+	jsonOK(w, map[string]any{"status": "ok"})
 }
 
 // Login handles POST /auth/login.
@@ -251,6 +403,132 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	}
 	user.Remaining = user.RemainingAnalyses(domain.CurrentBusinessDay())
 	jsonOK(w, user)
+}
+
+func (h *AuthHandler) sendEmail(to, subject, textBody, htmlBody string) error {
+	if h.mailer == nil {
+		return nil
+	}
+	return h.mailer.Send(to, subject, textBody, htmlBody)
+}
+
+func generateHexToken(size int) (string, error) {
+	if size <= 0 {
+		size = 24
+	}
+	raw := make([]byte, size)
+	if _, err := rand.Read(raw); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(raw), nil
+}
+
+func passwordResetTokenTTL() time.Duration {
+	raw := strings.TrimSpace(os.Getenv("PASSWORD_RESET_TOKEN_TTL_MINUTES"))
+	if raw == "" {
+		return 30 * time.Minute
+	}
+	v, err := time.ParseDuration(raw + "m")
+	if err != nil || v <= 0 {
+		return 30 * time.Minute
+	}
+	return v
+}
+
+func buildActionURL(base, defaultPath, token string) string {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return ""
+	}
+
+	base = strings.TrimSpace(base)
+	if base == "" {
+		base = strings.TrimSpace(defaultPath)
+	}
+	if base == "" {
+		base = "/reset-password"
+	}
+
+	if u, err := url.Parse(base); err == nil {
+		q := u.Query()
+		for key := range q {
+			cleanKey := strings.ToLower(strings.TrimSpace(key))
+			if strings.Contains(cleanKey, "token") {
+				q.Del(key)
+			}
+		}
+		q.Set("token", token)
+		u.RawQuery = q.Encode()
+		return u.String()
+	}
+
+	sep := "?"
+	if strings.Contains(base, "?") {
+		sep = "&"
+	}
+	if strings.HasSuffix(base, "?") || strings.HasSuffix(base, "&") {
+		sep = ""
+	}
+	return base + sep + "token=" + url.QueryEscape(token)
+}
+
+func redactTokenForLog(token string) string {
+	clean := strings.TrimSpace(token)
+	if clean == "" {
+		return ""
+	}
+	if len(clean) <= 8 {
+		return "***"
+	}
+	return clean[:4] + "..." + clean[len(clean)-4:]
+}
+
+func redactActionURLForLog(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+
+	u, err := url.Parse(trimmed)
+	if err != nil {
+		return trimmed
+	}
+
+	q := u.Query()
+	for key := range q {
+		if strings.Contains(strings.ToLower(strings.TrimSpace(key)), "token") {
+			vals := q[key]
+			for i := range vals {
+				vals[i] = redactTokenForLog(vals[i])
+			}
+			q[key] = vals
+		}
+	}
+	u.RawQuery = q.Encode()
+
+	for _, prefix := range []string{"/verify-email/", "/reset-password/"} {
+		pathLower := strings.ToLower(u.Path)
+		idx := strings.Index(pathLower, prefix)
+		if idx < 0 {
+			continue
+		}
+		start := idx + len(prefix)
+		if start >= len(u.Path) {
+			continue
+		}
+		tail := u.Path[start:]
+		sepIdx := strings.IndexByte(tail, '/')
+		tokenPart := tail
+		rest := ""
+		if sepIdx >= 0 {
+			tokenPart = tail[:sepIdx]
+			rest = tail[sepIdx:]
+		}
+		u.Path = u.Path[:start] + redactTokenForLog(tokenPart) + rest
+		break
+	}
+
+	return u.String()
 }
 
 // Health handles GET /api/v1/health.
