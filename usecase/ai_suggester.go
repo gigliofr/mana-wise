@@ -20,16 +20,22 @@ const (
 
 // AISuggester orchestrates external LLM providers and internal rule-based suggestions.
 type AISuggester struct {
-	mode           string
-	primary        *llm.Connector
-	secondary      *llm.Connector
-	internalEnable bool
-	fallbackStatus map[int]bool
+	mode              string
+	primary           suggestionProvider
+	secondary         suggestionProvider
+	internalEnable    bool
+	fallbackStatus    map[int]bool
 	fallbackOnTimeout bool
 }
 
+type suggestionProvider interface {
+	Suggestions(ctx context.Context, decklistHash, decklist, format, locale string, analysis *domain.AnalysisResult) (string, error)
+	Provider() string
+	Model() string
+}
+
 // NewAISuggester creates an AI suggester with runtime routing rules.
-func NewAISuggester(mode string, primary, secondary *llm.Connector, internalEnable bool) *AISuggester {
+func NewAISuggester(mode string, primary, secondary suggestionProvider, internalEnable bool) *AISuggester {
 	mode = strings.ToLower(strings.TrimSpace(mode))
 	switch mode {
 	case AIModeExternalOnly, AIModeInternalOnly, AIModeHybridPreferExternal, AIModeHybridPreferInternal:
@@ -38,11 +44,11 @@ func NewAISuggester(mode string, primary, secondary *llm.Connector, internalEnab
 	}
 	defaultFallbackStatus := map[int]bool{429: true, 500: true, 502: true, 503: true, 504: true}
 	return &AISuggester{
-		mode:           mode,
-		primary:        primary,
-		secondary:      secondary,
-		internalEnable: internalEnable,
-		fallbackStatus: defaultFallbackStatus,
+		mode:              mode,
+		primary:           primary,
+		secondary:         secondary,
+		internalEnable:    internalEnable,
+		fallbackStatus:    defaultFallbackStatus,
 		fallbackOnTimeout: true,
 	}
 }
@@ -213,7 +219,7 @@ func (s *AISuggester) tryInternal(format, locale string, analysis *domain.Analys
 	return text, "internal_rules", nil
 }
 
-func sourceLabel(c *llm.Connector) string {
+func sourceLabel(c suggestionProvider) string {
 	if c == nil {
 		return ""
 	}

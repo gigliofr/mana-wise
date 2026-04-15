@@ -175,6 +175,76 @@ func TestBuildDeterministicCoachingFooter_ItalianLocale(t *testing.T) {
 	}
 }
 
+func TestAISuggester_HybridPreferExternal_PrimaryFails_SecondarySucceeds(t *testing.T) {
+	primary := &stubProvider{
+		provider: "openai",
+		model:    "gpt-4o-mini",
+		err:      assertErr("provider returned status code: 429"),
+	}
+	secondary := &stubProvider{
+		provider:   "gemini",
+		model:      "gemini-1.5-pro",
+		suggestion: "1) CUT: X ADD: Y WHY: better curve",
+	}
+
+	s := NewAISuggester(AIModeHybridPreferExternal, primary, secondary, true)
+	text, source, extErr, err := s.Suggest(context.Background(), "4 Lightning Bolt", "standard", "en", minimalAnalysis(), nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if extErr != nil {
+		t.Fatalf("did not expect external warning when secondary succeeds, got: %v", extErr)
+	}
+	if !strings.Contains(source, "gemini") {
+		t.Fatalf("expected secondary source label, got %q", source)
+	}
+	if strings.TrimSpace(text) == "" {
+		t.Fatal("expected non-empty suggestions")
+	}
+}
+
+func TestAISuggester_HybridPreferExternal_429FallbacksToInternalWhenExternalChainFails(t *testing.T) {
+	primary := &stubProvider{
+		provider: "openai",
+		model:    "gpt-4o-mini",
+		err:      assertErr("provider returned status code: 429"),
+	}
+	secondary := &stubProvider{
+		provider: "gemini",
+		model:    "gemini-1.5-pro",
+		err:      assertErr("provider returned status code: 503"),
+	}
+
+	s := NewAISuggester(AIModeHybridPreferExternal, primary, secondary, true).WithFallbackPolicy([]int{429, 503}, true)
+	text, source, extErr, err := s.Suggest(context.Background(), "4 Lightning Bolt", "standard", "it", minimalAnalysis(), nil)
+	if err != nil {
+		t.Fatalf("expected internal fallback, got error: %v", err)
+	}
+	if extErr == nil {
+		t.Fatal("expected external warning when fallback to internal happens")
+	}
+	if source != "internal_rules" {
+		t.Fatalf("expected internal source, got %q", source)
+	}
+	if strings.TrimSpace(text) == "" {
+		t.Fatal("expected non-empty internal fallback suggestions")
+	}
+}
+
+func TestAISuggester_HybridPreferExternal_400DoesNotFallbackWhenPolicyDisallows(t *testing.T) {
+	primary := &stubProvider{
+		provider: "openai",
+		model:    "gpt-4o-mini",
+		err:      assertErr("provider returned status code: 400"),
+	}
+
+	s := NewAISuggester(AIModeHybridPreferExternal, primary, nil, true).WithFallbackPolicy([]int{429, 503}, true)
+	_, _, _, err := s.Suggest(context.Background(), "4 Lightning Bolt", "standard", "en", minimalAnalysis(), nil)
+	if err == nil {
+		t.Fatal("expected hard error when status is not in fallback policy")
+	}
+}
+
 func TestAISuggester_FallbackPolicy_StatusCodes(t *testing.T) {
 	s := NewAISuggester(AIModeHybridPreferExternal, nil, nil, true).WithFallbackPolicy([]int{503}, true)
 
@@ -210,4 +280,26 @@ type testErr struct {
 
 func (e *testErr) Error() string {
 	return e.msg
+}
+
+type stubProvider struct {
+	provider   string
+	model      string
+	suggestion string
+	err        error
+}
+
+func (s *stubProvider) Suggestions(_ context.Context, _ string, _ string, _ string, _ string, _ *domain.AnalysisResult) (string, error) {
+	if s.err != nil {
+		return "", s.err
+	}
+	return s.suggestion, nil
+}
+
+func (s *stubProvider) Provider() string {
+	return s.provider
+}
+
+func (s *stubProvider) Model() string {
+	return s.model
 }
