@@ -45,7 +45,13 @@ func (uc *ResolveCardByNameUseCase) Execute(ctx context.Context, name string) (*
 	if err != nil {
 		return nil, fmt.Errorf("fuzzy resolve card %q: %w", name, err)
 	}
+	if sc == nil {
+		return nil, fmt.Errorf("fuzzy resolve card %q: resolver returned nil card", name)
+	}
 	card = scryfall.ToDomainCard(sc)
+	if card == nil {
+		return nil, fmt.Errorf("fuzzy resolve card %q: failed to convert card", name)
+	}
 	if err = uc.cardRepo.Upsert(ctx, card); err != nil {
 		return nil, fmt.Errorf("persist resolved card: %w", err)
 	}

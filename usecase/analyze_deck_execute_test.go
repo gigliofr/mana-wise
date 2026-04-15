@@ -175,3 +175,23 @@ func TestAnalyzeDeckExecute_ResolvesBySetCollectorBeforeName(t *testing.T) {
 		t.Fatalf("expected land count 12, got %d", resp.Result.Mana.LandCount)
 	}
 }
+
+func TestAnalyzeDeckExecute_ReturnsErrorWhenResolverReturnsNilCard(t *testing.T) {
+	fetcher := &fakeCardFetcher{
+		exact: map[string]*scryfall.ScryfallCard{
+			"Ghost Card": nil,
+		},
+		fuzzy: map[string]*scryfall.ScryfallCard{},
+		bySet: map[string]*scryfall.ScryfallCard{},
+	}
+	repo := &fakeCardRepo{byName: map[string]*domain.Card{}}
+	uc := NewAnalyzeDeckUseCase(fetcher, repo, 2)
+
+	_, err := uc.Execute(context.Background(), AnalyzeDeckRequest{
+		Decklist: "4 Ghost Card",
+		Format:   "standard",
+	})
+	if err == nil {
+		t.Fatal("expected error when resolver returns nil card")
+	}
+}

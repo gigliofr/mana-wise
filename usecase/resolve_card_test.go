@@ -108,3 +108,13 @@ func TestResolveCardByNameUseCase_FuzzyError(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+func TestResolveCardByNameUseCase_FuzzyNilCard(t *testing.T) {
+	repo := &mockResolveRepo{byName: map[string]*domain.Card{}}
+	uc := usecase.NewResolveCardByNameUseCase(&mockCardNameFetcher{card: nil}, repo)
+
+	_, err := uc.Execute(context.Background(), "missing card")
+	if err == nil {
+		t.Fatal("expected error when resolver returns nil card")
+	}
+}

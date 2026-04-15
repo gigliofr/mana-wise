@@ -182,7 +182,14 @@ func (uc *AnalyzeDeckUseCase) Execute(ctx context.Context, req AnalyzeDeckReques
 					}
 				}
 
+				if sc == nil {
+					return nil, fmt.Errorf("resolver returned nil card for %q", e.name)
+				}
+
 				card := scryfall.ToDomainCard(sc)
+				if card == nil {
+					return nil, fmt.Errorf("failed to convert resolved card %q", e.name)
+				}
 				// Persist to DB in background; ignore error for performance.
 				_ = uc.cardRepo.Upsert(ctx, card)
 				return card, nil
