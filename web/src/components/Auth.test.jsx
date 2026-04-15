@@ -103,15 +103,17 @@ describe('Auth reset flow', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Sign up free' }))
 
-    expect(screen.getAllByPlaceholderText('••••••••')).toHaveLength(1)
+    expect(screen.getAllByPlaceholderText('••••••••')).toHaveLength(2)
 
-    fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'abc' } })
+    fireEvent.change(screen.getAllByPlaceholderText('••••••••')[0], { target: { value: 'abc' } })
+    fireEvent.change(screen.getAllByPlaceholderText('••••••••')[1], { target: { value: 'abc' } })
 
     expect(screen.getByText('Password strength')).toBeInTheDocument()
     expect(screen.getByText('Weak')).toBeInTheDocument()
     expect(screen.getByText('At least 8 characters')).toBeInTheDocument()
 
-    fireEvent.change(screen.getByPlaceholderText('••••••••'), { target: { value: 'Abcdef12!' } })
+    fireEvent.change(screen.getAllByPlaceholderText('••••••••')[0], { target: { value: 'Abcdef12!' } })
+    fireEvent.change(screen.getAllByPlaceholderText('••••••••')[1], { target: { value: 'Abcdef12!' } })
     expect(screen.getByText('Strong')).toBeInTheDocument()
 
     fireEvent.change(screen.getByPlaceholderText('you@example.com'), { target: { value: 'user@example.com' } })
@@ -125,6 +127,26 @@ describe('Auth reset flow', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/v1/auth/register', expect.objectContaining({
       method: 'POST',
     }))
+  })
+
+  it('shows mismatch validation before register call', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    renderAuth()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sign up free' }))
+    fireEvent.change(screen.getByPlaceholderText('Your name'), { target: { value: 'User Name' } })
+    fireEvent.change(screen.getByPlaceholderText('you@example.com'), { target: { value: 'user@example.com' } })
+    fireEvent.change(screen.getAllByPlaceholderText('••••••••')[0], { target: { value: 'NewPass123!' } })
+    fireEvent.change(screen.getAllByPlaceholderText('••••••••')[1], { target: { value: 'Different123!' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create account' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('Passwords do not match')).toBeInTheDocument()
+    })
+
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it('submits reset token and new password from query param', async () => {

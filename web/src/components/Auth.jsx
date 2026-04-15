@@ -51,6 +51,9 @@ export default function Auth({ onLogin, locale, messages, onLocaleChange }) {
       let body = { email: form.email, password: form.password }
 
       if (mode === 'register') {
+        if (form.password !== confirmPassword) {
+          throw new Error(messages.passwordMismatch || 'Passwords do not match')
+        }
         endpoint = '/auth/register'
         body = { email: form.email, password: form.password, name: form.name }
       }
@@ -195,7 +198,7 @@ export default function Auth({ onLogin, locale, messages, onLocaleChange }) {
                 </div>
               )}
 
-              {mode === 'reset' && (
+              {(mode === 'register' || mode === 'reset') && (
                 <div className="form-row">
                   <label>{messages.confirmPassword}</label>
                   <input
