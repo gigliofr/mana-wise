@@ -50,23 +50,28 @@ describe('DeckLibrary', () => {
 
   it('loads only user-owned decks and renders summary value', async () => {
     const fetchMock = vi.fn(async (url, options = {}) => {
-      if (url === '/api/v1/decks' && options.method === 'GET') {
-        return jsonResponse([
-          {
-            id: 'deck-1',
-            user_id: 'user-1',
-            name: 'Mono Black',
-            format: 'standard',
-            cards: [{ card_name: 'Swamp', quantity: 20, is_sideboard: false }],
-          },
-          {
-            id: 'deck-2',
-            user_id: 'user-2',
-            name: 'Other User Deck',
-            format: 'standard',
-            cards: [{ card_name: 'Island', quantity: 20, is_sideboard: false }],
-          },
-        ])
+      if (url === '/api/v1/decks?page=1&limit=3' && options.method === 'GET') {
+        return jsonResponse({
+          data: [
+            {
+              id: 'deck-1',
+              user_id: 'user-1',
+              name: 'Mono Black',
+              format: 'standard',
+              cards: [{ card_name: 'Swamp', quantity: 20, is_sideboard: false }],
+            },
+            {
+              id: 'deck-2',
+              user_id: 'user-2',
+              name: 'Other User Deck',
+              format: 'standard',
+              cards: [{ card_name: 'Island', quantity: 20, is_sideboard: false }],
+            },
+          ],
+          total: 2,
+          page: 1,
+          limit: 3,
+        })
       }
       if (url === '/api/v1/decks/deck-1/summary' && options.method === 'GET') {
         return jsonResponse({
@@ -107,23 +112,30 @@ describe('DeckLibrary', () => {
       expect(screen.getByText('Legal')).toBeInTheDocument()
     })
 
-    expect(fetchMock).toHaveBeenCalledWith('/api/v1/decks', expect.objectContaining({ method: 'GET' }))
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/decks?page=1&limit=3', expect.objectContaining({ method: 'GET' }))
     expect(fetchMock).toHaveBeenCalledWith('/api/v1/decks/deck-1/summary', expect.objectContaining({ method: 'GET' }))
     expect(fetchMock).toHaveBeenCalledWith('/api/v1/cards/metadata/batch', expect.objectContaining({ method: 'POST' }))
   })
 
   it('falls back to legality endpoint when summary fails and supports delete', async () => {
+    let pageDecks = [
+      {
+        id: 'deck-3',
+        user_id: 'user-1',
+        name: 'Fallback Deck',
+        format: 'modern',
+        cards: [{ card_name: 'Lightning Bolt', quantity: 4, is_sideboard: false }],
+      },
+    ]
+
     const fetchMock = vi.fn(async (url, options = {}) => {
-      if (url === '/api/v1/decks' && options.method === 'GET') {
-        return jsonResponse([
-          {
-            id: 'deck-3',
-            user_id: 'user-1',
-            name: 'Fallback Deck',
-            format: 'modern',
-            cards: [{ card_name: 'Lightning Bolt', quantity: 4, is_sideboard: false }],
-          },
-        ])
+      if (url === '/api/v1/decks?page=1&limit=3' && options.method === 'GET') {
+        return jsonResponse({
+          data: pageDecks,
+          total: pageDecks.length,
+          page: 1,
+          limit: 3,
+        })
       }
       if (url === '/api/v1/decks/deck-3/summary' && options.method === 'GET') {
         return jsonResponse({ error: 'summary unavailable' }, 500)
@@ -142,6 +154,7 @@ describe('DeckLibrary', () => {
         return jsonResponse({ items: [] })
       }
       if (url === '/api/v1/decks/deck-3' && options.method === 'DELETE') {
+        pageDecks = []
         return noContentResponse(204)
       }
       throw new Error(`Unhandled request in test: ${String(url)} ${String(options.method)}`)

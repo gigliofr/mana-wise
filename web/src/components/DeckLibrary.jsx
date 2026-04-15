@@ -17,23 +17,22 @@ export default function DeckLibrary({
   const [saveStep, setSaveStep] = useState(0) // 0=hidden, 1=name, 2=confirm
   const [editedDecklist, setEditedDecklist] = useState('')
   const [page, setPage] = useState(0)
+  const [totalDecks, setTotalDecks] = useState(0)
+  const [reloadNonce, setReloadNonce] = useState(0)
   const [expandedDecks, setExpandedDecks] = useState({})
   const [deckLegality, setDeckLegality] = useState({})
   const [deckSummaries, setDeckSummaries] = useState({})
   const [cardMetadata, setCardMetadata] = useState({})
 
   const ITEMS_PER_PAGE = 3
-  const paginatedDecks = useMemo(
-    () => decks.slice(page * ITEMS_PER_PAGE, (page + 1) * ITEMS_PER_PAGE),
-    [decks, page],
-  )
+  const paginatedDecks = decks
   const totalPages = useMemo(
-    () => Math.ceil(decks.length / ITEMS_PER_PAGE),
-    [decks],
+    () => Math.max(1, Math.ceil(totalDecks / ITEMS_PER_PAGE)),
+    [totalDecks],
   )
 
   const isPro = (user?.plan || '').toLowerCase() === 'pro'
-  const canSaveMore = isPro || decks.length < 1
+  const canSaveMore = isPro || totalDecks < 1
 
   const activeSummary = useMemo(() => {
     const lines = (currentDecklist || '').split('\n').map(l => l.trim()).filter(Boolean)
@@ -49,14 +48,20 @@ export default function DeckLibrary({
       setLoading(true)
       setError('')
       try {
-        const { res, data } = await apiRequest('/decks', { token })
+        const requestPage = page + 1
+        const { res, data } = await apiRequest(`/decks?page=${requestPage}&limit=${ITEMS_PER_PAGE}`, { token })
         throwIfNotOK(res, data, messages.deckLoadFailed)
         if (!cancelled) {
-          const allDecks = Array.isArray(data) ? data : []
+          const envelope = Array.isArray(data)
+            ? { data, total: data.length, page: requestPage, limit: ITEMS_PER_PAGE }
+            : (data || {})
+          const pageDecks = Array.isArray(envelope.data) ? envelope.data : []
           const ownedDecks = user?.id
-            ? allDecks.filter(d => d?.user_id === user.id)
-            : allDecks
+            ? pageDecks.filter(d => d?.user_id === user.id)
+            : pageDecks
+          const total = Number(envelope.total)
           setDecks(ownedDecks)
+          setTotalDecks(Number.isFinite(total) && total >= 0 ? total : ownedDecks.length)
         }
       } catch (err) {
         if (!cancelled) setError(err.message)
@@ -68,7 +73,13 @@ export default function DeckLibrary({
     return () => {
       cancelled = true
     }
-  }, [token, messages.deckLoadFailed])
+  }, [token, messages.deckLoadFailed, page, reloadNonce, user?.id])
+
+  useEffect(() => {
+    if (page > 0 && page >= totalPages) {
+      setPage(totalPages - 1)
+    }
+  }, [page, totalPages])
 
   useEffect(() => {
     let cancelled = false
@@ -304,7 +315,9 @@ export default function DeckLibrary({
           },
         })
         throwIfNotOK(res, data, messages.deckSaveFailed)
-        setDecks(prev => [data, ...prev])
+        setTotalDecks(prev => prev + 1)
+        setPage(0)
+        setReloadNonce(prev => prev + 1)
         setName('')
         setEditedDecklist('')
         setSaveStep(0)
@@ -324,7 +337,8 @@ export default function DeckLibrary({
       if (!res.ok && res.status !== 204) {
         throw new Error(data?.error || messages.deckDeleteFailed)
       }
-      setDecks(prev => prev.filter(d => d.id !== id))
+      setTotalDecks(prev => Math.max(0, prev - 1))
+      setReloadNonce(prev => prev + 1)
       setDeckLegality(prev => {
         const next = { ...prev }
         delete next[id]
@@ -355,7 +369,7 @@ export default function DeckLibrary({
         </div>
         <div>
           <strong>{messages.deckSlots}</strong>
-          <div>{isPro ? messages.unlimited : `${decks.length}/1`}</div>
+          <div>{isPro ? messages.unlimited : `${totalDecks}/1`}</div>
         </div>
       </div>
 

@@ -79,6 +79,41 @@ func (r *DeckRepository) FindByUserID(ctx context.Context, userID string) ([]*do
 	return decks, nil
 }
 
+// FindByUserIDPage returns a page of decks owned by a user and the total count.
+func (r *DeckRepository) FindByUserIDPage(ctx context.Context, userID string, page, limit int) ([]*domain.Deck, int64, error) {
+	if page <= 0 {
+		page = 1
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+
+	filter := bson.M{"user_id": userID}
+	total, err := r.col.CountDocuments(ctx, filter)
+	if err != nil {
+		return nil, 0, fmt.Errorf("DeckRepo.FindByUserIDPage count: %w", err)
+	}
+
+	skip := int64((page - 1) * limit)
+	opts := options.Find().
+		SetSort(bson.D{{Key: "updated_at", Value: -1}}).
+		SetSkip(skip).
+		SetLimit(int64(limit))
+
+	cursor, err := r.col.Find(ctx, filter, opts)
+	if err != nil {
+		return nil, 0, fmt.Errorf("DeckRepo.FindByUserIDPage find: %w", err)
+	}
+	defer cursor.Close(ctx)
+
+	var decks []*domain.Deck
+	if err = cursor.All(ctx, &decks); err != nil {
+		return nil, 0, fmt.Errorf("DeckRepo.FindByUserIDPage decode: %w", err)
+	}
+
+	return decks, total, nil
+}
+
 // Create inserts a new deck document.
 func (r *DeckRepository) Create(ctx context.Context, deck *domain.Deck) error {
 	now := time.Now().UTC()

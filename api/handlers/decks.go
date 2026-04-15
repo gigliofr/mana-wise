@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"math"
 	"net/http"
@@ -25,6 +26,10 @@ type DeckHandler struct {
 	classify *usecase.DeckClassifierUseCase
 	mulligan *usecase.MulliganAssistantUseCase
 	tracker  domain.AnalyticsTracker
+}
+
+type deckRepoPager interface {
+	FindByUserIDPage(ctx context.Context, userID string, page, limit int) ([]*domain.Deck, int64, error)
 }
 
 // NewDeckHandler creates a DeckHandler.
@@ -236,11 +241,62 @@ type deckRestoreResponse struct {
 	Note           string              `json:"note,omitempty"`
 }
 
-// List handles GET /api/v1/decks — returns all decks owned by the authenticated user.
+// List handles GET /api/v1/decks.
+// Legacy behavior (no query params): returns all decks as an array.
+// Paginated behavior (?page=&limit=): returns envelope {data,total,page,limit}.
 func (h *DeckHandler) List(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.UserIDFromContext(r.Context())
 	if userID == "" {
 		jsonError(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	pageRaw := strings.TrimSpace(r.URL.Query().Get("page"))
+	limitRaw := strings.TrimSpace(r.URL.Query().Get("limit"))
+	if pageRaw == "" && limitRaw == "" {
+		decks, err := h.repo.FindByUserID(r.Context(), userID)
+		if err != nil {
+			jsonError(w, "failed to retrieve decks", http.StatusInternalServerError)
+			return
+		}
+
+		jsonOK(w, decks)
+		return
+	}
+
+	page := 1
+	limit := 20
+	var err error
+	if pageRaw != "" {
+		page, err = strconv.Atoi(pageRaw)
+		if err != nil || page <= 0 {
+			jsonError(w, "page must be a positive integer", http.StatusBadRequest)
+			return
+		}
+	}
+	if limitRaw != "" {
+		limit, err = strconv.Atoi(limitRaw)
+		if err != nil || limit <= 0 {
+			jsonError(w, "limit must be a positive integer", http.StatusBadRequest)
+			return
+		}
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	if pager, ok := h.repo.(deckRepoPager); ok {
+		decks, total, pageErr := pager.FindByUserIDPage(r.Context(), userID, page, limit)
+		if pageErr != nil {
+			jsonError(w, "failed to retrieve decks", http.StatusInternalServerError)
+			return
+		}
+		jsonOK(w, map[string]any{
+			"data":  decks,
+			"total": total,
+			"page":  page,
+			"limit": limit,
+		})
 		return
 	}
 
@@ -250,7 +306,22 @@ func (h *DeckHandler) List(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	jsonOK(w, decks)
+	total := len(decks)
+	start := (page - 1) * limit
+	if start > total {
+		start = total
+	}
+	end := start + limit
+	if end > total {
+		end = total
+	}
+
+	jsonOK(w, map[string]any{
+		"data":  decks[start:end],
+		"total": total,
+		"page":  page,
+		"limit": limit,
+	})
 }
 
 // Get handles GET /api/v1/decks/{id}.
