@@ -147,4 +147,40 @@ describe('Analyzer', () => {
       expect(screen.getByText('Analysis failed')).toBeInTheDocument()
     })
   })
+
+  it('handles selecting saved deck with missing cards array', async () => {
+    const fetchMock = vi.fn(async (url, options = {}) => {
+      if (url === '/api/v1/decks' && options.method === 'GET') {
+        return jsonResponse([
+          {
+            id: 'deck-1',
+            user_id: 'user-1',
+            name: 'Deck without cards',
+            format: 'modern',
+          },
+        ])
+      }
+      throw new Error(`Unhandled request: ${String(url)} ${String(options.method)}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(
+      <Analyzer
+        token="token-123"
+        user={{ id: 'user-1', plan: 'pro' }}
+        locale="en"
+        messages={messages}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText('Deck without cards (modern)')).toBeInTheDocument()
+    })
+
+    fireEvent.change(screen.getByDisplayValue('Select a deck'), { target: { value: 'deck-1' } })
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('Modern')).toBeInTheDocument()
+    })
+  })
 })
