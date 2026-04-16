@@ -19,29 +19,61 @@ const (
 
 // Claims is the payload embedded in JWT tokens.
 type Claims struct {
-	UserID string `json:"user_id"`
-	Email  string `json:"email"`
-	Plan   string `json:"plan"`
+	UserID    string `json:"user_id"`
+	Email     string `json:"email"`
+	Plan      string `json:"plan"`
+	TokenType string `json:"token_type,omitempty"`
 	jwt.RegisteredClaims
 }
 
 // GenerateToken creates a signed JWT token for a user.
 func GenerateToken(userID, email, plan, secret string, sessionTTLMinutes int) (string, error) {
-	if sessionTTLMinutes <= 0 {
-		sessionTTLMinutes = 5
+	return GenerateTokenWithType(userID, email, plan, secret, sessionTTLMinutes, "access")
+}
+
+// GenerateRefreshToken creates a signed JWT refresh token for a user.
+func GenerateRefreshToken(userID, email, plan, secret string, refreshTTLMinutes int) (string, error) {
+	return GenerateTokenWithType(userID, email, plan, secret, refreshTTLMinutes, "refresh")
+}
+
+// GenerateTokenWithType creates a signed JWT token for a user with explicit token_type.
+func GenerateTokenWithType(userID, email, plan, secret string, ttlMinutes int, tokenType string) (string, error) {
+	if ttlMinutes <= 0 {
+		ttlMinutes = 5
 	}
+	tokenType = strings.ToLower(strings.TrimSpace(tokenType))
+	if tokenType == "" {
+		tokenType = "access"
+	}
+
 	claims := Claims{
-		UserID: userID,
-		Email:  email,
-		Plan:   plan,
+		UserID:    userID,
+		Email:     email,
+		Plan:      plan,
+		TokenType: tokenType,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Duration(sessionTTLMinutes) * time.Minute)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Duration(ttlMinutes) * time.Minute)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			Issuer:    "manawise",
 		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(secret))
+}
+
+// ParseTokenClaims validates token signature and returns parsed claims.
+func ParseTokenClaims(tokenStr, secret string) (*Claims, error) {
+	claims := &Claims{}
+	token, err := jwt.ParseWithClaims(tokenStr, claims, func(t *jwt.Token) (interface{}, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, jwt.ErrSignatureInvalid
+		}
+		return []byte(secret), nil
+	})
+	if err != nil || !token.Valid {
+		return nil, jwt.ErrTokenInvalidClaims
+	}
+	return claims, nil
 }
 
 func writeJSONError(w http.ResponseWriter, msg string, code int) {
@@ -68,15 +100,13 @@ func JWTAuth(secret string) func(http.Handler) http.Handler {
 			}
 
 			tokenStr := parts[1]
-			claims := &Claims{}
-			token, err := jwt.ParseWithClaims(tokenStr, claims, func(t *jwt.Token) (interface{}, error) {
-				if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
-					return nil, jwt.ErrSignatureInvalid
-				}
-				return []byte(secret), nil
-			})
-			if err != nil || !token.Valid {
+			claims, err := ParseTokenClaims(tokenStr, secret)
+			if err != nil {
 				writeJSONError(w, "invalid or expired token", http.StatusUnauthorized)
+				return
+			}
+			if claims.TokenType == "refresh" {
+				writeJSONError(w, "invalid token type", http.StatusUnauthorized)
 				return
 			}
 

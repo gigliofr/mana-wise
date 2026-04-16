@@ -280,8 +280,53 @@ func TestRefresh_ReturnsNewTokenForAuthenticatedUser(t *testing.T) {
 	if strings.TrimSpace(payload.Token) == "" {
 		t.Fatalf("expected refreshed token in response")
 	}
+	if strings.TrimSpace(payload.RefreshToken) == "" {
+		t.Fatalf("expected refreshed refresh_token in response")
+	}
 	if payload.User == nil || payload.User.ID != "u-refresh" {
 		t.Fatalf("expected refreshed user payload")
+	}
+}
+
+func TestRefresh_WithRefreshTokenBody_ReturnsNewTokenPair(t *testing.T) {
+	repo := &authResetMockUserRepo{
+		byID: map[string]*domain.User{
+			"u-refresh": {
+				ID:           "u-refresh",
+				Email:        "refresh@example.com",
+				PasswordHash: "hash",
+				Name:         "Refresh User",
+				Plan:         domain.PlanFree,
+			},
+		},
+		byEmail: map[string]*domain.User{},
+	}
+	h := NewAuthHandler(repo, "secret", 5, 60)
+
+	refreshToken, err := middleware.GenerateRefreshToken("u-refresh", "refresh@example.com", string(domain.PlanFree), "secret", 60)
+	if err != nil {
+		t.Fatalf("expected refresh token generation: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/refresh", strings.NewReader(`{"refresh_token":"`+refreshToken+`"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	h.Refresh(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var payload TokenResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("expected valid json response: %v", err)
+	}
+	if strings.TrimSpace(payload.Token) == "" {
+		t.Fatalf("expected refreshed access token in response")
+	}
+	if strings.TrimSpace(payload.RefreshToken) == "" {
+		t.Fatalf("expected refreshed refresh token in response")
 	}
 }
 
@@ -294,7 +339,7 @@ func TestRefresh_Unauthenticated(t *testing.T) {
 
 	h.Refresh(rr, req)
 
-	if rr.Code != http.StatusUnauthorized {
-		t.Fatalf("expected 401, got %d body=%s", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", rr.Code, rr.Body.String())
 	}
 }

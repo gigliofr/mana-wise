@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -25,15 +26,21 @@ type AuthHandler struct {
 	mailer        domain.EmailSender
 	jwtSecret     string
 	sessionTTLMinutes int
+	refreshTTLMinutes int
 }
 
 // NewAuthHandler creates an AuthHandler.
-func NewAuthHandler(userRepo domain.UserRepository, jwtSecret string, sessionTTLMinutes int) *AuthHandler {
+func NewAuthHandler(userRepo domain.UserRepository, jwtSecret string, sessionTTLMinutes int, refreshTTLMinutes ...int) *AuthHandler {
+	refreshTTL := 7 * 24 * 60
+	if len(refreshTTLMinutes) > 0 && refreshTTLMinutes[0] > 0 {
+		refreshTTL = refreshTTLMinutes[0]
+	}
 	return &AuthHandler{
 		userRepo:    userRepo,
 		mailer:      domain.NoopEmailSender{},
 		jwtSecret:   jwtSecret,
 		sessionTTLMinutes: sessionTTLMinutes,
+		refreshTTLMinutes: refreshTTL,
 	}
 }
 
@@ -84,16 +91,45 @@ type ResetPasswordRequest struct {
 
 // TokenResponse is returned by register and login.
 type TokenResponse struct {
-	Token string       `json:"token"`
-	User  *domain.User `json:"user"`
+	Token        string       `json:"token"`
+	RefreshToken string       `json:"refresh_token,omitempty"`
+	User         *domain.User `json:"user"`
+}
+
+// RefreshRequest is the JSON body for POST /auth/refresh.
+type RefreshRequest struct {
+	RefreshToken string `json:"refresh_token"`
 }
 
 // Refresh handles POST /auth/refresh for authenticated users.
 func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.UserIDFromContext(r.Context())
 	if userID == "" {
-		jsonError(w, "unauthenticated", http.StatusUnauthorized)
-		return
+		refreshToken, badRequest, err := extractRefreshToken(r)
+		if err != nil {
+			jsonError(w, "invalid request body", http.StatusBadRequest)
+			return
+		}
+		if badRequest || strings.TrimSpace(refreshToken) == "" {
+			jsonError(w, "refresh_token is required", http.StatusBadRequest)
+			return
+		}
+
+		claims, parseErr := middleware.ParseTokenClaims(refreshToken, h.jwtSecret)
+		if parseErr != nil {
+			jsonError(w, "invalid or expired token", http.StatusUnauthorized)
+			return
+		}
+		if claims.TokenType != "" && claims.TokenType != "refresh" {
+			jsonError(w, "invalid token type", http.StatusUnauthorized)
+			return
+		}
+
+		userID = strings.TrimSpace(claims.UserID)
+		if userID == "" {
+			jsonError(w, "invalid token claims", http.StatusUnauthorized)
+			return
+		}
 	}
 
 	user, err := h.userRepo.FindByID(r.Context(), userID)
@@ -109,13 +145,13 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	user.Remaining = user.RemainingAnalyses(domain.CurrentBusinessDay())
-	token, err := middleware.GenerateToken(user.ID, user.Email, string(user.Plan), h.jwtSecret, h.sessionTTLMinutes)
+	resp, err := h.issueTokens(user)
 	if err != nil {
 		jsonError(w, "could not generate token", http.StatusInternalServerError)
 		return
 	}
 
-	jsonOK(w, TokenResponse{Token: token, User: user})
+	jsonOK(w, resp)
 }
 
 // Register handles POST /auth/register.
@@ -168,7 +204,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 	user.Remaining = user.RemainingAnalyses(domain.CurrentBusinessDay())
 
-	token, err := middleware.GenerateToken(user.ID, user.Email, string(user.Plan), h.jwtSecret, h.sessionTTLMinutes)
+	resp, err := h.issueTokens(user)
 	if err != nil {
 		jsonError(w, "could not generate token", http.StatusInternalServerError)
 		return
@@ -181,7 +217,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(TokenResponse{Token: token, User: user})
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // ForgotPassword handles POST /auth/forgot-password.
@@ -326,14 +362,14 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		_ = h.userRepo.Update(r.Context(), user)
 	}
 
-	token, err := middleware.GenerateToken(user.ID, user.Email, string(user.Plan), h.jwtSecret, h.sessionTTLMinutes)
+	resp, err := h.issueTokens(user)
 	if err != nil {
 		jsonError(w, "could not generate token", http.StatusInternalServerError)
 		return
 	}
 	user.Remaining = user.RemainingAnalyses(domain.CurrentBusinessDay())
 
-	jsonOK(w, TokenResponse{Token: token, User: user})
+	jsonOK(w, resp)
 }
 
 // UpdatePlan handles POST /auth/plan for authenticated users.
@@ -409,13 +445,13 @@ func (h *AuthHandler) UpdatePlan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	user.Remaining = user.RemainingAnalyses(domain.CurrentBusinessDay())
-	token, err := middleware.GenerateToken(user.ID, user.Email, string(user.Plan), h.jwtSecret, h.sessionTTLMinutes)
+	resp, err := h.issueTokens(user)
 	if err != nil {
 		jsonError(w, "could not generate token", http.StatusInternalServerError)
 		return
 	}
 
-	jsonOK(w, TokenResponse{Token: token, User: user})
+	jsonOK(w, resp)
 }
 
 // Me handles GET /auth/me.
@@ -440,6 +476,61 @@ func (h *AuthHandler) sendEmail(to, subject, textBody, htmlBody string) error {
 		return nil
 	}
 	return h.mailer.Send(to, subject, textBody, htmlBody)
+}
+
+func (h *AuthHandler) issueTokens(user *domain.User) (TokenResponse, error) {
+	if user == nil {
+		return TokenResponse{}, fmt.Errorf("user is nil")
+	}
+
+	accessToken, err := middleware.GenerateToken(user.ID, user.Email, string(user.Plan), h.jwtSecret, h.sessionTTLMinutes)
+	if err != nil {
+		return TokenResponse{}, err
+	}
+
+	refreshToken, err := middleware.GenerateRefreshToken(user.ID, user.Email, string(user.Plan), h.jwtSecret, h.refreshTTLMinutes)
+	if err != nil {
+		return TokenResponse{}, err
+	}
+
+	return TokenResponse{Token: accessToken, RefreshToken: refreshToken, User: user}, nil
+}
+
+func extractRefreshToken(r *http.Request) (token string, badRequest bool, err error) {
+	if r == nil {
+		return "", true, nil
+	}
+
+	authHeader := strings.TrimSpace(r.Header.Get("Authorization"))
+	if authHeader != "" {
+		parts := strings.SplitN(authHeader, " ", 2)
+		if len(parts) != 2 || !strings.EqualFold(parts[0], "bearer") {
+			return "", true, nil
+		}
+		if strings.TrimSpace(parts[1]) == "" {
+			return "", true, nil
+		}
+		return strings.TrimSpace(parts[1]), false, nil
+	}
+
+	if r.Body == nil {
+		return "", false, nil
+	}
+
+	body, readErr := io.ReadAll(r.Body)
+	if readErr != nil {
+		return "", false, readErr
+	}
+	trimmed := strings.TrimSpace(string(body))
+	if trimmed == "" {
+		return "", false, nil
+	}
+
+	var req RefreshRequest
+	if decodeErr := json.Unmarshal(body, &req); decodeErr != nil {
+		return "", false, decodeErr
+	}
+	return strings.TrimSpace(req.RefreshToken), false, nil
 }
 
 func generateHexToken(size int) (string, error) {

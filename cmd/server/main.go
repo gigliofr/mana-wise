@@ -189,6 +189,7 @@ func main() {
 		Mailer:            mailer,
 		JWTSecret:        cfg.JWT.Secret,
 		SessionTTLMinutes: cfg.JWT.SessionTTLMinutes,
+		RefreshTTLMinutes: cfg.JWT.RefreshTTLMinutes,
 	})
 
 	// ── HTTP server ───────────────────────────────────────────────────────────

@@ -39,6 +39,7 @@ type RouterDeps struct {
 	Mailer            domain.EmailSender
 	JWTSecret        string
 	SessionTTLMinutes int
+	RefreshTTLMinutes int
 }
 
 // NewRouter builds and returns the chi router with all routes registered.
@@ -52,7 +53,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 	r.Use(corsMiddleware)
 
 	// Instantiate handlers.
-	authH := handlers.NewAuthHandler(deps.UserRepo, deps.JWTSecret, deps.SessionTTLMinutes).
+	authH := handlers.NewAuthHandler(deps.UserRepo, deps.JWTSecret, deps.SessionTTLMinutes, deps.RefreshTTLMinutes).
 		WithPasswordResetRepo(deps.PasswordResetRepo).
 		WithMailer(deps.Mailer)
 	analyzeH := handlers.NewAnalyzeHandler(deps.AnalyzeUC, deps.AISuggester, deps.UserRepo, deps.Analytics)
@@ -92,7 +93,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 			r.With(authRateMW).Post("/login", authH.Login)
 			r.With(authRateMW).Post("/forgot-password", authH.ForgotPassword)
 			r.With(authRateMW).Post("/reset-password", authH.ResetPassword)
-			r.With(jwtMW).Post("/refresh", authH.Refresh)
+			r.With(authRateMW).Post("/refresh", authH.Refresh)
 			r.With(jwtMW).Get("/me", authH.Me)
 			r.With(jwtMW).Post("/plan", authH.UpdatePlan)
 		})

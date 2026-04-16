@@ -38,6 +38,7 @@ type MongoDBConfig struct {
 type JWTConfig struct {
 	Secret            string
 	SessionTTLMinutes int
+	RefreshTTLMinutes int
 }
 
 // ScryfallConfig contains Scryfall API settings.
@@ -127,6 +128,15 @@ func Load() (*Config, error) {
 		}
 		cfg.JWT.SessionTTLMinutes = expiryHours * 60
 	}
+
+	refreshTTLMinutes, err := strconv.Atoi(getEnv("JWT_REFRESH_TTL_MINUTES", "10080"))
+	if err != nil {
+		return nil, fmt.Errorf("JWT_REFRESH_TTL_MINUTES must be a valid integer: %w", err)
+	}
+	if refreshTTLMinutes <= 0 {
+		return nil, fmt.Errorf("JWT_REFRESH_TTL_MINUTES must be greater than 0")
+	}
+	cfg.JWT.RefreshTTLMinutes = refreshTTLMinutes
 
 	// Scryfall
 	cfg.Scryfall.BaseURL = getEnv("SCRYFALL_BASE_URL", "https://api.scryfall.com")
