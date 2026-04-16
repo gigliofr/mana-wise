@@ -2,7 +2,9 @@ package handlers
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -52,6 +54,13 @@ func NewAnalyzeHandler(uc *usecase.AnalyzeDeckUseCase, ai *usecase.AISuggester, 
 
 // ServeHTTP handles POST /analyze.
 func (h *AnalyzeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			log.Printf("panic in AnalyzeHandler: %v\n%s", rec, debug.Stack())
+			jsonError(w, "internal server error", http.StatusInternalServerError)
+		}
+	}()
+
 	start := time.Now()
 
 	var req AnalyzeRequest
