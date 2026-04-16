@@ -2,12 +2,14 @@ const API_BASE = '/api/v1'
 
 const sessionHandlers = {
   getToken: null,
+  getRefreshToken: null,
   onSessionUpdate: null,
   onUnauthorized: null,
 }
 
 export function configureApiAuthSession(handlers = {}) {
   sessionHandlers.getToken = typeof handlers.getToken === 'function' ? handlers.getToken : null
+  sessionHandlers.getRefreshToken = typeof handlers.getRefreshToken === 'function' ? handlers.getRefreshToken : null
   sessionHandlers.onSessionUpdate = typeof handlers.onSessionUpdate === 'function' ? handlers.onSessionUpdate : null
   sessionHandlers.onUnauthorized = typeof handlers.onUnauthorized === 'function' ? handlers.onUnauthorized : null
 }
@@ -57,6 +59,7 @@ export async function apiRequest(path, options = {}) {
   }
 
   const initialToken = token || sessionHandlers.getToken?.() || ''
+  const initialRefreshToken = sessionHandlers.getRefreshToken?.() || ''
   let result = await performRequest(initialToken)
 
   const refreshablePath = !path.startsWith('/auth/login')
@@ -65,17 +68,18 @@ export async function apiRequest(path, options = {}) {
     && !path.startsWith('/auth/reset-password')
     && !path.startsWith('/auth/refresh')
 
-  if (!skipAuthRefresh && initialToken && refreshablePath && result.res.status === 401) {
+  if (!skipAuthRefresh && initialToken && initialRefreshToken && refreshablePath && result.res.status === 401) {
     const refreshRes = await fetch(`${API_BASE}/auth/refresh`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${initialToken}`,
+        'Content-Type': 'application/json',
       },
+      body: JSON.stringify({ refresh_token: initialRefreshToken }),
     })
     const refreshData = await parseMaybeJSON(refreshRes)
 
-    if (refreshRes.ok && refreshData?.token) {
-      sessionHandlers.onSessionUpdate?.(refreshData.token, refreshData.user)
+    if (refreshRes.ok && refreshData?.token && refreshData?.refresh_token) {
+      sessionHandlers.onSessionUpdate?.(refreshData.token, refreshData.refresh_token, refreshData.user)
       result = await performRequest(refreshData.token)
     } else {
       sessionHandlers.onUnauthorized?.()

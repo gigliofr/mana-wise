@@ -139,7 +139,7 @@ describe('Auth reset flow', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create account' }))
 
     await waitFor(() => {
-      expect(onLogin).toHaveBeenCalledWith('abc', { id: 'u1' })
+      expect(onLogin).toHaveBeenCalledWith('abc', { id: 'u1' }, '')
     })
 
     expect(fetchMock).toHaveBeenCalledWith('/api/v1/auth/register', expect.objectContaining({

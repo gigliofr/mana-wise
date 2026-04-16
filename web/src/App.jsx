@@ -14,6 +14,7 @@ import { LOCALES, translations } from './i18n'
 import { configureApiAuthSession } from './lib/apiClient'
 
 const TOKEN_KEY = 'manawise_token'
+const REFRESH_TOKEN_KEY = 'manawise_refresh_token'
 const USER_KEY  = 'manawise_user'
 const LOCALE_KEY = 'manawise_locale'
 
@@ -35,15 +36,21 @@ function App() {
   const isLegalPage = ['/privacy', '/cookie', '/contatti'].includes(currentPath)
   const hasActivePro = user?.plan === 'pro' && (!user?.pro_until || new Date(user.pro_until) > new Date())
 
-  function handleSessionUpdate(nextToken, nextUser) {
+  function handleSessionUpdate(nextToken, nextRefreshToken, nextUser) {
     localStorage.setItem(TOKEN_KEY, nextToken)
+    if (nextRefreshToken) {
+      localStorage.setItem(REFRESH_TOKEN_KEY, nextRefreshToken)
+    }
     localStorage.setItem(USER_KEY, JSON.stringify(nextUser))
     setToken(nextToken)
     setUser(nextUser)
   }
 
-  function handleLogin(token, user) {
+  function handleLogin(token, user, refreshToken = '') {
     localStorage.setItem(TOKEN_KEY, token)
+    if (refreshToken) {
+      localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken)
+    }
     localStorage.setItem(USER_KEY, JSON.stringify(user))
     setToken(token)
     setUser(user)
@@ -51,6 +58,7 @@ function App() {
 
   function handleLogout() {
     localStorage.removeItem(TOKEN_KEY)
+    localStorage.removeItem(REFRESH_TOKEN_KEY)
     localStorage.removeItem(USER_KEY)
     setToken('')
     setUser(null)
@@ -64,6 +72,7 @@ function App() {
   useEffect(() => {
     configureApiAuthSession({
       getToken: () => localStorage.getItem(TOKEN_KEY) || '',
+      getRefreshToken: () => localStorage.getItem(REFRESH_TOKEN_KEY) || '',
       onSessionUpdate: handleSessionUpdate,
       onUnauthorized: handleLogout,
     })
@@ -81,6 +90,7 @@ function App() {
         if (res.status === 401 || res.status === 403) {
           if (!cancelled) {
             localStorage.removeItem(TOKEN_KEY)
+            localStorage.removeItem(REFRESH_TOKEN_KEY)
             localStorage.removeItem(USER_KEY)
             setToken('')
             setUser(null)

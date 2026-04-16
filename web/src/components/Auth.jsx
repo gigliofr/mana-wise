@@ -85,7 +85,7 @@ export default function Auth({ onLogin, locale, messages, onLocaleChange }) {
         if (!data?.token || !data?.user) {
           throw new Error('Request failed')
         }
-        onLogin(data.token, data.user)
+        onLogin(data.token, data.user, data.refresh_token || '')
         return
       }
 

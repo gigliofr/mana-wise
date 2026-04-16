@@ -55,6 +55,7 @@ describe('apiClient', () => {
     const onSessionUpdate = vi.fn()
     configureApiAuthSession({
       getToken: () => 'expired-token',
+      getRefreshToken: () => 'refresh-token-1',
       onSessionUpdate,
       onUnauthorized: vi.fn(),
     })
@@ -70,7 +71,7 @@ describe('apiClient', () => {
         status: 200,
         ok: true,
         headers: { get: () => 'application/json' },
-        json: vi.fn().mockResolvedValue({ token: 'new-token', user: { id: 'u1' } }),
+        json: vi.fn().mockResolvedValue({ token: 'new-token', refresh_token: 'refresh-token-2', user: { id: 'u1' } }),
       })
       .mockResolvedValueOnce({
         status: 200,
@@ -84,10 +85,11 @@ describe('apiClient', () => {
 
     expect(res.ok).toBe(true)
     expect(data).toEqual({ ok: true })
-    expect(onSessionUpdate).toHaveBeenCalledWith('new-token', { id: 'u1' })
+    expect(onSessionUpdate).toHaveBeenCalledWith('new-token', 'refresh-token-2', { id: 'u1' })
     expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/v1/auth/refresh', {
       method: 'POST',
-      headers: { Authorization: 'Bearer expired-token' },
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: 'refresh-token-1' }),
     })
     expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/v1/decks', {
       method: 'GET',
