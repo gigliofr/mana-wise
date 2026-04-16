@@ -105,3 +105,21 @@ func TestWorkerPool_EmptyInput(t *testing.T) {
 		t.Errorf("expected 0 results, got %d", len(results))
 	}
 }
+
+func TestWorkerPool_PanicRecoveredAsError(t *testing.T) {
+	results := usecase.WorkerPool(context.Background(), 2, []int{1},
+		func(ctx context.Context, n int) (int, error) {
+			panic("boom")
+		},
+	)
+
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Err == nil {
+		t.Fatal("expected an error from recovered panic")
+	}
+	if results[0].Err.Error() != "worker panic: boom" {
+		t.Fatalf("expected panic error message, got %q", results[0].Err.Error())
+	}
+}
