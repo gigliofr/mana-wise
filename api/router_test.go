@@ -71,3 +71,23 @@ func TestSPAFallbackHandler_RecoversFromMalformedRequest(t *testing.T) {
 		t.Fatalf("expected 500, got %d body=%s", rr.Code, rr.Body.String())
 	}
 }
+
+func TestPanicShieldMiddleware_RecoversDownstreamPanic(t *testing.T) {
+	h := panicShieldMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		panic("boom")
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rr := httptest.NewRecorder()
+
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestSafeWriteInternalError_NilWriter(t *testing.T) {
+	// Must not panic when writer is nil.
+	safeWriteInternalError(nil)
+}

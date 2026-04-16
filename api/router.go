@@ -46,6 +46,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 	r := chi.NewRouter()
 
 	// Global middleware.
+	r.Use(panicShieldMiddleware)
 	r.Use(chimiddleware.Logger)
 	r.Use(chimiddleware.Recoverer)
 	r.Use(chimiddleware.RealIP)
@@ -171,6 +172,36 @@ func NewRouter(deps RouterDeps) http.Handler {
 	return r
 }
 
+func panicShieldMiddleware(next http.Handler) http.Handler {
+	if next == nil {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			safeWriteInternalError(w)
+		})
+	}
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if rec := recover(); rec != nil {
+				log.Printf("panic in panicShieldMiddleware: %v\n%s", rec, debug.Stack())
+				safeWriteInternalError(w)
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
+
+func safeWriteInternalError(w http.ResponseWriter) {
+	defer func() {
+		_ = recover()
+	}()
+	if w == nil {
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusInternalServerError)
+	_, _ = w.Write([]byte(`{"error":"internal server error"}`))
+}
+
 func spaFallbackHandler(distDir string) http.Handler {
 	fileServer := http.FileServer(http.Dir(distDir))
 	indexFile := filepath.Join(distDir, "index.html")
@@ -179,7 +210,7 @@ func spaFallbackHandler(distDir string) http.Handler {
 		defer func() {
 			if rec := recover(); rec != nil {
 				log.Printf("panic in spaFallbackHandler: %v\n%s", rec, debug.Stack())
-				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+				safeWriteInternalError(w)
 			}
 		}()
 
@@ -224,7 +255,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 		defer func() {
 			if rec := recover(); rec != nil {
 				log.Printf("panic in corsMiddleware: %v\\n%s", rec, debug.Stack())
-				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+				safeWriteInternalError(w)
 			}
 		}()
 
