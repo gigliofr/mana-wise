@@ -20,6 +20,8 @@ type User struct {
 	ProUntil        *time.Time `bson:"pro_until,omitempty" json:"pro_until,omitempty"`
 	Remaining       int        `bson:"-"                json:"remaining,omitempty"`
 	DiscordID       string     `bson:"discord_id,omitempty" json:"discord_id,omitempty"`
+	EmailVerificationPending bool      `bson:"email_verification_pending,omitempty" json:"email_verification_pending,omitempty"`
+	EmailVerifiedAt          *time.Time `bson:"email_verified_at,omitempty" json:"email_verified_at,omitempty"`
 	DailyAnalyses   int        `bson:"daily_analyses"   json:"daily_analyses"`
 	LastAnalysisDay string     `bson:"last_analysis_day" json:"-"` // format: "2006-01-02"
 	CreatedAt       time.Time  `bson:"created_at"       json:"created_at"`

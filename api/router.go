@@ -90,6 +90,8 @@ func NewRouter(deps RouterDeps) http.Handler {
 		// Auth endpoints — rate-limited per IP.
 		r.Route("/auth", func(r chi.Router) {
 			r.With(authRateMW).Post("/register", authH.Register)
+			r.With(authRateMW).Get("/verify-email", authH.VerifyEmail)
+			r.With(authRateMW).Post("/verify-email", authH.VerifyEmail)
 			r.With(authRateMW).Post("/login", authH.Login)
 			r.With(authRateMW).Post("/forgot-password", authH.ForgotPassword)
 			r.With(authRateMW).Post("/reset-password", authH.ResetPassword)

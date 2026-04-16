@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"log"
 	"net/http"
@@ -89,11 +90,23 @@ type ResetPasswordRequest struct {
 	NewPassword string `json:"new_password"`
 }
 
+// VerifyEmailRequest is the JSON body for POST /auth/verify-email.
+type VerifyEmailRequest struct {
+	Token string `json:"token"`
+}
+
 // TokenResponse is returned by register and login.
 type TokenResponse struct {
 	Token        string       `json:"token"`
 	RefreshToken string       `json:"refresh_token,omitempty"`
 	User         *domain.User `json:"user"`
+}
+
+// RegisterResponse is returned by register.
+type RegisterResponse struct {
+	Status               string `json:"status"`
+	Message              string `json:"message"`
+	RequiresVerification bool   `json:"requires_verification"`
 }
 
 // RefreshRequest is the JSON body for POST /auth/refresh.
@@ -196,28 +209,107 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		PasswordHash: string(hash),
 		Name:         req.Name,
 		Plan:         domain.PlanFree,
+		EmailVerificationPending: true,
 		CreatedAt:    time.Now().UTC(),
 	}
 	if err = h.userRepo.Create(r.Context(), user); err != nil {
 		jsonError(w, "could not create user", http.StatusInternalServerError)
 		return
 	}
-	user.Remaining = user.RemainingAnalyses(domain.CurrentBusinessDay())
 
-	resp, err := h.issueTokens(user)
-	if err != nil {
-		jsonError(w, "could not generate token", http.StatusInternalServerError)
+	if h.resetTokenRepo == nil {
+		jsonError(w, "email verification is not configured", http.StatusServiceUnavailable)
 		return
 	}
-	user.Remaining = user.RemainingAnalyses(domain.CurrentBusinessDay())
 
-	welcomeText := "Welcome to ManaWise. Your account has been created successfully."
-	welcomeHTML := "<p>Welcome to ManaWise.</p><p>Your account has been created successfully.</p>"
-	_ = h.sendEmail(user.Email, "Welcome to ManaWise", welcomeText, welcomeHTML)
+	verificationToken, err := generateHexToken(24)
+	if err != nil {
+		jsonError(w, "could not generate verification token", http.StatusInternalServerError)
+		return
+	}
+
+	verificationTTL := emailVerificationTokenTTL()
+	expiresAt := time.Now().UTC().Add(verificationTTL)
+	rec := &domain.PasswordResetToken{
+		Token:     verificationToken,
+		UserID:    user.ID,
+		Email:     user.Email,
+		Purpose:   "email_verification",
+		ExpiresAt: expiresAt,
+		CreatedAt: time.Now().UTC(),
+	}
+	if err := h.resetTokenRepo.Create(r.Context(), rec); err != nil {
+		jsonError(w, "could not create verification token", http.StatusInternalServerError)
+		return
+	}
+
+	verificationURL := buildEmailVerificationURL(r, verificationToken)
+	textBody := "Welcome to ManaWise.\n\nPlease verify your email by opening this link: " + verificationURL + "\n\nThis link expires at: " + expiresAt.Format(time.RFC3339)
+	htmlBody := "<p>Welcome to ManaWise.</p><p>Please verify your email by opening this link: <a href=\"" + verificationURL + "\">verify email</a></p><p>This link expires at: " + expiresAt.Format(time.RFC3339) + "</p>"
+	_ = h.sendEmail(user.Email, "Verify your ManaWise account", textBody, htmlBody)
+	log.Printf("[auth] verify-email link generated user=%s url=%s", user.Email, redactActionURLForLog(verificationURL))
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(resp)
+	_ = json.NewEncoder(w).Encode(RegisterResponse{
+		Status:               "accepted",
+		Message:              "account created; verify your email to continue",
+		RequiresVerification: true,
+	})
+}
+
+// VerifyEmail handles GET/POST /auth/verify-email.
+func (h *AuthHandler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
+	if h.resetTokenRepo == nil {
+		jsonError(w, "email verification is not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	token := strings.TrimSpace(r.URL.Query().Get("token"))
+	if token == "" && r.Method == http.MethodPost {
+		var req VerifyEmailRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			jsonError(w, "invalid request body", http.StatusBadRequest)
+			return
+		}
+		token = strings.TrimSpace(req.Token)
+	}
+
+	if token == "" {
+		writeEmailVerificationHTML(w, false, "Missing verification token")
+		return
+	}
+
+	rec, err := h.resetTokenRepo.Consume(r.Context(), token)
+	if err != nil {
+		jsonError(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if rec == nil || rec.Purpose != "email_verification" {
+		writeEmailVerificationHTML(w, false, "Invalid or expired verification token")
+		return
+	}
+
+	user, err := h.userRepo.FindByID(r.Context(), rec.UserID)
+	if err != nil {
+		jsonError(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if user == nil {
+		writeEmailVerificationHTML(w, false, "User not found")
+		return
+	}
+
+	now := time.Now().UTC()
+	user.EmailVerificationPending = false
+	user.EmailVerifiedAt = &now
+	user.UpdatedAt = now
+	if err := h.userRepo.Update(r.Context(), user); err != nil {
+		jsonError(w, "could not verify account", http.StatusInternalServerError)
+		return
+	}
+
+	writeEmailVerificationHTML(w, true, "Email verified successfully. You can now sign in.")
 }
 
 // ForgotPassword handles POST /auth/forgot-password.
@@ -353,6 +445,11 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	if err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
 		jsonError(w, "invalid credentials", http.StatusUnauthorized)
+		return
+	}
+
+	if user.EmailVerificationPending {
+		jsonError(w, "email not verified; please verify your email first", http.StatusForbidden)
 		return
 	}
 
@@ -554,6 +651,59 @@ func passwordResetTokenTTL() time.Duration {
 		return 30 * time.Minute
 	}
 	return v
+}
+
+func emailVerificationTokenTTL() time.Duration {
+	raw := strings.TrimSpace(os.Getenv("EMAIL_VERIFICATION_TOKEN_TTL_MINUTES"))
+	if raw == "" {
+		return 24 * time.Hour
+	}
+	v, err := time.ParseDuration(raw + "m")
+	if err != nil || v <= 0 {
+		return 24 * time.Hour
+	}
+	return v
+}
+
+func buildEmailVerificationURL(r *http.Request, token string) string {
+	base := strings.TrimSpace(os.Getenv("MANAWISE_PUBLIC_BASE_URL"))
+	if base == "" {
+		scheme := "https"
+		if r != nil {
+			if proto := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")); proto != "" {
+				scheme = proto
+			} else if r.TLS == nil && strings.Contains(strings.ToLower(strings.TrimSpace(r.Host)), "localhost") {
+				scheme = "http"
+			}
+			host := strings.TrimSpace(r.Host)
+			if host != "" {
+				base = scheme + "://" + host
+			}
+		}
+	}
+	if base == "" {
+		base = "https://mana-wise.geniuscrafters.it"
+	}
+
+	base = strings.TrimRight(base, "/")
+	return base + "/api/v1/auth/verify-email?token=" + url.QueryEscape(strings.TrimSpace(token))
+}
+
+func writeEmailVerificationHTML(w http.ResponseWriter, success bool, message string) {
+	if w == nil {
+		return
+	}
+
+	status := http.StatusOK
+	title := "Email verification completed"
+	if !success {
+		status = http.StatusUnauthorized
+		title = "Email verification failed"
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(status)
+	_, _ = w.Write([]byte("<!doctype html><html><head><meta charset=\"utf-8\"><title>ManaWise</title></head><body style=\"font-family:Arial,sans-serif;padding:24px\"><h2>" + html.EscapeString(title) + "</h2><p>" + html.EscapeString(message) + "</p></body></html>"))
 }
 
 func buildActionURL(base, defaultPath, token string) string {

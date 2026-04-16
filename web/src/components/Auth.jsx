@@ -82,8 +82,16 @@ export default function Auth({ onLogin, locale, messages, onLocaleChange }) {
       throwIfNotOK(res, data, 'Request failed')
 
       if (mode === 'login' || mode === 'register') {
+        if (mode === 'register' && data?.requires_verification) {
+          setSuccess(data?.message || messages.accountVerificationRequired || 'Account created. Please verify your email before signing in.')
+          setMode('login')
+          setForm({ email: form.email, password: '', name: '' })
+          setConfirmPassword('')
+          return
+        }
+
         if (!data?.token || !data?.user) {
-          throw new Error('Request failed')
+          throw new Error(data?.message || 'Request failed')
         }
         onLogin(data.token, data.user, data.refresh_token || '')
         return

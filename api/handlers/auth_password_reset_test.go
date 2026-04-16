@@ -147,10 +147,11 @@ func TestForgotPassword_CreatesTokenAndSendsEmail(t *testing.T) {
 	}
 }
 
-func TestRegister_SendsWelcomeEmail(t *testing.T) {
+func TestRegister_CreatesPendingAccountAndSendsVerificationEmail(t *testing.T) {
 	repo := &authResetMockUserRepo{byID: map[string]*domain.User{}, byEmail: map[string]*domain.User{}}
+	tokenRepo := &authResetMockTokenRepo{}
 	mailer := &authResetMockMailer{}
-	h := NewAuthHandler(repo, "secret", 24).WithMailer(mailer)
+	h := NewAuthHandler(repo, "secret", 24).WithPasswordResetRepo(tokenRepo).WithMailer(mailer)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", strings.NewReader(`{"email":"welcome@example.com","password":"StrongPass123","name":"Welcome User"}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -161,11 +162,111 @@ func TestRegister_SendsWelcomeEmail(t *testing.T) {
 	if rr.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d body=%s", rr.Code, rr.Body.String())
 	}
+
+	var payload RegisterResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("expected valid json response: %v", err)
+	}
+	if !payload.RequiresVerification {
+		t.Fatalf("expected requires_verification=true")
+	}
+
+	if len(tokenRepo.tokens) != 1 {
+		t.Fatalf("expected one verification token, got %d", len(tokenRepo.tokens))
+	}
 	if len(mailer.sent) != 1 {
-		t.Fatalf("expected one welcome email, got %d", len(mailer.sent))
+		t.Fatalf("expected one verification email, got %d", len(mailer.sent))
 	}
 	if mailer.sent[0].to != "welcome@example.com" {
 		t.Fatalf("unexpected recipient: %s", mailer.sent[0].to)
+	}
+	if !strings.Contains(strings.ToLower(mailer.sent[0].subject), "verify") {
+		t.Fatalf("expected verification email subject, got %q", mailer.sent[0].subject)
+	}
+
+	created, _ := repo.FindByEmail(context.Background(), "welcome@example.com")
+	if created == nil {
+		t.Fatalf("expected created user")
+	}
+	if !created.EmailVerificationPending {
+		t.Fatalf("expected email verification pending=true")
+	}
+}
+
+func TestLogin_UnverifiedEmail_ReturnsForbidden(t *testing.T) {
+	hash, _ := bcrypt.GenerateFromPassword([]byte("StrongPass123"), bcrypt.DefaultCost)
+	repo := &authResetMockUserRepo{
+		byID: map[string]*domain.User{
+			"u-login": {
+				ID:                       "u-login",
+				Email:                    "login@example.com",
+				PasswordHash:             string(hash),
+				Name:                     "Login User",
+				Plan:                     domain.PlanFree,
+				EmailVerificationPending: true,
+			},
+		},
+		byEmail: map[string]*domain.User{},
+	}
+	repo.byEmail["login@example.com"] = repo.byID["u-login"]
+	h := NewAuthHandler(repo, "secret", 24)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(`{"email":"login@example.com","password":"StrongPass123"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	h.Login(rr, req)
+
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestVerifyEmail_ConsumesTokenAndActivatesAccount(t *testing.T) {
+	repo := &authResetMockUserRepo{
+		byID: map[string]*domain.User{
+			"u-verify": {
+				ID:                       "u-verify",
+				Email:                    "verify@example.com",
+				PasswordHash:             "hash",
+				Name:                     "Verify User",
+				Plan:                     domain.PlanFree,
+				EmailVerificationPending: true,
+			},
+		},
+		byEmail: map[string]*domain.User{},
+	}
+	repo.byEmail["verify@example.com"] = repo.byID["u-verify"]
+	tokenRepo := &authResetMockTokenRepo{tokens: map[string]*domain.PasswordResetToken{
+		"verify-token": {
+			Token:     "verify-token",
+			UserID:    "u-verify",
+			Email:     "verify@example.com",
+			Purpose:   "email_verification",
+			ExpiresAt: time.Now().UTC().Add(30 * time.Minute),
+			CreatedAt: time.Now().UTC(),
+		},
+	}}
+
+	h := NewAuthHandler(repo, "secret", 24).WithPasswordResetRepo(tokenRepo)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/verify-email?token=verify-token", nil)
+	rr := httptest.NewRecorder()
+
+	h.VerifyEmail(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	updated, _ := repo.FindByID(context.Background(), "u-verify")
+	if updated == nil {
+		t.Fatalf("expected updated user")
+	}
+	if updated.EmailVerificationPending {
+		t.Fatalf("expected email verification pending=false")
+	}
+	if updated.EmailVerifiedAt == nil {
+		t.Fatalf("expected EmailVerifiedAt to be set")
 	}
 }
 

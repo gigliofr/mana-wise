@@ -39,6 +39,7 @@ const messages = {
   passwordMismatch: 'Passwords do not match',
   resetTokenMissing: 'Reset token is missing or invalid',
   proActivationFromPlansNote: 'Plan note',
+  accountVerificationRequired: 'Account created. Please verify your email before signing in.',
 }
 
 function renderAuth() {
@@ -101,11 +102,15 @@ describe('Auth reset flow', () => {
     })
   })
 
-  it('shows password complexity guidance in register mode', async () => {
+  it('shows password complexity guidance in register mode and requires email verification', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       headers: { get: () => 'application/json' },
-      json: vi.fn().mockResolvedValue({ token: 'abc', user: { id: 'u1' } }),
+      json: vi.fn().mockResolvedValue({
+        status: 'accepted',
+        message: 'Account created. Please verify your email before signing in.',
+        requires_verification: true,
+      }),
     })
     vi.stubGlobal('fetch', fetchMock)
 
@@ -139,8 +144,10 @@ describe('Auth reset flow', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create account' }))
 
     await waitFor(() => {
-      expect(onLogin).toHaveBeenCalledWith('abc', { id: 'u1' }, '')
+      expect(screen.getByText('Account created. Please verify your email before signing in.')).toBeInTheDocument()
     })
+
+    expect(onLogin).not.toHaveBeenCalled()
 
     expect(fetchMock).toHaveBeenCalledWith('/api/v1/auth/register', expect.objectContaining({
       method: 'POST',
