@@ -564,5 +564,16 @@ func redactActionURLForLog(raw string) string {
 // Health handles GET /api/v1/health.
 func Health(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	fmt.Fprintf(w, `{"status":"ok","time":"%s"}`, time.Now().UTC().Format(time.RFC3339))
+	resp := map[string]string{
+		"status": "ok",
+		"time":   time.Now().UTC().Format(time.RFC3339),
+	}
+	if version := strings.TrimSpace(os.Getenv("MANAWISE_VERSION")); version != "" {
+		resp["version"] = version
+	} else if version := strings.TrimSpace(os.Getenv("RAILWAY_GIT_COMMIT_SHA")); version != "" {
+		resp["version"] = version
+	} else if version := strings.TrimSpace(os.Getenv("GIT_SHA")); version != "" {
+		resp["version"] = version
+	}
+	_ = json.NewEncoder(w).Encode(resp)
 }
