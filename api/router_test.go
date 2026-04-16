@@ -59,3 +59,15 @@ func TestCORSMiddleware_NilNext_ReturnsServiceUnavailable(t *testing.T) {
 		t.Fatalf("expected 503, got %d body=%s", rr.Code, rr.Body.String())
 	}
 }
+
+func TestSPAFallbackHandler_RecoversFromMalformedRequest(t *testing.T) {
+	h := spaFallbackHandler(t.TempDir())
+	req := &http.Request{Method: http.MethodGet, Header: make(http.Header)}
+	rr := httptest.NewRecorder()
+
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
