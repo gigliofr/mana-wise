@@ -114,7 +114,7 @@ const SAMPLE_DECK_COMMANDER = `// Sample Commander: Meren of Clan Nel Toth
 
 const SAMPLE_DECK = SAMPLE_DECK_STANDARD
 
-export default function Analyzer({ token, user, locale, messages, decklist: decklistProp, format: formatProp, onDeckChange, onFormatChange }) {
+export default function Analyzer({ token, user, locale, messages, decklist: decklistProp, format: formatProp, onDeckChange, onFormatChange, onUpgradeRequest }) {
   const [decklist, setDecklist] = useState('')
   const [format,   setFormat]   = useState('standard')
   const [savedDecks, setSavedDecks] = useState([])
@@ -188,7 +188,11 @@ export default function Analyzer({ token, user, locale, messages, decklist: deck
     } catch {
       // Best-effort tracking.
     }
-    window.location.href = '/upgrade'
+    if (typeof onUpgradeRequest === 'function') {
+      onUpgradeRequest('analyzer_banner')
+      return
+    }
+    window.location.href = '/?tool=plans'
   }
 
   async function analyze(e) {

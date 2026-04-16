@@ -230,6 +230,7 @@ function App() {
               format={deckWorkspace.format}
               onDeckChange={nextDecklist => setDeckWorkspace(prev => ({ ...prev, decklist: nextDecklist }))}
               onFormatChange={nextFormat => setDeckWorkspace(prev => ({ ...prev, format: nextFormat }))}
+              onUpgradeRequest={() => setActiveTool('plans')}
             />
           )}
           {activeTool === 'builder' && (

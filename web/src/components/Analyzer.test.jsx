@@ -21,6 +21,8 @@ const messages = {
   analyzing: 'Analyzing',
   analyzeDeck: 'Analyze deck',
   analysisFailed: 'Analysis failed',
+  freePlanBanner: remaining => `Free plan: ${remaining} analyses remaining today.`,
+  upgradeToPro: 'Upgrade to Pro',
 }
 
 describe('Analyzer', () => {
@@ -182,5 +184,36 @@ describe('Analyzer', () => {
     await waitFor(() => {
       expect(screen.getByDisplayValue('Modern')).toBeInTheDocument()
     })
+  })
+
+  it('routes upgrade CTA to plans tool callback', async () => {
+    const onUpgradeRequest = vi.fn()
+    const fetchMock = vi.fn(async (url, options = {}) => {
+      if (url === '/api/v1/decks' && options.method === 'GET') {
+        return jsonResponse([])
+      }
+      if (url === '/api/v1/analytics/upgrade-click' && options.method === 'POST') {
+        return jsonResponse({ ok: true })
+      }
+      throw new Error(`Unhandled request: ${String(url)} ${String(options.method)}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(
+      <Analyzer
+        token="token-123"
+        user={{ id: 'user-1', plan: 'free', remaining: 3 }}
+        locale="en"
+        messages={messages}
+        onUpgradeRequest={onUpgradeRequest}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('link', { name: /upgrade to pro/i }))
+
+    await waitFor(() => {
+      expect(onUpgradeRequest).toHaveBeenCalledWith('analyzer_banner')
+    })
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/analytics/upgrade-click', expect.objectContaining({ method: 'POST' }))
   })
 })
