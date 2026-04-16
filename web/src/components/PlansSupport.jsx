@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { apiRequest, throwIfNotOK } from '../lib/apiClient'
 
 const PAYPAL_DONATE_URL = import.meta.env.VITE_PAYPAL_DONATE_URL || 'https://paypal.me/gigliofr'
 
-export default function PlansSupport({ token, user, messages, onSessionUpdate }) {
+export default function PlansSupport({ token, user, messages, onSessionUpdate, focusProActivationKey = 0 }) {
   const [planError, setPlanError] = useState('')
   const [donationReference, setDonationReference] = useState('')
   const [adminSecret, setAdminSecret] = useState('')
@@ -11,6 +11,7 @@ export default function PlansSupport({ token, user, messages, onSessionUpdate })
   const [metricsError, setMetricsError] = useState('')
   const [metricsSnapshot, setMetricsSnapshot] = useState(null)
   const [previousMetricsSnapshot, setPreviousMetricsSnapshot] = useState(null)
+  const donationReferenceInputRef = useRef(null)
 
   const planRows = [
     {
@@ -49,7 +50,7 @@ export default function PlansSupport({ token, user, messages, onSessionUpdate })
       body: { plan: 'free' },
     })
     throwIfNotOK(res, data, messages.planSwitchError)
-    onSessionUpdate?.(data.token, data.user)
+    onSessionUpdate?.(data.token, data.refresh_token || '', data.user)
   }
 
   async function activatePro(tier) {
@@ -69,8 +70,16 @@ export default function PlansSupport({ token, user, messages, onSessionUpdate })
       },
     })
     throwIfNotOK(res, data, messages.planSwitchError)
-    onSessionUpdate?.(data.token, data.user)
+    onSessionUpdate?.(data.token, data.refresh_token || '', data.user)
   }
+
+    useEffect(() => {
+      if (!focusProActivationKey) return
+      const inputEl = donationReferenceInputRef.current
+      if (!inputEl) return
+      inputEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      inputEl.focus()
+    }, [focusProActivationKey])
 
   function donateWithAmount(amount) {
     const normalized = String(amount).replace(',', '.')
@@ -232,6 +241,7 @@ export default function PlansSupport({ token, user, messages, onSessionUpdate })
           <div className="form-row" style={{ marginTop: 10 }}>
             <label>{messages.planDonationReferenceLabel}</label>
             <input
+              ref={donationReferenceInputRef}
               value={donationReference}
               onChange={e => setDonationReference(e.target.value)}
               placeholder={messages.planDonationReferencePlaceholder}

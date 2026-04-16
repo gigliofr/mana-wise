@@ -26,6 +26,7 @@ function App() {
   })
   const messages = translations[locale] || translations.it
   const [activeTool, setActiveTool] = useState('analyzer')
+  const [plansFocusKey, setPlansFocusKey] = useState(0)
   const [deckWorkspace, setDeckWorkspace] = useState({
     decklist: '',
     format: 'standard',
@@ -230,7 +231,10 @@ function App() {
               format={deckWorkspace.format}
               onDeckChange={nextDecklist => setDeckWorkspace(prev => ({ ...prev, decklist: nextDecklist }))}
               onFormatChange={nextFormat => setDeckWorkspace(prev => ({ ...prev, format: nextFormat }))}
-              onUpgradeRequest={() => setActiveTool('plans')}
+              onUpgradeRequest={() => {
+                setPlansFocusKey(prev => prev + 1)
+                setActiveTool('plans')
+              }}
             />
           )}
           {activeTool === 'builder' && (
@@ -293,6 +297,7 @@ function App() {
               user={user}
               messages={messages}
               onSessionUpdate={handleSessionUpdate}
+              focusProActivationKey={plansFocusKey}
             />
           )}
         </div>
