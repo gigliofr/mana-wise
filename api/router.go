@@ -1,9 +1,11 @@
 package api
 
 import (
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -198,6 +200,12 @@ func spaFallbackHandler(distDir string) http.Handler {
 // corsMiddleware sets permissive CORS headers for development.
 // In production, restrict AllowedOrigins to the actual domain.
 func corsMiddleware(next http.Handler) http.Handler {
+	if next == nil {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, http.StatusText(http.StatusServiceUnavailable), http.StatusServiceUnavailable)
+		})
+	}
+
 	allowedOrigins := allowedOriginsFromEnv()
 	allowAny := len(allowedOrigins) == 1 && allowedOrigins[0] == "*"
 	allowedSet := map[string]bool{}
@@ -206,6 +214,13 @@ func corsMiddleware(next http.Handler) http.Handler {
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if rec := recover(); rec != nil {
+				log.Printf("panic in corsMiddleware: %v\\n%s", rec, debug.Stack())
+				http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+			}
+		}()
+
 		origin := strings.TrimSpace(r.Header.Get("Origin"))
 		allowOrigin := ""
 		if allowAny {

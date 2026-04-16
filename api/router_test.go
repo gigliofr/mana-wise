@@ -46,3 +46,16 @@ func TestCORSMiddleware_OptionsNoContent_WhenOriginAllowlisted(t *testing.T) {
 		t.Fatalf("expected allow origin header to match request origin, got %q", got)
 	}
 }
+
+func TestCORSMiddleware_NilNext_ReturnsServiceUnavailable(t *testing.T) {
+	h := corsMiddleware(nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rr := httptest.NewRecorder()
+
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
