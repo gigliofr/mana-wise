@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/gigliofr/mana-wise/domain"
+	"github.com/gigliofr/mana-wise/infrastructure/llm"
 )
 
 // minimalAnalysis returns a non-nil AnalysisResult with balanced metrics
@@ -70,6 +71,16 @@ func TestAISuggester_ExternalOnly_NoProviders_InternalDisabled_ReturnsError(t *t
 	_, _, _, err := s.Suggest(context.Background(), "4 Lightning Bolt", "standard", "it", minimalAnalysis(), nil)
 	if err == nil {
 		t.Error("expected error when no providers and internal rules disabled")
+	}
+}
+
+func TestAISuggester_ExternalOnly_TypedNilConnector_ReturnsErrorNoPanic(t *testing.T) {
+	var nilConnector *llm.Connector
+	s := NewAISuggester(AIModeExternalOnly, nilConnector, nil, false)
+
+	_, _, _, err := s.Suggest(context.Background(), "4 Lightning Bolt", "standard", "it", minimalAnalysis(), nil)
+	if err == nil {
+		t.Fatal("expected error when provider receiver is nil")
 	}
 }
 

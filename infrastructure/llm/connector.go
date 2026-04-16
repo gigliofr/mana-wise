@@ -27,11 +27,17 @@ type Connector struct {
 
 // Provider returns the normalized provider name configured for this connector.
 func (c *Connector) Provider() string {
+	if c == nil {
+		return ""
+	}
 	return c.provider
 }
 
 // Model returns the model name configured for this connector.
 func (c *Connector) Model() string {
+	if c == nil {
+		return ""
+	}
 	return c.model
 }
 
@@ -57,6 +63,10 @@ func NewConnector(provider, apiKey, baseURL, model string, maxTokens int, timeou
 // Suggestions sends a structured analysis to the LLM and returns AI suggestions.
 // Results are cached by (decklistHash, format) for cacheTTL duration.
 func (c *Connector) Suggestions(ctx context.Context, decklistHash, decklist, format, locale string, analysis *domain.AnalysisResult) (string, error) {
+	if c == nil {
+		return "", fmt.Errorf("LLM Suggestions: connector unavailable")
+	}
+
 	cacheKey := fmt.Sprintf("%s::%s::%s", decklistHash, format, normalizeLocale(locale))
 	if cached, ok := c.cache.Get(cacheKey); ok {
 		return cached.(string), nil
@@ -98,6 +108,10 @@ func (c *Connector) Suggestions(ctx context.Context, decklistHash, decklist, for
 
 // EmbedText generates a single embedding vector using text-embedding-3-small.
 func (c *Connector) EmbedText(ctx context.Context, input string) ([]float64, error) {
+	if c == nil {
+		return nil, fmt.Errorf("LLM EmbedText: connector unavailable")
+	}
+
 	llmCtx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
 
