@@ -25,29 +25,74 @@ type smtpSender struct {
 	from string
 }
 
+type smtpConfig struct {
+	host string
+	port string
+	user string
+	key  string
+	from string
+}
+
+func smtpConfigFromEnv() smtpConfig {
+	return smtpConfig{
+		host: strings.TrimSpace(os.Getenv("SMTP_HOST")),
+		port: strings.TrimSpace(os.Getenv("SMTP_PORT")),
+		user: strings.TrimSpace(os.Getenv("SMTP_USER")),
+		key:  strings.TrimSpace(os.Getenv("SMTP_KEY")),
+		from: strings.TrimSpace(os.Getenv("MAIL_FROM")),
+	}
+}
+
+// EmailSenderConfigStatus returns whether SMTP email sending is configured and a short diagnostic reason.
+func EmailSenderConfigStatus() (bool, string) {
+	cfg := smtpConfigFromEnv()
+	missing := make([]string, 0, 5)
+	if cfg.host == "" {
+		missing = append(missing, "SMTP_HOST")
+	}
+	if cfg.port == "" {
+		missing = append(missing, "SMTP_PORT")
+	}
+	if cfg.user == "" {
+		missing = append(missing, "SMTP_USER")
+	}
+	if cfg.key == "" {
+		missing = append(missing, "SMTP_KEY")
+	}
+	if cfg.from == "" {
+		missing = append(missing, "MAIL_FROM")
+	}
+	if len(missing) > 0 {
+		return false, "missing env vars: " + strings.Join(missing, ",")
+	}
+
+	port, err := strconv.Atoi(cfg.port)
+	if err != nil || port <= 0 {
+		return false, "invalid SMTP_PORT"
+	}
+
+	return true, "smtp sender configured"
+}
+
 // NewEmailSenderFromEnv builds an SMTP sender from environment variables.
 // If required variables are missing, it falls back to a noop sender.
 func NewEmailSenderFromEnv() domain.EmailSender {
-	host := strings.TrimSpace(os.Getenv("SMTP_HOST"))
-	portRaw := strings.TrimSpace(os.Getenv("SMTP_PORT"))
-	user := strings.TrimSpace(os.Getenv("SMTP_USER"))
-	key := strings.TrimSpace(os.Getenv("SMTP_KEY"))
-	from := strings.TrimSpace(os.Getenv("MAIL_FROM"))
-	if host == "" || portRaw == "" || user == "" || key == "" || from == "" {
+	cfg := smtpConfigFromEnv()
+	if cfg.host == "" || cfg.port == "" || cfg.user == "" || cfg.key == "" || cfg.from == "" {
 		return domain.NoopEmailSender{}
 	}
 
-	port, err := strconv.Atoi(portRaw)
+	port, err := strconv.Atoi(cfg.port)
 	if err != nil || port <= 0 {
 		return domain.NoopEmailSender{}
 	}
 
 	return &smtpSender{
-		host: host,
+		host: cfg.host,
 		port: port,
-		user: user,
-		key:  key,
-		from: from,
+		user: cfg.user,
+		key:  cfg.key,
+		from: cfg.from,
 	}
 }
 

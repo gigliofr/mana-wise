@@ -73,6 +73,11 @@ func main() {
 	log.Println("✅ Repositories ready")
 
 	mailer := notifications.NewEmailSenderFromEnv()
+	if ok, reason := notifications.EmailSenderConfigStatus(); ok {
+		log.Println("✅ SMTP notifications enabled")
+	} else {
+		log.Printf("⚠️  SMTP notifications disabled (%s)", reason)
+	}
 
 	// ── Scryfall client ───────────────────────────────────────────────────────
 	scryfallClient := scryfall.NewClient(
