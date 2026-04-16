@@ -38,7 +38,7 @@ type RouterDeps struct {
 	PasswordResetRepo domain.PasswordResetTokenRepository
 	Mailer            domain.EmailSender
 	JWTSecret        string
-	ExpiryHours      int
+	SessionTTLMinutes int
 }
 
 // NewRouter builds and returns the chi router with all routes registered.
@@ -52,7 +52,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 	r.Use(corsMiddleware)
 
 	// Instantiate handlers.
-	authH := handlers.NewAuthHandler(deps.UserRepo, deps.JWTSecret, deps.ExpiryHours).
+	authH := handlers.NewAuthHandler(deps.UserRepo, deps.JWTSecret, deps.SessionTTLMinutes).
 		WithPasswordResetRepo(deps.PasswordResetRepo).
 		WithMailer(deps.Mailer)
 	analyzeH := handlers.NewAnalyzeHandler(deps.AnalyzeUC, deps.AISuggester, deps.UserRepo, deps.Analytics)

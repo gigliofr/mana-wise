@@ -24,16 +24,16 @@ type AuthHandler struct {
 	resetTokenRepo domain.PasswordResetTokenRepository
 	mailer        domain.EmailSender
 	jwtSecret     string
-	expiryHours   int
+	sessionTTLMinutes int
 }
 
 // NewAuthHandler creates an AuthHandler.
-func NewAuthHandler(userRepo domain.UserRepository, jwtSecret string, expiryHours int) *AuthHandler {
+func NewAuthHandler(userRepo domain.UserRepository, jwtSecret string, sessionTTLMinutes int) *AuthHandler {
 	return &AuthHandler{
 		userRepo:    userRepo,
 		mailer:      domain.NoopEmailSender{},
 		jwtSecret:   jwtSecret,
-		expiryHours: expiryHours,
+		sessionTTLMinutes: sessionTTLMinutes,
 	}
 }
 
@@ -109,7 +109,7 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	user.Remaining = user.RemainingAnalyses(domain.CurrentBusinessDay())
-	token, err := middleware.GenerateToken(user.ID, user.Email, string(user.Plan), h.jwtSecret, h.expiryHours)
+	token, err := middleware.GenerateToken(user.ID, user.Email, string(user.Plan), h.jwtSecret, h.sessionTTLMinutes)
 	if err != nil {
 		jsonError(w, "could not generate token", http.StatusInternalServerError)
 		return
@@ -168,7 +168,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 	user.Remaining = user.RemainingAnalyses(domain.CurrentBusinessDay())
 
-	token, err := middleware.GenerateToken(user.ID, user.Email, string(user.Plan), h.jwtSecret, h.expiryHours)
+	token, err := middleware.GenerateToken(user.ID, user.Email, string(user.Plan), h.jwtSecret, h.sessionTTLMinutes)
 	if err != nil {
 		jsonError(w, "could not generate token", http.StatusInternalServerError)
 		return
@@ -326,7 +326,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		_ = h.userRepo.Update(r.Context(), user)
 	}
 
-	token, err := middleware.GenerateToken(user.ID, user.Email, string(user.Plan), h.jwtSecret, h.expiryHours)
+	token, err := middleware.GenerateToken(user.ID, user.Email, string(user.Plan), h.jwtSecret, h.sessionTTLMinutes)
 	if err != nil {
 		jsonError(w, "could not generate token", http.StatusInternalServerError)
 		return
@@ -409,7 +409,7 @@ func (h *AuthHandler) UpdatePlan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	user.Remaining = user.RemainingAnalyses(domain.CurrentBusinessDay())
-	token, err := middleware.GenerateToken(user.ID, user.Email, string(user.Plan), h.jwtSecret, h.expiryHours)
+	token, err := middleware.GenerateToken(user.ID, user.Email, string(user.Plan), h.jwtSecret, h.sessionTTLMinutes)
 	if err != nil {
 		jsonError(w, "could not generate token", http.StatusInternalServerError)
 		return

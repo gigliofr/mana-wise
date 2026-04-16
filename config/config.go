@@ -36,8 +36,8 @@ type MongoDBConfig struct {
 
 // JWTConfig contains JWT signing settings.
 type JWTConfig struct {
-	Secret      string
-	ExpiryHours int
+	Secret            string
+	SessionTTLMinutes int
 }
 
 // ScryfallConfig contains Scryfall API settings.
@@ -106,11 +106,27 @@ func Load() (*Config, error) {
 	if cfg.JWT.Secret == "" {
 		return nil, fmt.Errorf("JWT signing secret is required: set one of JWT_SECRET, SECRET, APP_SECRET")
 	}
-	expiry, err := strconv.Atoi(getEnv("JWT_EXPIRY_HOURS", "72"))
-	if err != nil {
-		return nil, fmt.Errorf("JWT_EXPIRY_HOURS must be a valid integer: %w", err)
+	jwtSessionTTLMinutes := strings.TrimSpace(os.Getenv("JWT_SESSION_TTL_MINUTES"))
+	if jwtSessionTTLMinutes != "" {
+		ttlMinutes, parseErr := strconv.Atoi(jwtSessionTTLMinutes)
+		if parseErr != nil {
+			return nil, fmt.Errorf("JWT_SESSION_TTL_MINUTES must be a valid integer: %w", parseErr)
+		}
+		if ttlMinutes <= 0 {
+			return nil, fmt.Errorf("JWT_SESSION_TTL_MINUTES must be greater than 0")
+		}
+		cfg.JWT.SessionTTLMinutes = ttlMinutes
+	} else {
+		// Backward-compatible fallback for existing deployments using hour-based TTL.
+		expiryHours, parseErr := strconv.Atoi(getEnv("JWT_EXPIRY_HOURS", "72"))
+		if parseErr != nil {
+			return nil, fmt.Errorf("JWT_EXPIRY_HOURS must be a valid integer: %w", parseErr)
+		}
+		if expiryHours <= 0 {
+			return nil, fmt.Errorf("JWT_EXPIRY_HOURS must be greater than 0")
+		}
+		cfg.JWT.SessionTTLMinutes = expiryHours * 60
 	}
-	cfg.JWT.ExpiryHours = expiry
 
 	// Scryfall
 	cfg.Scryfall.BaseURL = getEnv("SCRYFALL_BASE_URL", "https://api.scryfall.com")

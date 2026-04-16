@@ -26,13 +26,16 @@ type Claims struct {
 }
 
 // GenerateToken creates a signed JWT token for a user.
-func GenerateToken(userID, email, plan, secret string, expiryHours int) (string, error) {
+func GenerateToken(userID, email, plan, secret string, sessionTTLMinutes int) (string, error) {
+	if sessionTTLMinutes <= 0 {
+		sessionTTLMinutes = 5
+	}
 	claims := Claims{
 		UserID: userID,
 		Email:  email,
 		Plan:   plan,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Duration(expiryHours) * time.Hour)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Duration(sessionTTLMinutes) * time.Minute)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			Issuer:    "manawise",
 		},

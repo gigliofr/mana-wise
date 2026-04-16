@@ -188,7 +188,7 @@ func main() {
 		PasswordResetRepo: passwordResetTokenRepo,
 		Mailer:            mailer,
 		JWTSecret:        cfg.JWT.Secret,
-		ExpiryHours:      cfg.JWT.ExpiryHours,
+		SessionTTLMinutes: cfg.JWT.SessionTTLMinutes,
 	})
 
 	// ── HTTP server ───────────────────────────────────────────────────────────
