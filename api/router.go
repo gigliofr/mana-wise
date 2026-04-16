@@ -48,7 +48,6 @@ func NewRouter(deps RouterDeps) http.Handler {
 	// Global middleware.
 	r.Use(panicShieldMiddleware)
 	r.Use(chimiddleware.Logger)
-	r.Use(chimiddleware.Recoverer)
 	r.Use(chimiddleware.RealIP)
 	r.Use(corsMiddleware)
 
@@ -180,14 +179,31 @@ func panicShieldMiddleware(next http.Handler) http.Handler {
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer func() {
-			if rec := recover(); rec != nil {
-				log.Printf("panic in panicShieldMiddleware: %v\n%s", rec, debug.Stack())
-				safeWriteInternalError(w)
-			}
-		}()
-		next.ServeHTTP(w, r)
+		safeServeHTTP(next, w, r, "panicShieldMiddleware")
 	})
+}
+
+func safeServeHTTP(next http.Handler, w http.ResponseWriter, r *http.Request, scope string) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			if scope == "" {
+				scope = "unknown"
+			}
+			log.Printf("panic in %s: %v\n%s", scope, rec, debug.Stack())
+			safeWriteInternalError(w)
+		}
+	}()
+
+	if next == nil {
+		safeWriteInternalError(w)
+		return
+	}
+	if r == nil || r.URL == nil || r.Header == nil {
+		safeWriteInternalError(w)
+		return
+	}
+
+	next.ServeHTTP(w, r)
 }
 
 func safeWriteInternalError(w http.ResponseWriter) {
@@ -252,12 +268,10 @@ func corsMiddleware(next http.Handler) http.Handler {
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer func() {
-			if rec := recover(); rec != nil {
-				log.Printf("panic in corsMiddleware: %v\\n%s", rec, debug.Stack())
-				safeWriteInternalError(w)
-			}
-		}()
+		if r == nil || r.URL == nil || r.Header == nil {
+			safeWriteInternalError(w)
+			return
+		}
 
 		origin := strings.TrimSpace(r.Header.Get("Origin"))
 		allowOrigin := ""
@@ -284,7 +298,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
-		next.ServeHTTP(w, r)
+		safeServeHTTP(next, w, r, "corsMiddleware")
 	})
 }
 

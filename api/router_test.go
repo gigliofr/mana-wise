@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/go-chi/chi/v5"
 )
 
 func TestCORSMiddleware_OptionsForbidden_WhenOriginNotAllowedInProduction(t *testing.T) {
@@ -60,6 +62,20 @@ func TestCORSMiddleware_NilNext_ReturnsServiceUnavailable(t *testing.T) {
 	}
 }
 
+func TestCORSMiddleware_TypedNilNext_ReturnsInternalServerError(t *testing.T) {
+	var nilMux *chi.Mux
+	h := corsMiddleware(nilMux)
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rr := httptest.NewRecorder()
+
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
 func TestSPAFallbackHandler_RecoversFromMalformedRequest(t *testing.T) {
 	h := spaFallbackHandler(t.TempDir())
 	req := &http.Request{Method: http.MethodGet, Header: make(http.Header)}
@@ -76,6 +92,20 @@ func TestPanicShieldMiddleware_RecoversDownstreamPanic(t *testing.T) {
 	h := panicShieldMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		panic("boom")
 	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rr := httptest.NewRecorder()
+
+	h.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestPanicShieldMiddleware_TypedNilNext_ReturnsInternalServerError(t *testing.T) {
+	var nilMux *chi.Mux
+	h := panicShieldMiddleware(nilMux)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rr := httptest.NewRecorder()
