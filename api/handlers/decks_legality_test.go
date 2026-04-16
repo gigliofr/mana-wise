@@ -46,12 +46,17 @@ func (r *legalityMockDeckRepo) Delete(ctx context.Context, id string) error {
 }
 
 type legalityMockCardRepo struct {
-	byID   map[string]*domain.Card
-	byName map[string]*domain.Card
-	withEmbeddings []*domain.Card
+	byID             map[string]*domain.Card
+	byName           map[string]*domain.Card
+	withEmbeddings   []*domain.Card
+	panicOnFindByID  bool
+	panicOnFindByName bool
 }
 
 func (r *legalityMockCardRepo) FindByID(ctx context.Context, id string) (*domain.Card, error) {
+	if r.panicOnFindByID {
+		panic("mock panic in FindByID")
+	}
 	return r.byID[id], nil
 }
 
@@ -60,6 +65,9 @@ func (r *legalityMockCardRepo) FindByScryfallID(ctx context.Context, scryfallID 
 }
 
 func (r *legalityMockCardRepo) FindByName(ctx context.Context, name string) (*domain.Card, error) {
+	if r.panicOnFindByName {
+		panic("mock panic in FindByName")
+	}
 	return r.byName[name], nil
 }
 
@@ -225,6 +233,24 @@ func runPriceRequest(t *testing.T, h *DeckHandler, path string) *httptest.Respon
 		})
 	})
 	r.Get("/api/v1/decks/{id}/price", h.Price)
+
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	rr := httptest.NewRecorder()
+	r.ServeHTTP(rr, req)
+	return rr
+}
+
+func runSummaryRequest(t *testing.T, h *DeckHandler, path string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	r := chi.NewRouter()
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			ctx := context.WithValue(req.Context(), middleware.ContextKeyUserID, "u-1")
+			next.ServeHTTP(w, req.WithContext(ctx))
+		})
+	})
+	r.Get("/api/v1/decks/{id}/summary", h.Summary)
 
 	req := httptest.NewRequest(http.MethodGet, path, nil)
 	rr := httptest.NewRecorder()
@@ -872,5 +898,28 @@ func TestDeckRestoreHandler_NotFoundVersion(t *testing.T) {
 	rr := runRestoreRequest(t, h, "/api/v1/decks/d-r2/restore/9")
 	if rr.Code != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestDeckSummaryHandler_RecoversPanicInCardLookup(t *testing.T) {
+	deck := &domain.Deck{
+		ID:     "d-sum-1",
+		UserID: "u-1",
+		Format: "modern",
+		Cards: []domain.DeckCard{
+			{CardName: "Lightning Bolt", Quantity: 4},
+		},
+	}
+	cardRepo := &legalityMockCardRepo{
+		byID:             map[string]*domain.Card{},
+		byName:           map[string]*domain.Card{},
+		panicOnFindByName: true,
+	}
+
+	h := NewDeckHandler(&legalityMockDeckRepo{deck: deck}, nil, cardRepo, nil, nil, nil)
+	rr := runSummaryRequest(t, h, "/api/v1/decks/d-sum-1/summary")
+
+	if rr.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422, got %d body=%s", rr.Code, rr.Body.String())
 	}
 }

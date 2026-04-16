@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"math"
 	"net/http"
 	"sort"
@@ -1092,6 +1093,16 @@ func metaSideboardTemplate(opponentArchetype, metaSnapshot string) []sideboardSu
 }
 
 func (h *DeckHandler) resolveDeckCards(r *http.Request, deck *domain.Deck) ([]*domain.Card, map[string]int, error) {
+	if h == nil || h.cardRepo == nil {
+		return nil, nil, fmt.Errorf("card repository unavailable")
+	}
+	if r == nil || r.Context() == nil {
+		return nil, nil, fmt.Errorf("request context unavailable")
+	}
+	if deck == nil {
+		return nil, nil, fmt.Errorf("deck is nil")
+	}
+
 	mainCards := deck.MainboardCards()
 	cards := make([]*domain.Card, 0, len(mainCards))
 	quantities := make(map[string]int, len(mainCards))
@@ -1102,19 +1113,9 @@ func (h *DeckHandler) resolveDeckCards(r *http.Request, deck *domain.Deck) ([]*d
 			continue
 		}
 
-		var card *domain.Card
-		var err error
-		if strings.TrimSpace(entry.CardID) != "" {
-			card, err = h.cardRepo.FindByID(r.Context(), entry.CardID)
-			if err != nil {
-				return nil, nil, err
-			}
-		}
-		if card == nil {
-			card, err = h.cardRepo.FindByName(r.Context(), entry.CardName)
-			if err != nil {
-				return nil, nil, err
-			}
+		card, err := h.resolveDeckCardEntry(r, entry)
+		if err != nil {
+			return nil, nil, err
 		}
 		if card == nil {
 			return nil, nil, &deckCardResolveError{name: entry.CardName}
@@ -1130,9 +1131,23 @@ func (h *DeckHandler) resolveDeckCards(r *http.Request, deck *domain.Deck) ([]*d
 	return cards, quantities, nil
 }
 
-func (h *DeckHandler) resolveDeckCardEntry(r *http.Request, entry domain.DeckCard) (*domain.Card, error) {
-	if strings.TrimSpace(entry.CardID) != "" {
-		card, err := h.cardRepo.FindByID(r.Context(), entry.CardID)
+func (h *DeckHandler) resolveDeckCardEntry(r *http.Request, entry domain.DeckCard) (card *domain.Card, err error) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			err = fmt.Errorf("resolve deck card %q: panic recovered: %v", strings.TrimSpace(entry.CardName), rec)
+			card = nil
+		}
+	}()
+
+	if h == nil || h.cardRepo == nil {
+		return nil, fmt.Errorf("card repository unavailable")
+	}
+	if r == nil || r.Context() == nil {
+		return nil, fmt.Errorf("request context unavailable")
+	}
+
+	if id := strings.TrimSpace(entry.CardID); id != "" {
+		card, err = h.cardRepo.FindByID(r.Context(), id)
 		if err != nil {
 			return nil, err
 		}
@@ -1141,7 +1156,12 @@ func (h *DeckHandler) resolveDeckCardEntry(r *http.Request, entry domain.DeckCar
 		}
 	}
 
-	card, err := h.cardRepo.FindByName(r.Context(), entry.CardName)
+	name := strings.TrimSpace(entry.CardName)
+	if name == "" {
+		return nil, &deckCardResolveError{name: entry.CardName}
+	}
+
+	card, err = h.cardRepo.FindByName(r.Context(), name)
 	if err != nil {
 		return nil, err
 	}
