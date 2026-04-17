@@ -96,7 +96,7 @@ func parseGenericFormat(input string, linePattern string, isSideboard bool) ([]d
 				qty = parsedQty
 			}
 		}
-		cardName := strings.TrimSpace(matches[2])
+		cardName := normalizeImportedCardName(strings.TrimSpace(matches[2]))
 		setCode := ""
 		if len(matches) > 3 && matches[3] != "" {
 			setCode = strings.TrimSpace(matches[3])
@@ -113,6 +113,24 @@ func parseGenericFormat(input string, linePattern string, isSideboard bool) ([]d
 	}
 
 	return entries, warnings, nil
+}
+
+var importedDeckTagRe = regexp.MustCompile(`\s*\[[^\]]+\]\s*$`)
+var importedSetCollectorSuffixRe = regexp.MustCompile(`(?i)\s*\([a-z0-9]{2,10}\)\s*[a-z0-9]+$`)
+var importedSetOnlySuffixRe = regexp.MustCompile(`(?i)\s*\([a-z0-9]{2,10}\)\s*$`)
+
+func normalizeImportedCardName(raw string) string {
+	name := strings.TrimSpace(raw)
+	for name != "" {
+		next := strings.TrimSpace(importedDeckTagRe.ReplaceAllString(name, ""))
+		if next == name {
+			break
+		}
+		name = next
+	}
+	name = strings.TrimSpace(importedSetCollectorSuffixRe.ReplaceAllString(name, ""))
+	name = strings.TrimSpace(importedSetOnlySuffixRe.ReplaceAllString(name, ""))
+	return name
 }
 
 // =============================================================================

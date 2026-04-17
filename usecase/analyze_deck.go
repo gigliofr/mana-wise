@@ -346,9 +346,23 @@ func (e deckEntry) identityKey() string {
 }
 
 var arenaSuffixRe = regexp.MustCompile(`(?i)^(.*?)\s*\(([a-z0-9]+)\)\s*([a-z0-9]+)$`)
+var trailingDeckTagRe = regexp.MustCompile(`\s*\[[^\]]+\]\s*$`)
+var setOnlySuffixRe = regexp.MustCompile(`(?i)^(.*?)\s*\(([a-z0-9]{2,10})\)\s*$`)
+
+func stripTrailingDeckTags(raw string) string {
+	cleaned := strings.TrimSpace(raw)
+	for cleaned != "" {
+		next := strings.TrimSpace(trailingDeckTagRe.ReplaceAllString(cleaned, ""))
+		if next == cleaned {
+			break
+		}
+		cleaned = next
+	}
+	return cleaned
+}
 
 func splitArenaCardDescriptor(raw string) (name, setCode, collectorNumber string) {
-	raw = strings.TrimSpace(raw)
+	raw = stripTrailingDeckTags(raw)
 	if raw == "" {
 		return "", "", ""
 	}
@@ -440,9 +454,12 @@ func parseDecklist(raw string) ([]deckEntry, error) {
 
 // sanitizeCardName strips MTG Arena trailing metadata like "(SET) 123".
 func sanitizeCardName(name string) string {
-	name = strings.TrimSpace(name)
+	name = stripTrailingDeckTags(name)
 	if name == "" {
 		return ""
+	}
+	if m := setOnlySuffixRe.FindStringSubmatch(name); len(m) == 3 {
+		name = strings.TrimSpace(m[1])
 	}
 	parts := strings.Fields(name)
 	if len(parts) >= 2 {

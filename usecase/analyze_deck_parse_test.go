@@ -51,6 +51,8 @@ func TestParseDecklist_EnglishDeckHeaderAndClassicLines(t *testing.T) {
 func TestSanitizeCardName(t *testing.T) {
 	tests := map[string]string{
 		"Elfi di Llanowar (FDN) 227": "Elfi di Llanowar",
+		"Bedevil (fic) [Removal]":     "Bedevil",
+		"Terra, Herald of Hope (fic) [Commander{top}]": "Terra, Herald of Hope",
 		"Lightning Bolt":             "Lightning Bolt",
 		"":                           "",
 	}
@@ -60,5 +62,29 @@ func TestSanitizeCardName(t *testing.T) {
 		if got != expected {
 			t.Fatalf("sanitizeCardName(%q) = %q, expected %q", in, got, expected)
 		}
+	}
+}
+
+func TestParseDecklist_ArchidektAnnotatedLines(t *testing.T) {
+	raw := `1 Bedevil (fic) [Removal]
+3 Mountain (sos) 278
+1 Terra, Herald of Hope (fic) [Commander{top}]`
+
+	entries, err := parseDecklist(raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(entries) != 3 {
+		t.Fatalf("expected 3 entries, got %d", len(entries))
+	}
+
+	if entries[0].name != "Bedevil" {
+		t.Fatalf("expected normalized name 'Bedevil', got %q", entries[0].name)
+	}
+	if entries[1].name != "Mountain" || entries[1].setCode != "sos" || entries[1].collectorNumber != "278" {
+		t.Fatalf("unexpected second entry: %+v", entries[1])
+	}
+	if entries[2].name != "Terra, Herald of Hope" {
+		t.Fatalf("expected normalized commander name, got %q", entries[2].name)
 	}
 }

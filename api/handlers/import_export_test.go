@@ -151,6 +151,35 @@ func TestParser_EmptyInput(t *testing.T) {
 	}
 }
 
+func TestArchidektParser_NormalizesTaggedLines(t *testing.T) {
+	input := `1 Bedevil (fic) [Removal]
+3 Mountain (sos) 278
+1 Terra, Herald of Hope (fic) [Commander{top}]`
+
+	parser := &ArchidektParser{}
+	entries, warnings, err := parser.Parse(input)
+
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("expected no warnings, got %v", warnings)
+	}
+	if len(entries) != 3 {
+		t.Fatalf("expected 3 entries, got %d", len(entries))
+	}
+
+	if entries[0].CardName != "Bedevil" {
+		t.Fatalf("expected 'Bedevil', got %q", entries[0].CardName)
+	}
+	if entries[1].CardName != "Mountain" {
+		t.Fatalf("expected 'Mountain', got %q", entries[1].CardName)
+	}
+	if entries[2].CardName != "Terra, Herald of Hope" {
+		t.Fatalf("expected normalized commander name, got %q", entries[2].CardName)
+	}
+}
+
 // Test exporters
 func TestArenaExporter_OK(t *testing.T) {
 	cards := []domain.DeckCard{
