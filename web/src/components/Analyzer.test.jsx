@@ -150,6 +150,39 @@ describe('Analyzer', () => {
     })
   })
 
+  it('surfaces fetch rejection details when analyze request fails before a response arrives', async () => {
+    const fetchMock = vi.fn(async (url, options = {}) => {
+      if (url === '/api/v1/decks' && options.method === 'GET') {
+        return jsonResponse([])
+      }
+      if (url === '/api/v1/analyze' && options.method === 'POST') {
+        throw new Error('Failed to fetch')
+      }
+      if (url === '/api/v1/deck/classify' && options.method === 'POST') {
+        return jsonResponse({ archetype: 'aggro' })
+      }
+      throw new Error(`Unhandled request: ${String(url)} ${String(options.method)}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(
+      <Analyzer
+        token="token-123"
+        user={{ id: 'user-1', plan: 'pro' }}
+        locale="en"
+        messages={messages}
+        decklist={'4 Lightning Bolt\n20 Mountain'}
+        format="modern"
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /analyze deck/i }))
+
+    await waitFor(() => {
+      expect(screen.getByText('Failed to fetch')).toBeInTheDocument()
+    })
+  })
+
   it('handles selecting saved deck with missing cards array', async () => {
     const fetchMock = vi.fn(async (url, options = {}) => {
       if (url === '/api/v1/decks' && options.method === 'GET') {

@@ -218,7 +218,13 @@ export default function Analyzer({ token, user, locale, messages, decklist: deck
       ])
 
       if (analysisOutcome.status !== 'fulfilled') {
-        throw new Error(messages.analysisFailed)
+        const reason = analysisOutcome.reason
+        const reasonMessage = reason instanceof Error
+          ? reason.message
+          : typeof reason === 'string'
+            ? reason
+            : ''
+        throw new Error(reasonMessage || messages.analysisFailed)
       }
 
       const { res, data } = analysisOutcome.value
