@@ -1,6 +1,7 @@
 package scryfall
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -16,8 +17,10 @@ import (
 )
 
 const (
-	maxRetries  = 3
-	retryBaseMs = 200 // base delay in milliseconds for exponential backoff
+	maxRetries           = 3
+	retryBaseMs          = 200 // base delay in milliseconds for exponential backoff
+	minTooManyReqBackoff = 1 * time.Second
+	maxRetryBackoff      = 10 * time.Second
 )
 
 // ScryfallCard is the raw shape returned by the Scryfall API.
@@ -235,20 +238,64 @@ func (c *Client) fetchCard(ctx context.Context, endpoint string) (*ScryfallCard,
 	return &card, nil
 }
 
+func parseRetryAfter(header string) (time.Duration, bool) {
+	header = strings.TrimSpace(header)
+	if header == "" {
+		return 0, false
+	}
+
+	if secs, err := time.ParseDuration(header + "s"); err == nil {
+		if secs < 0 {
+			return 0, false
+		}
+		return secs, true
+	}
+
+	if at, err := http.ParseTime(header); err == nil {
+		d := time.Until(at)
+		if d < 0 {
+			return 0, true
+		}
+		return d, true
+	}
+
+	return 0, false
+}
+
+func computeRetryDelay(statusCode int, attempt int, retryAfterHeader string) time.Duration {
+	base := time.Duration(float64(retryBaseMs)*math.Pow(2, float64(attempt))) * time.Millisecond
+	if statusCode == http.StatusTooManyRequests && base < minTooManyReqBackoff {
+		base = minTooManyReqBackoff
+	}
+
+	if retryAfter, ok := parseRetryAfter(retryAfterHeader); ok && retryAfter > base {
+		base = retryAfter
+	}
+
+	if base > maxRetryBackoff {
+		return maxRetryBackoff
+	}
+	return base
+}
+
+func waitRetryDelay(ctx context.Context, delay time.Duration) error {
+	if delay <= 0 {
+		return nil
+	}
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(delay):
+		return nil
+	}
+}
+
 // doWithRetry executes a GET with exponential backoff on 429 / 5xx responses.
 func (c *Client) doWithRetry(ctx context.Context, endpoint string) ([]byte, error) {
 	var lastErr error
 
 	for attempt := 0; attempt <= maxRetries; attempt++ {
-		if attempt > 0 {
-			delay := time.Duration(float64(retryBaseMs)*math.Pow(2, float64(attempt-1))) * time.Millisecond
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-time.After(delay):
-			}
-		}
-
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 		if err != nil {
 			return nil, fmt.Errorf("create request: %w", err)
@@ -276,6 +323,13 @@ func (c *Client) doWithRetry(ctx context.Context, endpoint string) ([]byte, erro
 			return nil, fmt.Errorf("not found: %s", endpoint)
 		case resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500:
 			lastErr = fmt.Errorf("http %d on attempt %d", resp.StatusCode, attempt+1)
+			if attempt == maxRetries {
+				continue
+			}
+			delay := computeRetryDelay(resp.StatusCode, attempt, resp.Header.Get("Retry-After"))
+			if err := waitRetryDelay(ctx, delay); err != nil {
+				return nil, err
+			}
 			continue
 		default:
 			return nil, fmt.Errorf("unexpected status %d for %s", resp.StatusCode, endpoint)
@@ -290,21 +344,12 @@ func (c *Client) doPostWithRetry(ctx context.Context, endpoint string, payload i
 	var lastErr error
 
 	for attempt := 0; attempt <= maxRetries; attempt++ {
-		if attempt > 0 {
-			delay := time.Duration(float64(retryBaseMs)*math.Pow(2, float64(attempt-1))) * time.Millisecond
-			select {
-			case <-ctx.Done():
-				return nil, ctx.Err()
-			case <-time.After(delay):
-			}
-		}
-
 		jsonBody, err := json.Marshal(payload)
 		if err != nil {
 			return nil, fmt.Errorf("marshal payload: %w", err)
 		}
 
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(string(jsonBody)))
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(jsonBody))
 		if err != nil {
 			return nil, fmt.Errorf("create request: %w", err)
 		}
@@ -332,6 +377,13 @@ func (c *Client) doPostWithRetry(ctx context.Context, endpoint string, payload i
 			return nil, fmt.Errorf("not found: %s", endpoint)
 		case resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500:
 			lastErr = fmt.Errorf("http %d on attempt %d", resp.StatusCode, attempt+1)
+			if attempt == maxRetries {
+				continue
+			}
+			delay := computeRetryDelay(resp.StatusCode, attempt, resp.Header.Get("Retry-After"))
+			if err := waitRetryDelay(ctx, delay); err != nil {
+				return nil, err
+			}
 			continue
 		default:
 			return nil, fmt.Errorf("unexpected status %d for %s", resp.StatusCode, endpoint)
