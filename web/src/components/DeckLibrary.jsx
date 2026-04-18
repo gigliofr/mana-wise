@@ -23,6 +23,7 @@ export default function DeckLibrary({
   const [reloadNonce, setReloadNonce] = useState(0)
   const [activeDeckId, setActiveDeckId] = useState('')
   const [pinnedDeckIds, setPinnedDeckIds] = useState([])
+  const [draggedPinnedDeckId, setDraggedPinnedDeckId] = useState('')
   const [expandedDecks, setExpandedDecks] = useState({})
   const [deckLegality, setDeckLegality] = useState({})
   const [deckSummaries, setDeckSummaries] = useState({})
@@ -340,6 +341,33 @@ export default function DeckLibrary({
     })
   }
 
+  function reorderPinnedDeck(fromDeckID, toDeckID) {
+    if (!fromDeckID || !toDeckID || fromDeckID === toDeckID) return
+    setPinnedDeckIds(prev => {
+      const fromIndex = prev.indexOf(fromDeckID)
+      const toIndex = prev.indexOf(toDeckID)
+      if (fromIndex < 0 || toIndex < 0) return prev
+      const next = [...prev]
+      next.splice(fromIndex, 1)
+      next.splice(toIndex, 0, fromDeckID)
+      return next
+    })
+  }
+
+  function movePinnedDeck(deckID, direction) {
+    setPinnedDeckIds(prev => {
+      const index = prev.indexOf(deckID)
+      if (index < 0) return prev
+      const target = index + direction
+      if (target < 0 || target >= prev.length) return prev
+      const next = [...prev]
+      const tmp = next[target]
+      next[target] = next[index]
+      next[index] = tmp
+      return next
+    })
+  }
+
   function parseDecklistToCards(decklist) {
     function stripTrailingTags(value) {
       let cleaned = String(value || '').trim()
@@ -579,6 +607,9 @@ export default function DeckLibrary({
                   const commanderCards = commanderDeckCards(deck)
                   const isActive = deck.id === activeDeckId
                   const isPinned = pinnedDeckIds.includes(deck.id)
+                  const pinnedIndex = pinnedDeckIds.indexOf(deck.id)
+                  const canMoveLeft = isPinned && pinnedIndex > 0
+                  const canMoveRight = isPinned && pinnedIndex >= 0 && pinnedIndex < (pinnedDeckIds.length - 1)
                   return (
                     <button
                       key={deck.id}
@@ -586,29 +617,91 @@ export default function DeckLibrary({
                       role="tab"
                       aria-selected={isActive}
                       className={`decklib-tab-btn${isActive ? ' active' : ''}`}
+                      draggable={isPinned}
+                      onDragStart={() => {
+                        if (isPinned) setDraggedPinnedDeckId(deck.id)
+                      }}
+                      onDragEnd={() => setDraggedPinnedDeckId('')}
+                      onDragOver={e => {
+                        if (isPinned && draggedPinnedDeckId) {
+                          e.preventDefault()
+                        }
+                      }}
+                      onDrop={e => {
+                        if (!isPinned || !draggedPinnedDeckId) return
+                        e.preventDefault()
+                        reorderPinnedDeck(draggedPinnedDeckId, deck.id)
+                        setDraggedPinnedDeckId('')
+                      }}
                       onClick={() => setActiveDeckId(deck.id)}
                     >
                       <span className="decklib-tab-name-row">
                         <span className="decklib-tab-name">{deck.name}</span>
-                        <span
-                          role="button"
-                          tabIndex={0}
-                          className={`decklib-tab-pin${isPinned ? ' pinned' : ''}`}
-                          onClick={e => {
-                            e.preventDefault()
-                            e.stopPropagation()
-                            toggleDeckPinned(deck.id)
-                          }}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter' || e.key === ' ') {
+                        <span className="decklib-tab-tools">
+                          {isPinned && (
+                            <>
+                              <span
+                                role="button"
+                                tabIndex={canMoveLeft ? 0 : -1}
+                                className={`decklib-tab-move${canMoveLeft ? '' : ' disabled'}`}
+                                onClick={e => {
+                                  e.preventDefault()
+                                  e.stopPropagation()
+                                  if (canMoveLeft) movePinnedDeck(deck.id, -1)
+                                }}
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter' || e.key === ' ') {
+                                    e.preventDefault()
+                                    e.stopPropagation()
+                                    if (canMoveLeft) movePinnedDeck(deck.id, -1)
+                                  }
+                                }}
+                                aria-label={`${messages.moveDeckLeft || 'Move deck left'} ${deck.name}`}
+                              >
+                                {'<'}
+                              </span>
+                              <span
+                                role="button"
+                                tabIndex={canMoveRight ? 0 : -1}
+                                className={`decklib-tab-move${canMoveRight ? '' : ' disabled'}`}
+                                onClick={e => {
+                                  e.preventDefault()
+                                  e.stopPropagation()
+                                  if (canMoveRight) movePinnedDeck(deck.id, 1)
+                                }}
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter' || e.key === ' ') {
+                                    e.preventDefault()
+                                    e.stopPropagation()
+                                    if (canMoveRight) movePinnedDeck(deck.id, 1)
+                                  }
+                                }}
+                                aria-label={`${messages.moveDeckRight || 'Move deck right'} ${deck.name}`}
+                              >
+                                {'>'}
+                              </span>
+                            </>
+                          )}
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            className={`decklib-tab-pin${isPinned ? ' pinned' : ''}`}
+                            onClick={e => {
                               e.preventDefault()
                               e.stopPropagation()
                               toggleDeckPinned(deck.id)
-                            }
-                          }}
-                          aria-label={isPinned ? (messages.unpinDeck || 'Unpin deck') : (messages.pinDeck || 'Pin deck')}
-                        >
-                          {isPinned ? 'Pinned' : 'Pin'}
+                            }}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault()
+                                e.stopPropagation()
+                                toggleDeckPinned(deck.id)
+                              }
+                            }}
+                            aria-label={isPinned ? (messages.unpinDeck || 'Unpin deck') : (messages.pinDeck || 'Pin deck')}
+                          >
+                            {isPinned ? 'Pinned' : 'Pin'}
+                          </span>
                         </span>
                       </span>
                       <span className="decklib-tab-sub">{cards.length + commanderCards.length} · {deck.format}</span>

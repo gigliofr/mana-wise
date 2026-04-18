@@ -781,6 +781,30 @@ button {
   gap: 8px;
 }
 
+.decklib-tab-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.decklib-tab-move {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: .6rem;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+}
+
+.decklib-tab-move.disabled {
+  opacity: .4;
+}
+
 .decklib-tab-pin {
   flex-shrink: 0;
   font-size: .64rem;
@@ -999,6 +1023,11 @@ button {
   .decklib-tab-pin {
     font-size: .6rem;
     padding: 2px 6px;
+  }
+
+  .decklib-tab-move {
+    width: 19px;
+    height: 19px;
   }
 }
 
@@ -1732,6 +1761,16 @@ button {
   .decklib-tab-pin {
     font-size: .58rem;
     letter-spacing: .06em;
+  }
+
+  .decklib-tab-tools {
+    gap: 4px;
+  }
+
+  .decklib-tab-move {
+    width: 18px;
+    height: 18px;
+    font-size: .55rem;
   }
 
   .decklib-grid-head {

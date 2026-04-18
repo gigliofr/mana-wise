@@ -261,5 +261,15 @@ describe('DeckLibrary', () => {
       expect(tabs[0]).toHaveTextContent('Control Shell')
       expect(screen.getByText('Pinned')).toBeInTheDocument()
     })
+
+    fireEvent.click(screen.getByLabelText('Pin deck'))
+
+    fireEvent.click(screen.getByLabelText('Move deck right Control Shell'))
+
+    await waitFor(() => {
+      const tabs = screen.getAllByRole('tab')
+      expect(tabs[0]).toHaveTextContent('Aggro Rush')
+      expect(tabs[1]).toHaveTextContent('Control Shell')
+    })
   })
 })
