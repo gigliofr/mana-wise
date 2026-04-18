@@ -17,10 +17,12 @@ export default function DeckLibrary({
   const [showSaveComposer, setShowSaveComposer] = useState(false)
   const [editDeckBeforeSave, setEditDeckBeforeSave] = useState(false)
   const [editedDecklist, setEditedDecklist] = useState('')
+  const [deckSearch, setDeckSearch] = useState('')
   const [page, setPage] = useState(0)
   const [totalDecks, setTotalDecks] = useState(0)
   const [reloadNonce, setReloadNonce] = useState(0)
   const [activeDeckId, setActiveDeckId] = useState('')
+  const [pinnedDeckIds, setPinnedDeckIds] = useState([])
   const [expandedDecks, setExpandedDecks] = useState({})
   const [deckLegality, setDeckLegality] = useState({})
   const [deckSummaries, setDeckSummaries] = useState({})
@@ -28,10 +30,32 @@ export default function DeckLibrary({
 
   const ITEMS_PER_PAGE = 3
   const paginatedDecks = decks
+  const pinStorageKey = `manawise.deckPins.${String(user?.id || 'anon')}`
   const totalPages = useMemo(
     () => Math.max(1, Math.ceil(totalDecks / ITEMS_PER_PAGE)),
     [totalDecks],
   )
+
+  const visibleDecks = useMemo(() => {
+    const query = deckSearch.trim().toLowerCase()
+    const filtered = query
+      ? paginatedDecks.filter(deck => {
+        const name = String(deck?.name || '').toLowerCase()
+        const format = String(deck?.format || '').toLowerCase()
+        return name.includes(query) || format.includes(query)
+      })
+      : paginatedDecks
+
+    const pinIndex = new Map(pinnedDeckIds.map((id, idx) => [id, idx]))
+    return [...filtered].sort((a, b) => {
+      const aPinned = pinIndex.has(a.id)
+      const bPinned = pinIndex.has(b.id)
+      if (aPinned && bPinned) return (pinIndex.get(a.id) || 0) - (pinIndex.get(b.id) || 0)
+      if (aPinned) return -1
+      if (bPinned) return 1
+      return 0
+    })
+  }, [paginatedDecks, deckSearch, pinnedDeckIds])
 
   const isPro = (user?.plan || '').toLowerCase() === 'pro'
   const canSaveMore = isPro || totalDecks < 1
@@ -84,15 +108,42 @@ export default function DeckLibrary({
   }, [page, totalPages])
 
   useEffect(() => {
-    if (paginatedDecks.length === 0) {
+    if (visibleDecks.length === 0) {
       setActiveDeckId('')
       return
     }
-    const exists = paginatedDecks.some(deck => deck.id === activeDeckId)
+    const exists = visibleDecks.some(deck => deck.id === activeDeckId)
     if (!exists) {
-      setActiveDeckId(paginatedDecks[0].id)
+      setActiveDeckId(visibleDecks[0].id)
     }
-  }, [paginatedDecks, activeDeckId])
+  }, [visibleDecks, activeDeckId])
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(pinStorageKey)
+      const parsed = JSON.parse(raw || '[]')
+      if (Array.isArray(parsed)) {
+        setPinnedDeckIds(parsed.filter(id => typeof id === 'string'))
+      } else {
+        setPinnedDeckIds([])
+      }
+    } catch {
+      setPinnedDeckIds([])
+    }
+  }, [pinStorageKey])
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(pinStorageKey, JSON.stringify(pinnedDeckIds))
+    } catch {
+      // Ignore quota/storage access errors.
+    }
+  }, [pinStorageKey, pinnedDeckIds])
+
+  useEffect(() => {
+    const validIds = new Set(paginatedDecks.map(deck => deck.id))
+    setPinnedDeckIds(prev => prev.filter(id => validIds.has(id)))
+  }, [paginatedDecks])
 
   useEffect(() => {
     let cancelled = false
@@ -278,6 +329,15 @@ export default function DeckLibrary({
       ...prev,
       [deckID]: !prev[deckID],
     }))
+  }
+
+  function toggleDeckPinned(deckID) {
+    setPinnedDeckIds(prev => {
+      if (prev.includes(deckID)) {
+        return prev.filter(id => id !== deckID)
+      }
+      return [...prev, deckID]
+    })
   }
 
   function parseDecklistToCards(decklist) {
@@ -481,6 +541,18 @@ export default function DeckLibrary({
         )}
       </div>
 
+      {decks.length > 0 && (
+        <div className="decklib-search-row">
+          <input
+            type="search"
+            value={deckSearch}
+            onChange={e => setDeckSearch(e.target.value)}
+            placeholder={messages.searchDecksPlaceholder || 'Search decks by name or format'}
+            aria-label={messages.searchDecksPlaceholder || 'Search decks'}
+          />
+        </div>
+      )}
+
       {!isPro && !canSaveMore && (
         <div className="banner banner-warn" style={{ marginBottom: 12 }}>
           {messages.deckLimitReached}
@@ -495,29 +567,58 @@ export default function DeckLibrary({
         <div style={{ color: 'var(--muted)', fontSize: '.9rem' }}>{messages.noSavedDecks}</div>
       ) : (
         <>
-          <div className="decklib-tabs" role="tablist" aria-label={messages.deckLibraryTitle}>
-            {paginatedDecks.map(deck => {
-              const cards = mainDeckCards(deck)
-              const commanderCards = commanderDeckCards(deck)
-              const isActive = deck.id === activeDeckId
-              return (
-                <button
-                  key={deck.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={isActive}
-                  className={`decklib-tab-btn${isActive ? ' active' : ''}`}
-                  onClick={() => setActiveDeckId(deck.id)}
-                >
-                  <span className="decklib-tab-name">{deck.name}</span>
-                  <span className="decklib-tab-sub">{cards.length + commanderCards.length} · {deck.format}</span>
-                </button>
-              )
-            })}
-          </div>
+          {visibleDecks.length === 0 ? (
+            <div style={{ color: 'var(--muted)', fontSize: '.9rem' }}>
+              {messages.noDecksMatchSearch || 'No decks match your search.'}
+            </div>
+          ) : (
+            <>
+              <div className="decklib-tabs" role="tablist" aria-label={messages.deckLibraryTitle}>
+                {visibleDecks.map(deck => {
+                  const cards = mainDeckCards(deck)
+                  const commanderCards = commanderDeckCards(deck)
+                  const isActive = deck.id === activeDeckId
+                  const isPinned = pinnedDeckIds.includes(deck.id)
+                  return (
+                    <button
+                      key={deck.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={isActive}
+                      className={`decklib-tab-btn${isActive ? ' active' : ''}`}
+                      onClick={() => setActiveDeckId(deck.id)}
+                    >
+                      <span className="decklib-tab-name-row">
+                        <span className="decklib-tab-name">{deck.name}</span>
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          className={`decklib-tab-pin${isPinned ? ' pinned' : ''}`}
+                          onClick={e => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            toggleDeckPinned(deck.id)
+                          }}
+                          onKeyDown={e => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault()
+                              e.stopPropagation()
+                              toggleDeckPinned(deck.id)
+                            }
+                          }}
+                          aria-label={isPinned ? (messages.unpinDeck || 'Unpin deck') : (messages.pinDeck || 'Pin deck')}
+                        >
+                          {isPinned ? 'Pinned' : 'Pin'}
+                        </span>
+                      </span>
+                      <span className="decklib-tab-sub">{cards.length + commanderCards.length} · {deck.format}</span>
+                    </button>
+                  )
+                })}
+              </div>
 
-          {(() => {
-            const activeDeck = paginatedDecks.find(deck => deck.id === activeDeckId) || paginatedDecks[0]
+              {(() => {
+            const activeDeck = visibleDecks.find(deck => deck.id === activeDeckId) || visibleDecks[0]
             if (!activeDeck) return null
 
             const normalizedFormat = (activeDeck.format || 'standard').toLowerCase()
@@ -554,7 +655,7 @@ export default function DeckLibrary({
             const visibleCards = expanded ? cards : cards.slice(0, 14)
             const hiddenCards = Math.max(0, cards.length - visibleCards.length)
 
-            return (
+                return (
               <div className="decklib-item" role="tabpanel" key={activeDeck.id}>
                 <div className="decklib-item-main">
                   <div className="decklib-item-top">
@@ -660,8 +761,10 @@ export default function DeckLibrary({
                   )}
                 </div>
               </div>
-            )
-          })()}
+                )
+              })()}
+            </>
+          )}
           {totalPages > 1 && (
             <div style={{ marginTop: '12px', display: 'flex', gap: '6px', justifyContent: 'center', alignItems: 'center' }}>
               <button

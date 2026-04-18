@@ -186,4 +186,80 @@ describe('DeckLibrary', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/v1/decks/deck-3/legality', expect.objectContaining({ method: 'GET' }))
     expect(fetchMock).toHaveBeenCalledWith('/api/v1/decks/deck-3', expect.objectContaining({ method: 'DELETE' }))
   })
+
+  it('filters tabs by search and allows pin-based ordering', async () => {
+    const fetchMock = vi.fn(async (url, options = {}) => {
+      if (url === '/api/v1/decks?page=1&limit=3' && options.method === 'GET') {
+        return jsonResponse({
+          data: [
+            {
+              id: 'deck-a',
+              user_id: 'user-1',
+              name: 'Aggro Rush',
+              format: 'standard',
+              cards: [{ card_name: 'Mountain', quantity: 20, is_sideboard: false }],
+            },
+            {
+              id: 'deck-b',
+              user_id: 'user-1',
+              name: 'Control Shell',
+              format: 'modern',
+              cards: [{ card_name: 'Island', quantity: 20, is_sideboard: false }],
+            },
+          ],
+          total: 2,
+          page: 1,
+          limit: 3,
+        })
+      }
+      if (url === '/api/v1/decks/deck-a/summary' && options.method === 'GET') {
+        return jsonResponse({ deck_id: 'deck-a', legality: { standard: { is_legal: true, illegal_cards: [] } } })
+      }
+      if (url === '/api/v1/decks/deck-b/summary' && options.method === 'GET') {
+        return jsonResponse({ deck_id: 'deck-b', legality: { modern: { is_legal: true, illegal_cards: [] } } })
+      }
+      if (url === '/api/v1/cards/metadata/batch' && options.method === 'POST') {
+        return jsonResponse({ items: [] })
+      }
+      throw new Error(`Unhandled request in test: ${String(url)} ${String(options.method)}`)
+    })
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(
+      <DeckLibrary
+        token="token-123"
+        user={{ id: 'user-1', plan: 'pro' }}
+        messages={messages}
+        currentDecklist={'20 Mountain'}
+        currentFormat="standard"
+      />,
+    )
+
+    await waitFor(() => {
+      const tabs = screen.getAllByRole('tab')
+      expect(tabs).toHaveLength(2)
+    })
+
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'control' } })
+    await waitFor(() => {
+      const tabs = screen.getAllByRole('tab')
+      expect(tabs).toHaveLength(1)
+      expect(tabs[0]).toHaveTextContent('Control Shell')
+    })
+
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: '' } })
+    await waitFor(() => {
+      const tabs = screen.getAllByRole('tab')
+      expect(tabs).toHaveLength(2)
+    })
+
+    fireEvent.click(screen.getAllByText('Pin')[1])
+
+    await waitFor(() => {
+      const tabs = screen.getAllByRole('tab')
+      expect(tabs[0]).toHaveTextContent('Control Shell')
+      expect(screen.getByText('Pinned')).toBeInTheDocument()
+    })
+  })
 })
