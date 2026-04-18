@@ -821,7 +821,7 @@ function ManaCurvePanel({ data, detectedArchetype, fingerprint, decklist, messag
 
         <div style={{ marginTop: 12 }}>
           <p style={{ margin: 0, fontSize: '.82rem', color: 'var(--muted)' }}>{messages.manaMockTypeDistLabel}</p>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(110px, 1fr))', gap: 8, marginTop: 8 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(92px, 1fr))', gap: 8, marginTop: 8 }}>
             <div className="stat-item"><div className="stat-value" style={{ fontSize: '1rem' }}>{typeDist.creature}</div><div className="stat-label">{messages.manaMockTypeCreature}</div></div>
             <div className="stat-item"><div className="stat-value" style={{ fontSize: '1rem' }}>{typeDist.spell}</div><div className="stat-label">{messages.manaMockTypeSpell}</div></div>
             <div className="stat-item"><div className="stat-value" style={{ fontSize: '1rem' }}>{typeDist.enchantArtifact}</div><div className="stat-label">{messages.manaMockTypeEnchantArtifact}</div></div>
@@ -833,7 +833,7 @@ function ManaCurvePanel({ data, detectedArchetype, fingerprint, decklist, messag
           <div style={{ marginTop: 12 }}>
             <p style={{ margin: 0, fontSize: '.82rem', color: 'var(--muted)' }}>{messages.drawProbTitle}</p>
             <p style={{ margin: '4px 0 0', fontSize: '.75rem', color: 'var(--muted)' }}>{messages.drawProbHint}</p>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8, marginTop: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(116px, 1fr))', gap: 8, marginTop: 8 }}>
               <div className="stat-item" title={messages.drawProbT1Hint}>
                 <div className="stat-value" style={{ fontSize: '.95rem' }}>{(data.draw_probabilities.turn1_land_prob || 0).toFixed(1)}%</div>
                 <div className="stat-label">{messages.drawProbT1Label}</div>
@@ -894,7 +894,7 @@ function ManaCurvePanel({ data, detectedArchetype, fingerprint, decklist, messag
               </div>
             )}
           </div>
-          <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8 }}>
+          <div style={{ marginTop: 8, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(118px, 1fr))', gap: 8 }}>
             {openingHand.length > 0 ? openingHand.map((card, idx) => (
               <div
                 key={`open-hand-${idx}`}
@@ -976,7 +976,7 @@ function ManaCurvePanel({ data, detectedArchetype, fingerprint, decklist, messag
           <p style={{ fontSize: '.78rem', color: 'var(--muted)', marginBottom: 10 }}>
             {messages.landConsistencyHint(data.land_sample_draws, data.sweet_spot_min_lands, data.sweet_spot_max_lands)}
           </p>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(136px, 1fr))', gap: 10 }}>
             {consistencyCards.map(card => (
               <div key={card.key} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 10, background: 'rgba(255,255,255,0.02)' }}>
                 <div style={{ fontSize: '.8rem', color: 'var(--muted)' }}>{card.label}</div>
