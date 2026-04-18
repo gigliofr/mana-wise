@@ -446,7 +446,7 @@ export default function Analyzer({ token, user, locale, messages, decklist: deck
           {tab === 'mana' && <ManaCurvePanel data={result.deterministic.mana} detectedArchetype={result.deterministic.interaction?.archetype} fingerprint={fingerprint} decklist={decklist} messages={messages} />}
           {tab === 'interaction' && <InteractionPanel data={{ ...result.deterministic.interaction, messages }} />}
           {tab === 'fingerprint' && <FingerprintPanel data={fingerprint} messages={messages} />} 
-          {tab === 'ai' && <AIPanel text={result.ai_suggestions} error={result.ai_error} source={result.ai_source} result={result} messages={messages} locale={locale} />}
+          {tab === 'ai' && <AIPanel text={result.ai_suggestions} error={result.ai_error} source={result.ai_source} result={result} commanderScore={commanderScore} messages={messages} locale={locale} />}
         </div>
       )}
     </>
@@ -471,12 +471,12 @@ function renderManaSymbolsInText(text, size = 14) {
   const raw = String(text || '')
   if (!raw) return raw
 
-  const symbolPattern = /(\{?[WUBRGC]\}?)(?=[^A-Za-z]|$)/g
+  const symbolPattern = /(\{[WUBRGC]\}|(?<![A-Za-z])[WUBRGC](?![A-Za-z]))/g
   const parts = raw.split(symbolPattern)
 
   return parts.map((part, idx) => {
     const normalized = part.replace(/[{}]/g, '').toUpperCase()
-    if (isManaColorCode(normalized)) {
+    if (isManaColorCode(normalized) && (part.startsWith('{') || part.length === 1)) {
       return <ManaSymbol key={`mana-${normalized}-${idx}`} code={normalized} size={size} />
     }
     return <span key={`txt-${idx}`}>{part}</span>
@@ -1113,7 +1113,7 @@ const tdStyle = {
   padding: '8px 8px',
 }
 
-export function AIPanel({ text, error, source, result, messages }) {
+export function AIPanel({ text, error, source, result, commanderScore, messages }) {
   const normalizedSource = String(source || '').trim()
   const sourceLabel = normalizedSource
     ? messages.aiSourceUsed(normalizedSource)
@@ -1128,7 +1128,7 @@ export function AIPanel({ text, error, source, result, messages }) {
   const statusToneClass = fallbackActive ? 'warn' : internalSource ? 'info' : 'ok'
 
   if (!text) {
-    const fallbackLines = buildLocalSummary(result, messages)
+    const fallbackLines = buildLocalSummary(result, commanderScore, messages)
     return (
       <div>
         <div className="ai-meta-row">
@@ -1324,7 +1324,7 @@ function LegalityLegend({ legality, messages }) {
   )
 }
 
-function buildLocalSummary(result, messages) {
+function buildLocalSummary(result, commanderScore, messages) {
   if (!result?.deterministic) {
     return [messages.aiFallbackNote]
   }
@@ -1351,7 +1351,7 @@ function buildLocalSummary(result, messages) {
     ? (messages.categoryLabels?.[topDeficit.category] || topDeficit.category)
     : null
 
-  return [
+  const lines = [
     messages.localSummaryLines.archetype(deckArchetype),
     messages.localSummaryLines.colorSpeed(deckArchetype, colorCount, colorSpeedRisk),
     messages.localSummaryLines.landRange(mana.land_count, landMin, landMax),
@@ -1365,6 +1365,13 @@ function buildLocalSummary(result, messages) {
       : messages.localSummaryLines.topGapNone(),
     messages.localSummaryLines.playtestingLoop(),
   ]
+
+  if (typeof commanderScore === 'number') {
+    const bracket = commanderBracketForScore(commanderScore)
+    lines.push(`${messages.commanderBracketLabel || 'Commander bracket'}: ${bracket.bracket} · ${bracket.label} · ${commanderScore.toFixed(1)}/10`)
+  }
+
+  return lines
 }
 
 function getColorSpeedRisk(archetype, colorCount) {

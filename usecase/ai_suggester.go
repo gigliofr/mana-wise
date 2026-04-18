@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -45,11 +46,31 @@ func NewAISuggester(mode string, primary, secondary suggestionProvider, internal
 	defaultFallbackStatus := map[int]bool{429: true, 500: true, 502: true, 503: true, 504: true}
 	return &AISuggester{
 		mode:              mode,
-		primary:           primary,
-		secondary:         secondary,
+		primary:           normalizeSuggestionProvider(primary),
+		secondary:         normalizeSuggestionProvider(secondary),
 		internalEnable:    internalEnable,
 		fallbackStatus:    defaultFallbackStatus,
 		fallbackOnTimeout: true,
+	}
+}
+
+func normalizeSuggestionProvider(p suggestionProvider) suggestionProvider {
+	if isNilSuggestionProvider(p) {
+		return nil
+	}
+	return p
+}
+
+func isNilSuggestionProvider(p suggestionProvider) bool {
+	if p == nil {
+		return true
+	}
+	v := reflect.ValueOf(p)
+	switch v.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return v.IsNil()
+	default:
+		return false
 	}
 }
 

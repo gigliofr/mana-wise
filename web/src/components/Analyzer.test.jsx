@@ -228,7 +228,7 @@ describe('Analyzer', () => {
     fireEvent.click(screen.getByRole('button', { name: /analyze deck/i }))
 
     await waitFor(() => {
-      expect(screen.getByText(/Bracket 4 · Optimized · 6\.8\/10/)).toBeInTheDocument()
+      expect(screen.getByText(/Commander bracket 4 · Optimized · 6\.8\/10/)).toBeInTheDocument()
       expect(screen.getByRole('button', { name: /Show preview for Terra, Herald of Hope/i })).toBeInTheDocument()
     })
   })

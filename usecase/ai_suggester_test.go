@@ -84,6 +84,25 @@ func TestAISuggester_ExternalOnly_TypedNilConnector_ReturnsErrorNoPanic(t *testi
 	}
 }
 
+func TestAISuggester_HybridPreferExternal_TypedNilConnector_InternalEnabled_FallsBack(t *testing.T) {
+	var nilConnector *llm.Connector
+	s := NewAISuggester(AIModeHybridPreferExternal, nilConnector, nil, true)
+
+	text, source, extErr, err := s.Suggest(context.Background(), "4 Lightning Bolt", "standard", "it", minimalAnalysis(), nil)
+	if err != nil {
+		t.Fatalf("expected fallback to internal, got error: %v", err)
+	}
+	if extErr != nil {
+		t.Fatalf("did not expect external warning when provider is effectively not configured, got: %v", extErr)
+	}
+	if source != "internal_rules" {
+		t.Fatalf("expected internal source, got %q", source)
+	}
+	if strings.TrimSpace(text) == "" {
+		t.Fatal("expected non-empty internal suggestions")
+	}
+}
+
 // ---- Mode: hybrid_prefer_external, no providers → falls back to internal ----
 
 func TestAISuggester_HybridPreferExternal_NoProviders_FallsBackToInternal(t *testing.T) {
