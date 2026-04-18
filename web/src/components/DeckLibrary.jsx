@@ -28,6 +28,7 @@ export default function DeckLibrary({
   const [pinnedDeckIds, setPinnedDeckIds] = useState([])
   const [draggedPinnedDeckId, setDraggedPinnedDeckId] = useState('')
   const [collapsedDeckLists, setCollapsedDeckLists] = useState({})
+  const [compactDeckLists, setCompactDeckLists] = useState({})
   const [updatingDeckId, setUpdatingDeckId] = useState('')
   const [expandedDecks, setExpandedDecks] = useState({})
   const [deckLegality, setDeckLegality] = useState({})
@@ -350,6 +351,17 @@ export default function DeckLibrary({
         [deckID]: !currentlyCollapsed,
       }
     })
+  }
+
+  function isDeckListCompact(deckID) {
+    return Boolean(compactDeckLists[deckID])
+  }
+
+  function toggleDeckListCompact(deckID) {
+    setCompactDeckLists(prev => ({
+      ...prev,
+      [deckID]: !Boolean(prev[deckID]),
+    }))
   }
 
   function toggleDeckPinned(deckID) {
@@ -812,6 +824,7 @@ export default function DeckLibrary({
             const cards = mainDeckCards(activeDeck)
             const commanderCards = commanderDeckCards(activeDeck)
             const listCollapsed = isDeckListCollapsed(activeDeck.id)
+            const listCompact = isDeckListCompact(activeDeck.id)
             const expanded = isDeckExpanded(activeDeck.id)
             const visibleCards = expanded ? cards : cards.slice(0, 10)
             const hiddenCards = Math.max(0, cards.length - visibleCards.length)
@@ -888,6 +901,17 @@ export default function DeckLibrary({
                         ? (messages.expandDeckList || 'Espandi lista')
                         : (messages.collapseDeckList || 'Comprimi lista')}
                     </button>
+                    {!listCollapsed && (
+                      <button
+                        type="button"
+                        className="btn-ghost"
+                        onClick={() => toggleDeckListCompact(activeDeck.id)}
+                      >
+                        {listCompact
+                          ? (messages.comfortDeckView || 'Vista standard')
+                          : (messages.compactDeckView || 'Vista compatta')}
+                      </button>
+                    )}
                   </div>
 
                   {!listCollapsed && (
@@ -896,7 +920,7 @@ export default function DeckLibrary({
                         <span>Qty</span>
                         <span>Card</span>
                       </div>
-                      <div className="decklib-card-grid">
+                      <div className={`decklib-card-grid${listCompact ? ' compact' : ''}`}>
                         {visibleCards.map((c, idx) => {
                           const quantity = Math.max(1, Number(c.quantity) || 1)
                           const cardName = (c.card_name || c.name || '').trim()

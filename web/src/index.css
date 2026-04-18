@@ -943,6 +943,27 @@ button {
   gap: 4px;
 }
 
+.decklib-card-grid.compact {
+  gap: 2px;
+}
+
+.decklib-card-grid.compact .decklib-card-row {
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+
+.decklib-card-grid.compact .decklib-card-qty {
+  font-size: .72rem;
+}
+
+.decklib-card-grid.compact .decklib-card-name {
+  font-size: .8rem;
+}
+
+.decklib-card-grid.compact .decklib-card-tags {
+  display: none;
+}
+
 .decklib-card-row {
   display: grid;
   grid-template-columns: 52px minmax(0, 1fr);
