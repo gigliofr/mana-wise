@@ -17,10 +17,12 @@ const TOKEN_KEY = 'manawise_token'
 const REFRESH_TOKEN_KEY = 'manawise_refresh_token'
 const USER_KEY  = 'manawise_user'
 const LOCALE_KEY = 'manawise_locale'
+const THEME_KEY = 'manawise_theme'
 
 function App() {
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) || '')
   const [locale, setLocale] = useState(() => localStorage.getItem(LOCALE_KEY) || 'it')
+  const [theme, setTheme] = useState(() => localStorage.getItem(THEME_KEY) || 'night')
   const [user,  setUser]  = useState(() => {
     try { return JSON.parse(localStorage.getItem(USER_KEY) || 'null') } catch { return null }
   })
@@ -69,6 +71,19 @@ function App() {
     localStorage.setItem(LOCALE_KEY, nextLocale)
     setLocale(nextLocale)
   }
+
+  function handleThemeToggle() {
+    setTheme(prev => {
+      const next = prev === 'night' ? 'day' : 'night'
+      localStorage.setItem(THEME_KEY, next)
+      return next
+    })
+  }
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+    document.documentElement.style.colorScheme = theme === 'day' ? 'light' : 'dark'
+  }, [theme])
 
   useEffect(() => {
     configureApiAuthSession({
@@ -173,6 +188,9 @@ function App() {
                 </button>
               ))}
             </div>
+            <button type="button" className="btn-ghost" onClick={handleThemeToggle}>
+              {theme === 'night' ? '☀️ Giorno' : '🌙 Notte'}
+            </button>
             <span style={{ fontSize: '.85rem', color: 'var(--muted)', alignSelf: 'center' }}>
               {user?.name} · <strong style={{ color: user?.plan === 'pro' ? '#e5a22a' : 'var(--muted)' }}>
                 {user?.plan?.toUpperCase()}

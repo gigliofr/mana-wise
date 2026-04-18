@@ -130,6 +130,7 @@ export default function Analyzer({ token, user, locale, messages, decklist: deck
   }
   const [result,   setResult]   = useState(null)
   const [fingerprint, setFingerprint] = useState(null)
+  const [commanderScore, setCommanderScore] = useState(null)
   const [loading,  setLoading]  = useState(false)
   const [error,    setError]    = useState('')
   const [tab,      setTab]      = useState('mana') // 'mana' | 'interaction' | 'fingerprint' | 'ai'
@@ -200,9 +201,11 @@ export default function Analyzer({ token, user, locale, messages, decklist: deck
     setError('')
     setResult(null)
     setFingerprint(null)
+    setCommanderScore(null)
     setLoading(true)
     try {
-      const [analysisOutcome, fingerprintOutcome] = await Promise.allSettled([
+      const commanderMode = format === 'commander'
+      const requests = [
         apiRequest('/analyze', {
           token,
           method: 'POST',
@@ -215,7 +218,20 @@ export default function Analyzer({ token, user, locale, messages, decklist: deck
           headers: { 'Accept-Language': locale || 'it' },
           body: { decklist, format },
         }),
-      ])
+      ]
+      if (commanderMode) {
+        requests.push(apiRequest('/score', {
+          token,
+          method: 'POST',
+          headers: { 'Accept-Language': locale || 'it' },
+          body: { decklist, format },
+        }))
+      }
+
+      const outcomes = await Promise.allSettled(requests)
+      const analysisOutcome = outcomes[0]
+      const fingerprintOutcome = outcomes[1]
+      const scoreOutcome = outcomes[2]
 
       if (analysisOutcome.status !== 'fulfilled') {
         const reason = analysisOutcome.reason
@@ -242,6 +258,13 @@ export default function Analyzer({ token, user, locale, messages, decklist: deck
         const { res: fingerprintRes, data: fingerprintData } = fingerprintOutcome.value
         if (fingerprintRes.ok) {
           setFingerprint(fingerprintData)
+        }
+      }
+
+      if (scoreOutcome?.status === 'fulfilled') {
+        const { res: scoreRes, data: scoreData } = scoreOutcome.value
+        if (scoreRes.ok && typeof scoreData?.score_detail?.score === 'number') {
+          setCommanderScore(scoreData.score_detail.score)
         }
       }
 
@@ -334,6 +357,18 @@ export default function Analyzer({ token, user, locale, messages, decklist: deck
             <span className="latency" style={{ marginTop: 0 }}>{messages.analyzedIn(result.latency_ms)}</span>
           </div>
 
+          {result.commander?.cards?.length > 0 && (
+            <div className="banner banner-info" style={{ marginBottom: 16, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+              <strong>{messages.commanderSectionTitle || 'Commander'}</strong>
+              <span>{result.commander.cards.map(card => card.name).join(' + ')}</span>
+              {typeof commanderScore === 'number' && (
+                <span>
+                  {messages.commanderBracketLabel || 'Bracket'} {commanderBracketForScore(commanderScore).bracket} · {commanderBracketForScore(commanderScore).label} · {commanderScore.toFixed(1)}/10
+                </span>
+              )}
+            </div>
+          )}
+
           {/* Quick stats */}
           <div className="stats-grid">
             <div className="stat-item">
@@ -375,6 +410,25 @@ export default function Analyzer({ token, user, locale, messages, decklist: deck
           <AnalysisLegend result={result} messages={messages} />
           <LegalityLegend legality={result.legality} messages={messages} />
 
+          {result.commander?.cards?.length > 0 && (
+            <div className="card" style={{ marginTop: 24 }}>
+              <h3 style={{ marginBottom: 12 }}>{messages.commanderSectionTitle || 'Commander'}</h3>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {result.commander.cards.map(card => (
+                  <CardHoverPreview
+                    key={card.id}
+                    cardName={card.name}
+                    token={token}
+                    messages={messages}
+                    metadata={{ rarity: card.rarity, set_code: card.set_code, collector_number: card.collector_number }}
+                  >
+                    <span className="builder-badge" style={{ fontSize: '.78rem' }}>{card.name}</span>
+                  </CardHoverPreview>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Tabs */}
           <div className="tabs" style={{ marginTop: 24 }}>
             {[
@@ -403,6 +457,14 @@ function scoreColor(score) {
   if (score >= 70) return 'var(--green)'
   if (score >= 40) return 'var(--orange)'
   return 'var(--red)'
+}
+
+function commanderBracketForScore(score) {
+  if (score >= 8.5) return { bracket: 5, label: 'cEDH' }
+  if (score >= 6.5) return { bracket: 4, label: 'Optimized' }
+  if (score >= 4.5) return { bracket: 3, label: 'Tuned' }
+  if (score >= 2.5) return { bracket: 2, label: 'Upgraded' }
+  return { bracket: 1, label: 'Casual' }
 }
 
 function renderManaSymbolsInText(text, size = 14) {

@@ -4,6 +4,8 @@
 :root {
   --bg:       #0e0e14;
   --surface:  #16161f;
+  --card:     #16161f;
+  --bg-secondary: #12121a;
   --border:   #2a2a3a;
   --primary:  #7c5cbf;
   --primary-h:#9b7fe0;
@@ -17,8 +19,28 @@
   --shadow:   0 4px 24px rgba(0,0,0,.5);
 }
 
+:root[data-theme='day'] {
+  --bg:       #f5f3ee;
+  --surface:  #ffffff;
+  --card:     #ffffff;
+  --bg-secondary: #efe8de;
+  --border:   #d6cfc5;
+  --primary:  #6b4f9c;
+  --primary-h:#8b6cc5;
+  --accent:   #b87616;
+  --text:     #1f2430;
+  --muted:    #667085;
+  --green:    #1f9d55;
+  --red:      #c53d3d;
+  --orange:   #ca7a00;
+  --shadow:   0 10px 24px rgba(31,36,48,.08);
+}
+
 body {
-  background: var(--bg);
+  background:
+    radial-gradient(circle at top left, rgba(124,92,191,.16), transparent 28%),
+    radial-gradient(circle at bottom right, rgba(229,162,42,.10), transparent 26%),
+    var(--bg);
   color: var(--text);
   font-family: 'Segoe UI', system-ui, sans-serif;
   min-height: 100vh;

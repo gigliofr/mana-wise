@@ -29,6 +29,7 @@ type AnalyzeResponse struct {
 	LatencyMs     int64                                 `json:"latency_ms"`
 	Legality      map[string]usecase.DeckLegalityResult `json:"legality"`
 	Warnings      []string                              `json:"warnings,omitempty"`
+	Commander     *usecase.CommanderInfo                `json:"commander,omitempty"`
 	Sideboard     *sideboardResponseInfo                `json:"sideboard,omitempty"`
 }
 
@@ -147,6 +148,7 @@ func (h *AnalyzeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		LatencyMs:     result.Result.LatencyMs,
 		Legality:      legality,
 		Warnings:      result.Warnings,
+		Commander:     result.Commander,
 		Sideboard:     sb,
 	})
 }

@@ -24,6 +24,7 @@ type DeckHandler struct {
 	userRepo domain.UserRepository
 	cardRepo domain.CardRepository
 	analyze  *usecase.AnalyzeDeckUseCase
+	scoreUC  *usecase.ScoreUseCase
 	classify *usecase.DeckClassifierUseCase
 	mulligan *usecase.MulliganAssistantUseCase
 	tracker  domain.AnalyticsTracker
@@ -40,10 +41,17 @@ func NewDeckHandler(repo domain.DeckRepository, userRepo domain.UserRepository, 
 		userRepo: userRepo,
 		cardRepo: cardRepo,
 		analyze:  analyze,
+		scoreUC:  nil,
 		classify: classify,
 		mulligan: mulligan,
 		tracker:  domain.NoopAnalyticsTracker{},
 	}
+}
+
+// WithScoreUC sets the score use case for richer deck metadata when available.
+func (h *DeckHandler) WithScoreUC(scoreUC *usecase.ScoreUseCase) *DeckHandler {
+	h.scoreUC = scoreUC
+	return h
 }
 
 // WithTracker sets the analytics tracker for this handler.
@@ -122,7 +130,14 @@ type deckSummaryResponse struct {
 	EstimatedEUR   float64                               `json:"estimated_eur"`
 	MissingPrices  []string                              `json:"missing_prices,omitempty"`
 	Legality       map[string]usecase.DeckLegalityResult `json:"legality"`
+	CommanderScore *commanderBracketResponse              `json:"commander_bracket,omitempty"`
 	CheckedAtUTC   string                                `json:"checked_at"`
+}
+
+type commanderBracketResponse struct {
+	Score  float64 `json:"score"`
+	Bracket int    `json:"bracket"`
+	Label  string  `json:"label"`
 }
 
 type deckBudgetReplacement struct {
@@ -509,8 +524,44 @@ func (h *DeckHandler) Summary(w http.ResponseWriter, r *http.Request) {
 		EstimatedEUR:   round4(totalEUR),
 		MissingPrices:  missingPrices,
 		Legality:       usecase.DetermineDeckLegalityAllFormats(cards, quantities),
+		CommanderScore: commanderBracketForDeck(h.scoreUC, deck.Format, cards, quantities),
 		CheckedAtUTC:   time.Now().UTC().Format(time.RFC3339),
 	})
+}
+
+func commanderBracketForDeck(scoreUC *usecase.ScoreUseCase, format string, cards []*domain.Card, quantities map[string]int) *commanderBracketResponse {
+	if scoreUC == nil || !strings.EqualFold(strings.TrimSpace(format), "commander") {
+		return nil
+	}
+	result, err := scoreUC.Execute(context.Background(), cards, quantities)
+	if err != nil {
+		return nil
+	}
+	score := result.Score
+	bracket := 1
+	switch {
+	case score >= 8.5:
+		bracket = 5
+	case score >= 6.5:
+		bracket = 4
+	case score >= 4.5:
+		bracket = 3
+	case score >= 2.5:
+		bracket = 2
+	default:
+		bracket = 1
+	}
+	label := map[int]string{
+		1: "Casual",
+		2: "Upgraded",
+		3: "Tuned",
+		4: "Optimized",
+		5: "cEDH",
+	}[bracket]
+	if label == "" {
+		label = "Casual"
+	}
+	return &commanderBracketResponse{Score: score, Bracket: bracket, Label: label}
 }
 
 // Budget handles GET /api/v1/decks/{id}/budget?target=200.

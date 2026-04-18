@@ -508,6 +508,7 @@ export default function DeckLibrary({
                     : undefined
                   const summary = deckSummaries[deck.id]
                   const estimatedUSD = Number(summary?.estimated_usd || 0)
+                  const commanderBracket = summary?.commander_bracket
 
                   return (
                 <div>
@@ -532,6 +533,23 @@ export default function DeckLibrary({
                     {estimatedUSD > 0 && (
                       <span style={{ fontSize: '.72rem', color: 'var(--muted)' }} title="Estimated deck value in USD">
                         {`~$${estimatedUSD.toFixed(2)}`}
+                      </span>
+                    )}
+                    {commanderBracket && (
+                      <span
+                        style={{
+                          fontSize: '.68rem',
+                          textTransform: 'uppercase',
+                          letterSpacing: '.04em',
+                          border: '1px solid var(--primary-h)',
+                          color: 'var(--primary-h)',
+                          borderRadius: 999,
+                          padding: '1px 7px',
+                          fontWeight: 700,
+                        }}
+                        title={`Commander bracket ${commanderBracket.bracket} · ${commanderBracket.label}`}
+                      >
+                        Bracket {commanderBracket.bracket}
                       </span>
                     )}
                   </div>

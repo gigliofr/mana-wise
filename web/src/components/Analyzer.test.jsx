@@ -172,6 +172,67 @@ describe('Analyzer', () => {
     })
   })
 
+  it('shows commander cards and bracket when commander analysis succeeds', async () => {
+    const fetchMock = vi.fn(async (url, options = {}) => {
+      if (url === '/api/v1/decks' && options.method === 'GET') {
+        return jsonResponse([])
+      }
+      if (url === '/api/v1/analyze' && options.method === 'POST') {
+        return jsonResponse({
+          deterministic: {
+            format: 'commander',
+            mana: {
+              total_cards: 100,
+              average_cmc: 2.8,
+              land_count: 37,
+              ideal_land_count: 36,
+              distribution: [],
+              type_distribution: {},
+              color_distribution: {},
+              suggestions: [],
+            },
+            interaction: { archetype: 'midrange', total_score: 58, breakdowns: [], suggestions: [] },
+            latency_ms: 19,
+          },
+          ai_suggestions: '',
+          latency_ms: 19,
+          legality: {},
+          commander: {
+            cards: [
+              { id: 'cmd-1', name: 'Terra, Herald of Hope', rarity: 'mythic', set_code: 'fic', collector_number: '123' },
+            ],
+          },
+        })
+      }
+      if (url === '/api/v1/deck/classify' && options.method === 'POST') {
+        return jsonResponse({ archetype: 'midrange' })
+      }
+      if (url === '/api/v1/score' && options.method === 'POST') {
+        return jsonResponse({ score_detail: { score: 6.8 } })
+      }
+      throw new Error(`Unhandled request: ${String(url)} ${String(options.method)}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(
+      <Analyzer
+        token="token-123"
+        user={{ id: 'user-1', plan: 'pro' }}
+        locale="en"
+        messages={messages}
+        decklist={'1 Terra, Herald of Hope\n99 Plains'}
+        format="commander"
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /analyze deck/i }))
+
+    await waitFor(() => {
+      expect(screen.getByText(/Bracket 4 · Optimized · 6\.8\/10/)).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /Show preview for Terra, Herald of Hope/i })).toBeInTheDocument()
+    })
+  })
+
   it('shows analysis warnings without failing the result card', async () => {
     const fetchMock = vi.fn(async (url, options = {}) => {
       if (url === '/api/v1/decks' && options.method === 'GET') {

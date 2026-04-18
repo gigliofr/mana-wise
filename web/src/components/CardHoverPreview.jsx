@@ -238,6 +238,7 @@ async function resolvePreview(cardName, token) {
 
 export default function CardHoverPreview({ cardName, token, messages, metadata, children }) {
   const normalized = useMemo(() => normalizeCardName(cardName), [cardName])
+  const [isTouchMode, setIsTouchMode] = useState(false)
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [preview, setPreview] = useState(null)
@@ -264,6 +265,21 @@ export default function CardHoverPreview({ cardName, token, messages, metadata, 
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [open])
+
+  useEffect(() => {
+    function updateMode() {
+      try {
+        const coarse = window.matchMedia('(pointer: coarse)').matches
+        setIsTouchMode(coarse || window.innerWidth < 768)
+      } catch {
+        setIsTouchMode(window.innerWidth < 768)
+      }
+    }
+
+    updateMode()
+    window.addEventListener('resize', updateMode)
+    return () => window.removeEventListener('resize', updateMode)
+  }, [])
 
   useEffect(() => {
     setFaceIndex(0)
@@ -305,6 +321,17 @@ export default function CardHoverPreview({ cardName, token, messages, metadata, 
   }
 
   function updatePosition(e) {
+    if (!e || typeof e.clientX !== 'number' || typeof e.clientY !== 'number') {
+      setPosition({
+        x: Math.max(8, Math.round((window.innerWidth - 360) / 2)),
+        y: Math.max(8, Math.round((window.innerHeight - 320) / 2)),
+      })
+      return
+    }
+    if (isTouchMode) {
+      setPosition({ x: 8, y: 8 })
+      return
+    }
     const offset = 16
     const maxX = window.innerWidth - 380
     const maxY = window.innerHeight - 320
@@ -315,6 +342,7 @@ export default function CardHoverPreview({ cardName, token, messages, metadata, 
   }
 
   function openPreview(e) {
+    if (!e) return
     updatePosition(e)
     setOpen(true)
     if (stickyDefault) {
@@ -342,22 +370,62 @@ export default function CardHoverPreview({ cardName, token, messages, metadata, 
   const collectorNumber = String(meta.collector_number || '').trim().toUpperCase()
   const rarityClass = badgeClassName(rarity)
   const hasMetaBadges = Boolean(rarity || setCode || collectorNumber)
+  const dialogStyle = isTouchMode ? {
+    position: 'fixed',
+    inset: 10,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 10,
+    maxHeight: 'calc(100vh - 20px)',
+    overflow: 'hidden',
+    background: 'var(--surface)',
+    border: '1px solid var(--border)',
+    borderRadius: 18,
+    boxShadow: '0 24px 80px rgba(0,0,0,0.5)',
+    padding: 12,
+    zIndex: 9999,
+    pointerEvents: 'auto',
+  } : {
+    position: 'fixed',
+    left: position.x,
+    top: position.y,
+    width: 404,
+    maxWidth: 'calc(100vw - 16px)',
+    maxHeight: 'calc(100vh - 16px)',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 10,
+    overflow: 'hidden',
+    background: 'var(--card)',
+    border: '1px solid var(--border)',
+    borderRadius: 14,
+    boxShadow: '0 18px 48px rgba(0,0,0,0.42)',
+    padding: 12,
+    zIndex: 9999,
+    pointerEvents: 'auto',
+  }
 
   return (
     <span
       style={{ cursor: 'help', textDecoration: 'underline dotted', textUnderlineOffset: 2 }}
-      onMouseEnter={openPreview}
-      onMouseMove={updatePosition}
+      onMouseEnter={isTouchMode ? undefined : openPreview}
+      onMouseMove={isTouchMode ? undefined : updatePosition}
       onMouseLeave={() => {
-        if (!pinned && !stickyDefault) setOpen(false)
+        if (!isTouchMode && !pinned && !stickyDefault) setOpen(false)
       }}
       onFocus={e => openPreview(e)}
       onBlur={() => {
-        if (!pinned && !stickyDefault) setOpen(false)
+        if (!isTouchMode && !pinned && !stickyDefault) setOpen(false)
       }}
       onClick={() => {
         setOpen(true)
         setPinned(true)
+        if (isTouchMode) {
+          setPosition({ x: 8, y: 8 })
+        }
+        if (!preview && !loading) {
+          loadPreview()
+        }
       }}
       tabIndex={0}
       role="button"
@@ -366,25 +434,38 @@ export default function CardHoverPreview({ cardName, token, messages, metadata, 
       {trigger}
 
       {open && (
-        <div
-          style={{
-            position: 'fixed',
-            left: position.x,
-            top: position.y,
-            width: 360,
-            maxWidth: 'calc(100vw - 16px)',
-            background: 'var(--card)',
-            border: '1px solid var(--border)',
-            borderRadius: 12,
-            boxShadow: '0 10px 30px rgba(0,0,0,0.35)',
-            padding: 10,
-            zIndex: 9999,
-            pointerEvents: 'auto',
-          }}
-          onMouseEnter={() => setOpen(true)}
-          onClick={e => e.stopPropagation()}
-        >
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginBottom: 6 }}>
+        <>
+          {isTouchMode && (
+            <div
+              aria-hidden="true"
+              onClick={closePreview}
+              style={{
+                position: 'fixed',
+                inset: 0,
+                background: 'rgba(0,0,0,.55)',
+                zIndex: 9998,
+              }}
+            />
+          )}
+          <div
+            className="card-hover-preview"
+            role={isTouchMode ? 'dialog' : 'tooltip'}
+            aria-modal={isTouchMode ? 'true' : undefined}
+            style={dialogStyle}
+            onMouseEnter={() => setOpen(true)}
+            onClick={e => e.stopPropagation()}
+          >
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 6, alignItems: 'center' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, minWidth: 0 }}>
+              {hasMetaBadges && (
+                <>
+                  {rarity && <span className={`builder-badge rarity-${rarityClass}`} title={messages?.cardPreviewRarity || 'Rarity'}>{rarity}</span>}
+                  {setCode && <span className="builder-badge builder-badge-set" title={messages?.cardPreviewSet || 'Set'}>{setCode}</span>}
+                  {collectorNumber && <span className="builder-badge" title={messages?.cardPreviewCollector || 'Collector number'}>{collectorNumber}</span>}
+                </>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', marginLeft: 'auto' }}>
             {hasMultipleFaces && (
               <button
                 type="button"
@@ -475,6 +556,7 @@ export default function CardHoverPreview({ cardName, token, messages, metadata, 
               {messages?.cardPreviewClose || 'Close'}
             </button>
           </div>
+          </div>
 
           {loading && (
             <div style={{ color: 'var(--muted)', fontSize: '.82rem' }}>
@@ -489,15 +571,8 @@ export default function CardHoverPreview({ cardName, token, messages, metadata, 
           )}
 
           {!loading && !error && preview && (
-            <div>
-              <div style={{ fontWeight: 700, fontSize: '.92rem', marginBottom: 2 }}>{preview.name}</div>
-              {hasMetaBadges && (
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
-                  {rarity && <span className={`builder-badge rarity-${rarityClass}`} title={messages?.cardPreviewRarity || 'Rarity'}>{rarity}</span>}
-                  {setCode && <span className="builder-badge builder-badge-set" title={messages?.cardPreviewSet || 'Set'}>{setCode}</span>}
-                  {collectorNumber && <span className="builder-badge" title={messages?.cardPreviewCollector || 'Collector number'}>{collectorNumber}</span>}
-                </div>
-              )}
+            <div style={{ minHeight: 0, overflow: 'auto', display: 'grid', gap: 10 }}>
+              <div style={{ fontWeight: 700, fontSize: '.96rem', lineHeight: 1.15 }}>{preview.name}</div>
               {hasMultipleFaces && shownFaceName && shownFaceName !== preview.name && (
                 <div style={{ color: 'var(--muted)', fontSize: '.76rem', marginBottom: 6 }}>
                   {messages?.cardPreviewFace || 'Face'}: {shownFaceName}
@@ -516,21 +591,25 @@ export default function CardHoverPreview({ cardName, token, messages, metadata, 
                   loading="lazy"
                   style={{
                     width: '100%',
-                    borderRadius: 8,
+                    borderRadius: 12,
                     border: '1px solid var(--border)',
-                    marginBottom: 8,
+                    marginBottom: 0,
+                    maxHeight: isTouchMode ? '46vh' : 420,
+                    objectFit: 'contain',
+                    background: 'rgba(0,0,0,.14)',
                     transition: 'transform .18s ease, opacity .18s ease',
                     transform: 'rotateY(0deg)',
                     opacity: 1,
                   }}
                 />
               )}
-              <div style={{ whiteSpace: 'pre-line', fontSize: '.8rem', lineHeight: 1.35, color: 'var(--text)' }}>
+              <div style={{ whiteSpace: 'pre-line', fontSize: '.84rem', lineHeight: 1.45, color: 'var(--text)' }}>
                 {preview.oracle_text || (messages?.cardPreviewNoRules || 'No oracle text available')}
               </div>
             </div>
           )}
         </div>
+        </>
       )}
     </span>
   )

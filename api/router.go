@@ -72,7 +72,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 	var deckH *handlers.DeckHandler
 	var deckImportExportH *handlers.DeckImportExportHandler
 	if deps.DeckRepo != nil {
-		deckH = handlers.NewDeckHandler(deps.DeckRepo, deps.UserRepo, deps.CardRepo, deps.AnalyzeUC, deps.DeckClassifyUC, deps.MulliganUC).WithTracker(deps.Analytics)
+		deckH = handlers.NewDeckHandler(deps.DeckRepo, deps.UserRepo, deps.CardRepo, deps.AnalyzeUC, deps.DeckClassifyUC, deps.MulliganUC).WithTracker(deps.Analytics).WithScoreUC(deps.ScoreUC)
 		deckImportExportH = handlers.NewDeckImportExportHandler(deps.DeckRepo, deps.UserRepo, deps.CardRepo, deps.ResolveCardUC)
 	}
 
