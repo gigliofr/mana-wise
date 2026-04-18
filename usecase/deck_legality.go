@@ -176,6 +176,107 @@ func allowsAnyNumberCopies(card *domain.Card) bool {
 	return strings.Contains(text, "a deck can have any number of cards named")
 }
 
+// DetermineDeckLegalityForCommanderFormat validates a Commander deck specifically.
+// commanderCardIDs is a set of card IDs representing the commander card(s).
+// The singleton rule is enforced only for main deck cards (excluding commander).
+// The commander itself must be legal, and must not appear in the main deck.
+func DetermineDeckLegalityForCommanderFormat(cards []*domain.Card, quantities map[string]int, commanderCardIDs map[string]bool) DeckLegalityResult {
+	result := DeckLegalityResult{
+		Format:  "commander",
+		IsLegal: true,
+	}
+
+	// Calculate deck size excluding commanders.
+	deckSize := 0
+	for _, c := range uniqueCardsByID(cards) {
+		if commanderCardIDs[c.ID] {
+			// Commander must be exactly 1.
+			if qty := quantities[c.ID]; qty != 1 {
+				result.Issues = append(result.Issues, fmt.Sprintf("commander must be exactly 1 card, found %d", qty))
+			}
+			continue
+		}
+		if qty := quantities[c.ID]; qty > 0 {
+			deckSize += qty
+		}
+	}
+	result.DeckSize = deckSize
+
+	// Validate singleton for main deck (non-commander cards).
+	unique := uniqueCardsByID(cards)
+	for _, card := range unique {
+		if commanderCardIDs[card.ID] {
+			// Commander legality check (must be legal in commander format).
+			status := strings.ToLower(strings.TrimSpace(card.Legalities["commander"]))
+			if status == "" {
+				status = "unknown"
+			}
+			if !isCardAllowedInFormat(status, "commander", card) {
+				result.IllegalCards = append(result.IllegalCards, IllegalCardIssue{
+					CardName: card.Name,
+					CardID:   card.ID,
+					Quantity: 1,
+					Legality: status,
+					Format:   "commander",
+					Reason:   fmt.Sprintf("commander card is not legal in commander format"),
+				})
+			}
+			continue
+		}
+
+		qty := quantities[card.ID]
+		if qty <= 0 {
+			continue
+		}
+
+		status := strings.ToLower(strings.TrimSpace(card.Legalities["commander"]))
+		if status == "" {
+			status = "unknown"
+		}
+
+		if !isCardAllowedInFormat(status, "commander", card) {
+			result.IllegalCards = append(result.IllegalCards, IllegalCardIssue{
+				CardName: card.Name,
+				CardID:   card.ID,
+				Quantity: qty,
+				Legality: status,
+				Format:   "commander",
+				Reason:   fmt.Sprintf("card is not legal in commander"),
+			})
+		}
+
+		// Singleton check for non-basic lands.
+		if !isBasicLand(card) && !allowsAnyNumberCopies(card) && qty > 1 {
+			result.IllegalCards = append(result.IllegalCards, IllegalCardIssue{
+				CardName: card.Name,
+				CardID:   card.ID,
+				Quantity: qty,
+				Legality: status,
+				Format:   "commander",
+				Reason:   fmt.Sprintf("too many copies: %d > 1 (singleton rule)", qty),
+			})
+		}
+	}
+
+	// Deck size check: exactly 100 cards total (including commander).
+	if result.DeckSize+len(commanderCardIDs) != 100 {
+		result.Issues = append(result.Issues, fmt.Sprintf("commander deck must contain exactly 100 cards (including commander), found %d", result.DeckSize+len(commanderCardIDs)))
+	}
+
+	if len(result.IllegalCards) > 0 || len(result.Issues) > 0 {
+		result.IsLegal = false
+	}
+
+	sort.Slice(result.IllegalCards, func(i, j int) bool {
+		if result.IllegalCards[i].CardName == result.IllegalCards[j].CardName {
+			return result.IllegalCards[i].Reason < result.IllegalCards[j].Reason
+		}
+		return result.IllegalCards[i].CardName < result.IllegalCards[j].CardName
+	})
+
+	return result
+}
+
 // CheckCommanderColorIdentity validates that every card in a Commander deck
 // has a color identity that is a subset of the combined commander's color identity.
 // commanderCards should only contain the commander(s) (1 or 2 for Partner).

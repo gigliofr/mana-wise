@@ -123,16 +123,25 @@ func (h *AnalyzeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	legality := usecase.DetermineDeckLegalityAllFormats(result.RawCards, result.Quantities)
 
-	// Augment Commander legality with color identity check when commander is known.
+	// Override commander legality with proper singleton rule (excluding commander from counts).
 	if result.Commander != nil && len(result.Commander.Cards) > 0 {
-		if cmdResult, ok := legality["commander"]; ok {
-			violations := usecase.CheckCommanderColorIdentity(result.Commander.Cards, result.RawCards, result.Quantities)
-			if len(violations) > 0 {
-				cmdResult.IllegalCards = append(cmdResult.IllegalCards, violations...)
-				cmdResult.IsLegal = false
-				legality["commander"] = cmdResult
+		commanderCardIDs := make(map[string]bool)
+		for _, cmd := range result.Commander.Cards {
+			if cmd != nil && cmd.ID != "" {
+				commanderCardIDs[cmd.ID] = true
 			}
 		}
+		// Use commander-specific validation that excludes commander cards from singleton.
+		cmdResult := usecase.DetermineDeckLegalityForCommanderFormat(result.RawCards, result.Quantities, commanderCardIDs)
+		
+		// Augment with color identity check.
+		violations := usecase.CheckCommanderColorIdentity(result.Commander.Cards, result.RawCards, result.Quantities)
+		if len(violations) > 0 {
+			cmdResult.IllegalCards = append(cmdResult.IllegalCards, violations...)
+			cmdResult.IsLegal = false
+		}
+		
+		legality["commander"] = cmdResult
 	}
 
 	var sb *sideboardResponseInfo
