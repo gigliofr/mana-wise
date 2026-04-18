@@ -26,8 +26,19 @@ function deriveCardNameCandidates(rawName) {
   push(base)
   // Strip Arena-style quantity prefix (e.g. "4 Lightning Bolt").
   push(base.replace(/^\d+x?\s+/i, ''))
+  // Strip Archidekt trailing tags (e.g. "[Removal]", "[Commander{top}]").
+  push(base.replace(/\s*\[[^\]]+\]\s*$/g, ''))
+  // Strip set-only suffixes (e.g. "Card Name (FIC)").
+  push(base.replace(/\s*\([A-Za-z0-9]{2,10}\)\s*$/i, ''))
   // Strip set/collector suffix (e.g. "Card Name (SET) 123").
   push(base.replace(/\s*\([A-Za-z0-9]{2,6}\)\s*[A-Za-z0-9-]+\s*$/i, ''))
+
+  // Apply the same normalizations to quantity-stripped form for lines like
+  // "1x Sol Ring (fic) [Ramp]".
+  const qtyStripped = base.replace(/^\d+x?\s+/i, '')
+  push(qtyStripped.replace(/\s*\[[^\]]+\]\s*$/g, ''))
+  push(qtyStripped.replace(/\s*\([A-Za-z0-9]{2,10}\)\s*$/i, ''))
+  push(qtyStripped.replace(/\s*\([A-Za-z0-9]{2,6}\)\s*[A-Za-z0-9-]+\s*$/i, ''))
 
   const cleaned = Array.from(out)
   for (const name of cleaned) {

@@ -50,11 +50,11 @@ func TestParseDecklist_EnglishDeckHeaderAndClassicLines(t *testing.T) {
 
 func TestSanitizeCardName(t *testing.T) {
 	tests := map[string]string{
-		"Elfi di Llanowar (FDN) 227": "Elfi di Llanowar",
-		"Bedevil (fic) [Removal]":     "Bedevil",
+		"Elfi di Llanowar (FDN) 227":                   "Elfi di Llanowar",
+		"Bedevil (fic) [Removal]":                      "Bedevil",
 		"Terra, Herald of Hope (fic) [Commander{top}]": "Terra, Herald of Hope",
-		"Lightning Bolt":             "Lightning Bolt",
-		"":                           "",
+		"Lightning Bolt":                               "Lightning Bolt",
+		"":                                             "",
 	}
 
 	for in, expected := range tests {
@@ -86,5 +86,27 @@ func TestParseDecklist_ArchidektAnnotatedLines(t *testing.T) {
 	}
 	if entries[2].name != "Terra, Herald of Hope" {
 		t.Fatalf("expected normalized commander name, got %q", entries[2].name)
+	}
+	if !entries[2].isCommander {
+		t.Fatalf("expected Archidekt commander tag to set isCommander=true")
+	}
+}
+
+func TestParseDecklist_ArchidektInlineCommanderTagCaseInsensitive(t *testing.T) {
+	raw := `1x Sol Ring (fic) [ramp]
+1x Terra, Herald of Hope (fic) [commander{top}]`
+
+	entries, err := parseDecklist(raw)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("expected 2 entries, got %d", len(entries))
+	}
+	if entries[1].name != "Terra, Herald of Hope" {
+		t.Fatalf("expected normalized commander name, got %q", entries[1].name)
+	}
+	if !entries[1].isCommander {
+		t.Fatalf("expected lowercase commander tag to set isCommander=true")
 	}
 }

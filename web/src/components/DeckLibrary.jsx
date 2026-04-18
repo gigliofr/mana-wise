@@ -224,16 +224,29 @@ export default function DeckLibrary({
 
   function deckToDecklist(deck) {
     const cards = Array.isArray(deck?.cards) ? deck.cards : []
-    return cards
-      .filter(c => !c.is_sideboard)
-      .map(c => `${c.quantity || 1} ${c.card_name || c.name || ''}`.trim())
-      .filter(Boolean)
-      .join('\n')
+    const mainOrCommander = cards.filter(c => !c.is_sideboard)
+    const commanderCards = mainOrCommander.filter(c => c.is_commander)
+    const mainCards = mainOrCommander.filter(c => !c.is_commander)
+
+    const formatLine = c => `${c.quantity || 1} ${c.card_name || c.name || ''}`.trim()
+    const commanderLines = commanderCards.map(formatLine).filter(Boolean)
+    const mainLines = mainCards.map(formatLine).filter(Boolean)
+
+    if (commanderLines.length > 0) {
+      return ['Commander', ...commanderLines, '', 'Deck', ...mainLines].join('\n').trim()
+    }
+
+    return mainLines.join('\n')
   }
 
   function mainDeckCards(deck) {
     const cards = Array.isArray(deck?.cards) ? deck.cards : []
-    return cards.filter(c => !c.is_sideboard)
+    return cards.filter(c => !c.is_sideboard && !c.is_commander)
+  }
+
+  function commanderDeckCards(deck) {
+    const cards = Array.isArray(deck?.cards) ? deck.cards : []
+    return cards.filter(c => !c.is_sideboard && c.is_commander)
   }
 
   function badgeClassName(value) {
@@ -255,6 +268,24 @@ export default function DeckLibrary({
   }
 
   function parseDecklistToCards(decklist) {
+    function stripTrailingTags(value) {
+      let cleaned = String(value || '').trim()
+      while (cleaned) {
+        const next = cleaned.replace(/\s*\[[^\]]+\]\s*$/g, '').trim()
+        if (next === cleaned) break
+        cleaned = next
+      }
+      return cleaned
+    }
+
+    function sanitizeCardName(value) {
+      let name = stripTrailingTags(value)
+      if (!name) return ''
+      name = name.replace(/\s*\([A-Za-z0-9]{2,10}\)\s*[A-Za-z0-9-]+\s*$/i, '').trim()
+      name = name.replace(/\s*\([A-Za-z0-9]{2,10}\)\s*$/i, '').trim()
+      return name.replace(/\s+/g, ' ').trim()
+    }
+
     const rows = []
     const lines = (decklist || '').split('\n')
     for (const raw of lines) {
@@ -262,12 +293,15 @@ export default function DeckLibrary({
       if (!line || line.startsWith('//')) continue
       const match = line.match(/^(\d+)x?\s+(.+)$/i)
       if (!match) continue
+      const isCommander = /\[[^\]]*commander[^\]]*\]/i.test(match[2])
+      const normalizedName = sanitizeCardName(match[2])
+      if (!normalizedName) continue
       rows.push({
         card_id: '',
-        card_name: match[2].trim(),
+        card_name: normalizedName,
         quantity: Math.max(1, Number(match[1]) || 1),
         is_sideboard: false,
-        is_commander: false,
+        is_commander: isCommander,
       })
     }
     return rows
@@ -510,6 +544,7 @@ export default function DeckLibrary({
                   const estimatedUSD = Number(summary?.estimated_usd || 0)
                   const commanderBracket = summary?.commander_bracket
                   const cards = mainDeckCards(deck)
+                  const commanderCards = commanderDeckCards(deck)
                   const expanded = isDeckExpanded(deck.id)
                   const visibleCards = expanded ? cards : cards.slice(0, 14)
                   const hiddenCards = Math.max(0, cards.length - visibleCards.length)
@@ -519,7 +554,12 @@ export default function DeckLibrary({
                       <div className="decklib-item-top">
                         <div>
                           <div className="decklib-name">{deck.name}</div>
-                          <div className="decklib-sub">{cards.length} {messages.cards || 'cards'} · {deck.format}</div>
+                          <div className="decklib-sub">{cards.length + commanderCards.length} {messages.cards || 'cards'} · {deck.format}</div>
+                          {commanderCards.length > 0 && (
+                            <div className="decklib-sub" style={{ marginTop: 4 }}>
+                              Commander: {commanderCards.map(c => c.card_name || c.name).filter(Boolean).join(', ')}
+                            </div>
+                          )}
                         </div>
                         <div className="decklib-chip-row">
                           <span

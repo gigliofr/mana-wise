@@ -335,12 +335,12 @@ func (uc *AnalyzeDeckUseCase) Execute(ctx context.Context, req AnalyzeDeckReques
 
 // deckEntry is one parsed line from a decklist.
 type deckEntry struct {
-	qty         int
-	name        string
-	setCode     string
+	qty             int
+	name            string
+	setCode         string
 	collectorNumber string
-	isCommander bool
-	isSideboard bool
+	isCommander     bool
+	isSideboard     bool
 }
 
 func (e deckEntry) hasSetCollector() bool {
@@ -357,6 +357,7 @@ func (e deckEntry) identityKey() string {
 var arenaSuffixRe = regexp.MustCompile(`(?i)^(.*?)\s*\(([a-z0-9]+)\)\s*([a-z0-9]+)$`)
 var trailingDeckTagRe = regexp.MustCompile(`\s*\[[^\]]+\]\s*$`)
 var setOnlySuffixRe = regexp.MustCompile(`(?i)^(.*?)\s*\(([a-z0-9]{2,10})\)\s*$`)
+var commanderDeckTagRe = regexp.MustCompile(`(?i)\[[^\]]*commander[^\]]*\]`)
 
 func stripTrailingDeckTags(raw string) string {
 	cleaned := strings.TrimSpace(raw)
@@ -368,6 +369,10 @@ func stripTrailingDeckTags(raw string) string {
 		cleaned = next
 	}
 	return cleaned
+}
+
+func hasCommanderDeckTag(raw string) bool {
+	return commanderDeckTagRe.MatchString(strings.TrimSpace(raw))
 }
 
 func splitArenaCardDescriptor(raw string) (name, setCode, collectorNumber string) {
@@ -437,7 +442,7 @@ func parseDecklist(raw string) ([]deckEntry, error) {
 			continue // not enough tokens — skip (could be a tag or annotation)
 		}
 
-		isCmd := section == "commander"
+		isCmd := section == "commander" || hasCommanderDeckTag(line)
 		isSB := section == "sideboard"
 
 		qtyStr := strings.TrimSuffix(parts[0], "x")
@@ -446,6 +451,10 @@ func parseDecklist(raw string) ([]deckEntry, error) {
 			// First token is not a number; treat whole line as name with qty=1.
 			rawName := strings.Join(parts, " ")
 			name, setCode, collector := splitArenaCardDescriptor(rawName)
+			name = sanitizeCardName(name)
+			if name == "" {
+				continue
+			}
 			entries = append(entries, deckEntry{qty: 1, name: name, setCode: setCode, collectorNumber: collector, isCommander: isCmd, isSideboard: isSB})
 			continue
 		}
