@@ -509,109 +509,96 @@ export default function DeckLibrary({
                   const summary = deckSummaries[deck.id]
                   const estimatedUSD = Number(summary?.estimated_usd || 0)
                   const commanderBracket = summary?.commander_bracket
+                  const cards = mainDeckCards(deck)
+                  const expanded = isDeckExpanded(deck.id)
+                  const visibleCards = expanded ? cards : cards.slice(0, 14)
+                  const hiddenCards = Math.max(0, cards.length - visibleCards.length)
 
                   return (
-                <div>
-                  <div className="decklib-name">{deck.name}</div>
-                  <div className="decklib-sub" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span>{deck.format}</span>
-                    <span
-                      style={{
-                        fontSize: '.68rem',
-                        textTransform: 'uppercase',
-                        letterSpacing: '.04em',
-                        border: `1px solid ${chipColor}`,
-                        color: chipColor,
-                        borderRadius: 999,
-                        padding: '1px 7px',
-                        fontWeight: 700,
-                      }}
-                      title={chipTitle}
-                    >
-                      {chipText}
-                    </span>
-                    {estimatedUSD > 0 && (
-                      <span style={{ fontSize: '.72rem', color: 'var(--muted)' }} title="Estimated deck value in USD">
-                        {`~$${estimatedUSD.toFixed(2)}`}
-                      </span>
-                    )}
-                    {commanderBracket && (
-                      <span
-                        style={{
-                          fontSize: '.68rem',
-                          textTransform: 'uppercase',
-                          letterSpacing: '.04em',
-                          border: '1px solid var(--primary-h)',
-                          color: 'var(--primary-h)',
-                          borderRadius: 999,
-                          padding: '1px 7px',
-                          fontWeight: 700,
-                        }}
-                        title={`Commander bracket ${commanderBracket.bracket} · ${commanderBracket.label}`}
-                      >
-                        Bracket {commanderBracket.bracket}
-                      </span>
-                    )}
-                  </div>
-                  <div style={{ marginTop: 6, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                    {(isDeckExpanded(deck.id) ? mainDeckCards(deck) : mainDeckCards(deck).slice(0, 6)).map((c, idx) => {
-                      const label = `${c.quantity || 1}x ${c.card_name || c.name || ''}`.trim()
-                      const cardName = (c.card_name || c.name || '').trim()
-                      if (!cardName) return null
-                      const meta = cardMetadata[cardName.toLowerCase()]
-                      const illegalByFormat = deckLegality[deck.id]?.cardIllegalByFormat?.[normalizedFormat] || {}
-                      const isIllegalCard = Boolean(illegalByFormat[cardName.toLowerCase()])
-                      const rarity = String(meta?.rarity || '').trim().toUpperCase()
-                      const setCode = String(meta?.set_code || '').trim().toUpperCase()
-                      return (
-                        <span
-                          key={`${deck.id}-card-${idx}`}
-                          style={{
-                            fontSize: '.74rem',
-                            color: isIllegalCard ? 'var(--red)' : 'var(--muted)',
-                            border: isIllegalCard ? '1px solid var(--red)' : '1px solid var(--border)',
-                            borderRadius: 999,
-                            padding: '2px 8px',
-                            background: isIllegalCard ? 'rgba(255,0,0,0.08)' : 'rgba(255,255,255,0.02)',
-                          }}
-                          title={isIllegalCard ? `${messages.legalityIllegalLabel} (${normalizedFormat})` : undefined}
-                        >
-                          <CardHoverPreview cardName={cardName} token={token} messages={messages} metadata={meta}>
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                              {isIllegalCard ? `⚠ ${label}` : label}
-                              {(rarity || setCode) && (
-                                <span style={{ display: 'inline-flex', gap: 4, flexWrap: 'wrap' }}>
-                                  {rarity && <span className={`builder-badge rarity-${badgeClassName(rarity)}`}>{rarity}</span>}
-                                  {setCode && <span className="builder-badge builder-badge-set">{setCode}</span>}
-                                </span>
-                              )}
+                    <div className="decklib-item-main">
+                      <div className="decklib-item-top">
+                        <div>
+                          <div className="decklib-name">{deck.name}</div>
+                          <div className="decklib-sub">{cards.length} {messages.cards || 'cards'} · {deck.format}</div>
+                        </div>
+                        <div className="decklib-chip-row">
+                          <span
+                            className="decklib-chip"
+                            style={{ borderColor: chipColor, color: chipColor }}
+                            title={chipTitle}
+                          >
+                            {chipText}
+                          </span>
+                          {estimatedUSD > 0 && (
+                            <span className="decklib-chip decklib-chip-muted" title="Estimated deck value in USD">
+                              {`~$${estimatedUSD.toFixed(2)}`}
                             </span>
-                          </CardHoverPreview>
-                        </span>
-                      )
-                    })}
-                    {mainDeckCards(deck).length > 6 && (
-                      <button
-                        type="button"
-                        className="btn-ghost"
-                        onClick={() => toggleDeckExpanded(deck.id)}
-                        style={{
-                          fontSize: '.74rem',
-                          lineHeight: 1,
-                          padding: '4px 8px',
-                          borderRadius: 999,
-                        }}
-                      >
-                        {isDeckExpanded(deck.id)
-                          ? (messages.showLessCards || 'Mostra meno')
-                          : `+${mainDeckCards(deck).length - 6}`}
-                      </button>
-                    )}
-                  </div>
-                </div>
+                          )}
+                          {commanderBracket && (
+                            <span
+                              className="decklib-chip decklib-chip-bracket"
+                              title={`Commander bracket ${commanderBracket.bracket} · ${commanderBracket.label}`}
+                            >
+                              Bracket {commanderBracket.bracket}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="decklib-grid-head" aria-hidden="true">
+                        <span>Qty</span>
+                        <span>Card</span>
+                      </div>
+                      <div className="decklib-card-grid">
+                        {visibleCards.map((c, idx) => {
+                          const quantity = Math.max(1, Number(c.quantity) || 1)
+                          const cardName = (c.card_name || c.name || '').trim()
+                          if (!cardName) return null
+                          const meta = cardMetadata[cardName.toLowerCase()]
+                          const illegalByFormat = deckLegality[deck.id]?.cardIllegalByFormat?.[normalizedFormat] || {}
+                          const isIllegalCard = Boolean(illegalByFormat[cardName.toLowerCase()])
+                          const rarity = String(meta?.rarity || '').trim().toUpperCase()
+                          const setCode = String(meta?.set_code || '').trim().toUpperCase()
+                          return (
+                            <div
+                              key={`${deck.id}-card-${idx}`}
+                              className={`decklib-card-row${isIllegalCard ? ' is-illegal' : ''}`}
+                              title={isIllegalCard ? `${messages.legalityIllegalLabel} (${normalizedFormat})` : undefined}
+                            >
+                              <span className="decklib-card-qty">{quantity}x</span>
+                              <div className="decklib-card-main">
+                                <CardHoverPreview cardName={cardName} token={token} messages={messages} metadata={meta}>
+                                  <span className="decklib-card-name">
+                                    {isIllegalCard ? `Illegal - ${cardName}` : cardName}
+                                  </span>
+                                </CardHoverPreview>
+                                {(rarity || setCode) && (
+                                  <span className="decklib-card-tags">
+                                    {rarity && <span className={`builder-badge rarity-${badgeClassName(rarity)}`}>{rarity}</span>}
+                                    {setCode && <span className="builder-badge builder-badge-set">{setCode}</span>}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+
+                      {hiddenCards > 0 && (
+                        <button
+                          type="button"
+                          className="btn-ghost decklib-expand-btn"
+                          onClick={() => toggleDeckExpanded(deck.id)}
+                        >
+                          {expanded
+                            ? (messages.showLessCards || 'Mostra meno')
+                            : `+${hiddenCards} ${messages.moreCards || 'altre carte'}`}
+                        </button>
+                      )}
+                    </div>
                   )
                 })()}
-                <div className="decklib-buttons">
+                <div className="decklib-buttons decklib-item-actions">
                   <button
                     type="button"
                     className="btn-ghost"

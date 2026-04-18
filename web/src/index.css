@@ -17,6 +17,11 @@
   --orange:   #f39c12;
   --radius:   10px;
   --shadow:   0 4px 24px rgba(0,0,0,.5);
+  --footer-bg-start: rgba(22,22,31,.98);
+  --footer-bg-end: rgba(14,14,20,.98);
+  --footer-divider: rgba(255,255,255,.06);
+  --footer-disclaimer-bg: rgba(255,255,255,.02);
+  --footer-disclaimer-text: #b8b8c8;
 }
 
 :root[data-theme='day'] {
@@ -34,6 +39,11 @@
   --red:      #c53d3d;
   --orange:   #ca7a00;
   --shadow:   0 10px 24px rgba(31,36,48,.08);
+  --footer-bg-start: #f8f4ec;
+  --footer-bg-end: #f1eadf;
+  --footer-divider: rgba(31,36,48,.12);
+  --footer-disclaimer-bg: rgba(255,255,255,.72);
+  --footer-disclaimer-text: #4f5b73;
 }
 
 body {
@@ -191,7 +201,7 @@ main { padding: 32px 0 64px; }
 .site-footer {
   margin-top: 28px;
   border-top: 1px solid var(--border);
-  background: linear-gradient(180deg, rgba(22,22,31,.98), rgba(14,14,20,.98));
+  background: linear-gradient(180deg, var(--footer-bg-start), var(--footer-bg-end));
 }
 
 .footer-inner {
@@ -206,7 +216,7 @@ main { padding: 32px 0 64px; }
   justify-content: space-between;
   gap: 10px;
   padding-bottom: 8px;
-  border-bottom: 1px solid rgba(255,255,255,.06);
+  border-bottom: 1px solid var(--footer-divider);
 }
 
 .footer-brand {
@@ -260,7 +270,7 @@ main { padding: 32px 0 64px; }
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 8px 10px;
-  background: rgba(255,255,255,.02);
+  background: var(--footer-disclaimer-bg);
 }
 
 .footer-disclaimer summary {
@@ -271,7 +281,7 @@ main { padding: 32px 0 64px; }
 }
 
 .wizards-disclaimer {
-  color: #b8b8c8;
+  color: var(--footer-disclaimer-text);
   font-size: .74rem;
   margin-top: 8px;
   line-height: 1.45;
@@ -686,33 +696,159 @@ button {
 
 .decklib-list {
   display: grid;
-  gap: 8px;
+  gap: 12px;
 }
 
 .decklib-item {
   border: 1px solid var(--border);
-  background: var(--bg);
-  border-radius: 8px;
-  padding: 10px;
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  align-items: center;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface) 92%, transparent), color-mix(in srgb, var(--bg) 96%, transparent));
+  border-radius: 10px;
+  padding: 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
 }
 
 .decklib-name {
   font-weight: 700;
   color: var(--text);
+  font-size: .98rem;
 }
 
 .decklib-sub {
-  font-size: .8rem;
+  font-size: .78rem;
   color: var(--muted);
+  letter-spacing: .02em;
 }
 
 .decklib-buttons {
   display: flex;
   gap: 6px;
+}
+
+.decklib-item-main {
+  min-width: 0;
+}
+
+.decklib-item-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.decklib-chip-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.decklib-chip {
+  font-size: .66rem;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-weight: 700;
+  background: color-mix(in srgb, var(--surface) 85%, transparent);
+}
+
+.decklib-chip-muted {
+  color: var(--muted);
+  border-color: var(--border);
+}
+
+.decklib-chip-bracket {
+  color: var(--primary-h);
+  border-color: color-mix(in srgb, var(--primary-h) 70%, var(--border));
+}
+
+.decklib-grid-head {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 10px;
+  font-size: .64rem;
+  text-transform: uppercase;
+  letter-spacing: .09em;
+  color: var(--muted);
+  padding: 0 8px 4px;
+}
+
+.decklib-card-grid {
+  display: grid;
+  gap: 4px;
+}
+
+.decklib-card-row {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
+}
+
+.decklib-card-row.is-illegal {
+  border-color: color-mix(in srgb, var(--red) 55%, var(--border));
+  background: color-mix(in srgb, var(--red) 10%, var(--surface));
+}
+
+.decklib-card-qty {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  font-size: .78rem;
+  font-weight: 700;
+}
+
+.decklib-card-main {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.decklib-card-name {
+  color: var(--text);
+  font-size: .85rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.decklib-card-row.is-illegal .decklib-card-name {
+  color: color-mix(in srgb, var(--red) 78%, var(--text));
+}
+
+.decklib-card-tags {
+  display: inline-flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.decklib-expand-btn {
+  margin-top: 8px;
+  font-size: .74rem;
+  line-height: 1;
+  padding: 5px 10px;
+  border-radius: 999px;
+}
+
+.decklib-item-actions {
+  flex-direction: column;
+  align-self: stretch;
+}
+
+.decklib-item-actions .btn-ghost {
+  min-width: 92px;
 }
 
 .decklib-save-step {
@@ -743,6 +879,31 @@ button {
 .decklib-save-step textarea {
   resize: vertical;
   font-family: 'Courier New', monospace;
+}
+
+@media (max-width: 860px) {
+  .decklib-item {
+    grid-template-columns: 1fr;
+  }
+
+  .decklib-item-actions {
+    flex-direction: row;
+    justify-content: flex-end;
+  }
+
+  .decklib-item-top {
+    flex-direction: column;
+  }
+
+  .decklib-chip-row {
+    justify-content: flex-start;
+  }
+
+  .decklib-card-main {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
 }
 
 /* ── Deck fingerprint ── */
