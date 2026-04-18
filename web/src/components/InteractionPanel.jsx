@@ -29,9 +29,8 @@ function rowStatus(count, ideal, messages) {
   return { label: messages?.rowLow || 'Low', color: 'var(--red)', width: Math.min(ratio * 100, 100), value: `${count}/${ideal}` }
 }
 
-function localizeSuggestion(s, messages) {
-  if (!s || !messages?.translateSuggestion) return s
-
+function localizeSuggestion(s, messages, format, commanderScore) {
+  if (!s) return s
   const m = s.match(/^Your\s+(\w+)\s+package\s+\((\d+)\s+cards\)\s+is\s+(?:well\s+)?below\s+ideal(?:\s+for\s+a\s+(\w+)\s+deck)?\s*\((\d+)\s+expected\)\.\s+Consider\s+adding\s+more\.$/i)
   if (!m) return s
 
@@ -39,8 +38,13 @@ function localizeSuggestion(s, messages) {
   const count = Number(m[2] || 0)
   const archetype = (m[3] || '').toLowerCase()
   const ideal = Number(m[4] || 0)
+  const idealForDisplay = adjustedIdeal(ideal, format, commanderScore)
 
-  return messages.translateSuggestion(category, count, archetype, ideal)
+  if (!messages?.translateSuggestion) {
+    return s.replace(/\(\d+\s+expected\)/i, `(${idealForDisplay} expected)`)
+  }
+
+  return messages.translateSuggestion(category, count, archetype, idealForDisplay)
 }
 
 function commanderBracketForScore(score) {
@@ -120,7 +124,7 @@ export default function InteractionPanel({ data }) {
         <>
           <p style={{ fontSize: '.85rem', color: 'var(--muted)', margin: '16px 0 8px' }}>{messages?.suggestions || 'Suggestions'}</p>
           <ul className="suggestion-list">
-            {data.suggestions.map((s, i) => <li key={i}>{localizeSuggestion(s, messages)}</li>)}
+            {data.suggestions.map((s, i) => <li key={i}>{localizeSuggestion(s, messages, data.format, data.commanderScore)}</li>)}
           </ul>
         </>
       )}
