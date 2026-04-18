@@ -172,3 +172,50 @@ func TestAnalyzeInteraction_MonoGreenDeck_DoesNotExpectCounters(t *testing.T) {
 		}
 	}
 }
+
+func TestAnalyzeInteraction_Commander_NonGreenDeckKeepsRampFloor(t *testing.T) {
+	cards := []*domain.Card{
+		makeInteractionCardWithColors("wrb-1", "Deal 2 damage to any target.", "Instant", "W", "R", "B"),
+		makeInteractionCardWithColors("wrb-2", "Draw a card.", "Sorcery", "W", "R", "B"),
+	}
+	qtys := map[string]int{"wrb-1": 20, "wrb-2": 20}
+
+	result := usecase.AnalyzeInteraction(cards, qtys, "commander")
+
+	var rampIdeal int
+	for _, bd := range result.Breakdowns {
+		if bd.Category == domain.InteractionRamp {
+			rampIdeal = bd.Ideal
+			break
+		}
+	}
+
+	if rampIdeal < 8 {
+		t.Fatalf("expected commander ramp ideal floor >= 8, got %d", rampIdeal)
+	}
+}
+
+func TestAnalyzeInteraction_Commander_FloorsRaiseCoreTargets(t *testing.T) {
+	cards := []*domain.Card{
+		makeInteractionCardWithColors("aggro-1", "Haste", "Creature - Human Warrior", "R"),
+		makeInteractionCardWithColors("aggro-2", "First strike", "Creature - Human Knight", "W"),
+	}
+	qtys := map[string]int{"aggro-1": 30, "aggro-2": 30}
+
+	result := usecase.AnalyzeInteraction(cards, qtys, "commander")
+
+	ideals := map[domain.InteractionCategory]int{}
+	for _, bd := range result.Breakdowns {
+		ideals[bd.Category] = bd.Ideal
+	}
+
+	if ideals[domain.InteractionRemoval] < 6 {
+		t.Fatalf("expected commander removal floor >= 6, got %d", ideals[domain.InteractionRemoval])
+	}
+	if ideals[domain.InteractionDraw] < 6 {
+		t.Fatalf("expected commander draw floor >= 6, got %d", ideals[domain.InteractionDraw])
+	}
+	if ideals[domain.InteractionProtection] < 2 {
+		t.Fatalf("expected commander protection floor >= 2, got %d", ideals[domain.InteractionProtection])
+	}
+}

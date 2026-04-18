@@ -234,6 +234,9 @@ func AnalyzeInteraction(cards []*domain.Card, quantities map[string]int, format 
 	archetype := detectArchetype(counts, avgCMC, totalNonLandCards)
 	deckColors := detectedDeckColors(cards)
 	idealMap := applyInteractionColorMultipliers(applyArchetypeMultipliers(baseIdeals, archetype), deckColors)
+	if strings.EqualFold(strings.TrimSpace(format), "commander") {
+		idealMap = applyCommanderInteractionFloors(idealMap, deckColors)
+	}
 	mults := archetypeMultipliers[archetype]
 
 	categories := []domain.InteractionCategory{
@@ -301,6 +304,40 @@ func AnalyzeInteraction(cards []*domain.Card, quantities map[string]int, format 
 		Breakdowns:  breakdowns,
 		Suggestions: suggestions,
 	}
+}
+
+// applyCommanderInteractionFloors keeps Commander targets meaningful even when
+// archetype/color multipliers would reduce them to 60-card-like thresholds.
+func applyCommanderInteractionFloors(idealMap map[domain.InteractionCategory]int, deckColors []string) map[domain.InteractionCategory]int {
+	if len(idealMap) == 0 {
+		return idealMap
+	}
+
+	adjusted := make(map[domain.InteractionCategory]int, len(idealMap))
+	for k, v := range idealMap {
+		adjusted[k] = v
+	}
+
+	setFloor := func(cat domain.InteractionCategory, floor int, requireColorSupport bool) {
+		if requireColorSupport && !deckSupportsCategory(deckColors, cat) {
+			return
+		}
+		if adjusted[cat] < floor {
+			adjusted[cat] = floor
+		}
+	}
+
+	// Core EDH interaction baselines.
+	setFloor(domain.InteractionRemoval, 6, false)
+	setFloor(domain.InteractionDraw, 6, false)
+	setFloor(domain.InteractionRamp, 8, false)
+	setFloor(domain.InteractionProtection, 2, false)
+
+	// Color-gated categories keep low but non-trivial floors only if supported.
+	setFloor(domain.InteractionCounter, 2, true)
+	setFloor(domain.InteractionDiscard, 1, true)
+
+	return adjusted
 }
 
 func getInteractionIdeals(format string) interactionIdeal {
