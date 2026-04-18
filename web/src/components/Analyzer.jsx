@@ -261,9 +261,14 @@ export default function Analyzer({ token, user, locale, messages, decklist: deck
         }
       }
 
-      if (scoreOutcome?.status === 'fulfilled') {
+      const commanderBracketData = data?.commander_bracket
+      if (commanderBracketData && typeof commanderBracketData.bracket === 'number') {
+        setCommanderScore(commanderBracketData.bracket)
+      } else if (scoreOutcome?.status === 'fulfilled') {
         const { res: scoreRes, data: scoreData } = scoreOutcome.value
-        if (scoreRes.ok && typeof scoreData?.score_detail?.score === 'number') {
+        if (scoreRes.ok && typeof scoreData?.commander_bracket?.bracket === 'number') {
+          setCommanderScore(scoreData.commander_bracket.bracket)
+        } else if (scoreRes.ok && typeof scoreData?.score_detail?.score === 'number') {
           setCommanderScore(scoreData.score_detail.score)
         }
       }
@@ -363,7 +368,8 @@ export default function Analyzer({ token, user, locale, messages, decklist: deck
               <span>{result.commander.cards.map(card => card.name).join(' + ')}</span>
               {typeof commanderScore === 'number' && (
                 <span>
-                  {messages.commanderBracketLabel || 'Bracket'} {commanderBracketForScore(commanderScore).bracket} · {commanderBracketForScore(commanderScore).label} · {commanderScore.toFixed(1)}/10
+                  {messages.commanderBracketLabel || 'Bracket'} {commanderBracketForScore(commanderScore).bracket} · {commanderBracketForScore(commanderScore).label}
+                  {commanderScore > 5 ? ` · ${commanderScore.toFixed(1)}/10` : ''}
                 </span>
               )}
             </div>
@@ -469,6 +475,9 @@ function scoreColor(score) {
 }
 
 function commanderBracketForScore(score) {
+  if (typeof score === 'number' && Number.isInteger(score) && score >= 1 && score <= 5) {
+    return { bracket: score, label: ['Casual', 'Upgraded', 'Tuned', 'Optimized', 'cEDH'][score - 1] || 'Casual' }
+  }
   if (score >= 8.5) return { bracket: 5, label: 'cEDH' }
   if (score >= 6.5) return { bracket: 4, label: 'Optimized' }
   if (score >= 4.5) return { bracket: 3, label: 'Tuned' }
@@ -1377,7 +1386,8 @@ function buildLocalSummary(result, commanderScore, messages) {
 
   if (typeof commanderScore === 'number') {
     const bracket = commanderBracketForScore(commanderScore)
-    lines.push(`${messages.commanderBracketLabel || 'Commander bracket'}: ${bracket.bracket} · ${bracket.label} · ${commanderScore.toFixed(1)}/10`)
+    const scoreSuffix = commanderScore > 5 ? ` · ${commanderScore.toFixed(1)}/10` : ''
+    lines.push(`${messages.commanderBracketLabel || 'Commander bracket'}: ${bracket.bracket} · ${bracket.label}${scoreSuffix}`)
   }
 
   return lines

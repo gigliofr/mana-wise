@@ -30,6 +30,7 @@ type AnalyzeResponse struct {
 	Legality      map[string]usecase.DeckLegalityResult `json:"legality"`
 	Warnings      []string                              `json:"warnings,omitempty"`
 	Commander     *usecase.CommanderInfo                `json:"commander,omitempty"`
+	CommanderBracket *domain.CommanderBracketAssessment `json:"commander_bracket,omitempty"`
 	Sideboard     *sideboardResponseInfo                `json:"sideboard,omitempty"`
 }
 
@@ -42,16 +43,17 @@ type sideboardResponseInfo struct {
 type AnalyzeHandler struct {
 	analyzeDeck *usecase.AnalyzeDeckUseCase
 	ai          *usecase.AISuggester
+	bracketUC   *usecase.CommanderBracketUseCase
 	userRepo    domain.UserRepository
 	tracker     domain.AnalyticsTracker
 }
 
 // NewAnalyzeHandler creates an AnalyzeHandler.
-func NewAnalyzeHandler(uc *usecase.AnalyzeDeckUseCase, ai *usecase.AISuggester, userRepo domain.UserRepository, tracker domain.AnalyticsTracker) *AnalyzeHandler {
+func NewAnalyzeHandler(uc *usecase.AnalyzeDeckUseCase, ai *usecase.AISuggester, bracketUC *usecase.CommanderBracketUseCase, userRepo domain.UserRepository, tracker domain.AnalyticsTracker) *AnalyzeHandler {
 	if tracker == nil {
 		tracker = domain.NoopAnalyticsTracker{}
 	}
-	return &AnalyzeHandler{analyzeDeck: uc, ai: ai, userRepo: userRepo, tracker: tracker}
+	return &AnalyzeHandler{analyzeDeck: uc, ai: ai, bracketUC: bracketUC, userRepo: userRepo, tracker: tracker}
 }
 
 // ServeHTTP handles POST /analyze.
@@ -96,6 +98,11 @@ func (h *AnalyzeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var commanderBracket *domain.CommanderBracketAssessment
+	if h.bracketUC != nil && req.Format == "commander" {
+		commanderBracket = h.bracketUC.Evaluate(result.RawCards, result.Quantities)
+	}
+
 	// LLM suggestions (best-effort — do not fail the request if LLM is unavailable).
 	var aiSuggestions string
 	var aiSource string
@@ -133,14 +140,14 @@ func (h *AnalyzeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		// Use commander-specific validation that excludes commander cards from singleton.
 		cmdResult := usecase.DetermineDeckLegalityForCommanderFormat(result.RawCards, result.Quantities, commanderCardIDs)
-		
+
 		// Augment with color identity check.
 		violations := usecase.CheckCommanderColorIdentity(result.Commander.Cards, result.RawCards, result.Quantities)
 		if len(violations) > 0 {
 			cmdResult.IllegalCards = append(cmdResult.IllegalCards, violations...)
 			cmdResult.IsLegal = false
 		}
-		
+
 		legality["commander"] = cmdResult
 	}
 
@@ -158,6 +165,7 @@ func (h *AnalyzeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Legality:      legality,
 		Warnings:      result.Warnings,
 		Commander:     result.Commander,
+		CommanderBracket: commanderBracket,
 		Sideboard:     sb,
 	})
 }

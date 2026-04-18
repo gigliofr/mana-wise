@@ -22,6 +22,7 @@ type ScoreHandler struct {
 	analyzeDeck *usecase.AnalyzeDeckUseCase
 	scoreUC     *usecase.ScoreUseCase
 	impactUC    *usecase.ImpactScoreUseCase
+	bracketUC   *usecase.CommanderBracketUseCase
 	userRepo    domain.UserRepository
 }
 
@@ -30,12 +31,14 @@ func NewScoreHandler(
 	analyzeDeck *usecase.AnalyzeDeckUseCase,
 	scoreUC *usecase.ScoreUseCase,
 	impactUC *usecase.ImpactScoreUseCase,
+	bracketUC *usecase.CommanderBracketUseCase,
 	userRepo domain.UserRepository,
 ) *ScoreHandler {
 	return &ScoreHandler{
 		analyzeDeck: analyzeDeck,
 		scoreUC:     scoreUC,
 		impactUC:    impactUC,
+		bracketUC:   bracketUC,
 		userRepo:    userRepo,
 	}
 }
@@ -99,6 +102,12 @@ func (h *ScoreHandler) Score(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	resp := map[string]interface{}{
 		"score_detail": detail,
+		"commander_bracket": func() *domain.CommanderBracketAssessment {
+			if h.bracketUC == nil || req.Format != "commander" {
+				return nil
+			}
+			return h.bracketUC.Evaluate(result.RawCards, result.Quantities)
+		}(),
 		"latency_ms":   time.Since(start).Milliseconds(),
 	}
 	json.NewEncoder(w).Encode(resp)

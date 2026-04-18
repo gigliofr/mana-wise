@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/google/uuid"
 	"github.com/gigliofr/mana-wise/api/middleware"
 	"github.com/gigliofr/mana-wise/domain"
 	"github.com/gigliofr/mana-wise/usecase"
+	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 )
 
 // DeckHandler handles CRUD operations for saved decks.
@@ -25,6 +25,7 @@ type DeckHandler struct {
 	cardRepo domain.CardRepository
 	analyze  *usecase.AnalyzeDeckUseCase
 	scoreUC  *usecase.ScoreUseCase
+	bracketUC *usecase.CommanderBracketUseCase
 	classify *usecase.DeckClassifierUseCase
 	mulligan *usecase.MulliganAssistantUseCase
 	tracker  domain.AnalyticsTracker
@@ -51,6 +52,12 @@ func NewDeckHandler(repo domain.DeckRepository, userRepo domain.UserRepository, 
 // WithScoreUC sets the score use case for richer deck metadata when available.
 func (h *DeckHandler) WithScoreUC(scoreUC *usecase.ScoreUseCase) *DeckHandler {
 	h.scoreUC = scoreUC
+	return h
+}
+
+// WithCommanderBracketUC sets the commander bracket use case when available.
+func (h *DeckHandler) WithCommanderBracketUC(bracketUC *usecase.CommanderBracketUseCase) *DeckHandler {
+	h.bracketUC = bracketUC
 	return h
 }
 
@@ -130,14 +137,14 @@ type deckSummaryResponse struct {
 	EstimatedEUR   float64                               `json:"estimated_eur"`
 	MissingPrices  []string                              `json:"missing_prices,omitempty"`
 	Legality       map[string]usecase.DeckLegalityResult `json:"legality"`
-	CommanderScore *commanderBracketResponse              `json:"commander_bracket,omitempty"`
+	CommanderScore *commanderBracketResponse             `json:"commander_bracket,omitempty"`
 	CheckedAtUTC   string                                `json:"checked_at"`
 }
 
 type commanderBracketResponse struct {
-	Score  float64 `json:"score"`
-	Bracket int    `json:"bracket"`
-	Label  string  `json:"label"`
+	Score   float64 `json:"score"`
+	Bracket int     `json:"bracket"`
+	Label   string  `json:"label"`
 }
 
 type deckBudgetReplacement struct {
@@ -524,13 +531,22 @@ func (h *DeckHandler) Summary(w http.ResponseWriter, r *http.Request) {
 		EstimatedEUR:   round4(totalEUR),
 		MissingPrices:  missingPrices,
 		Legality:       usecase.DetermineDeckLegalityAllFormats(cards, quantities),
-		CommanderScore: commanderBracketForDeck(h.scoreUC, deck.Format, cards, quantities),
+		CommanderScore: commanderBracketForDeck(h.scoreUC, h.bracketUC, deck.Format, cards, quantities),
 		CheckedAtUTC:   time.Now().UTC().Format(time.RFC3339),
 	})
 }
 
-func commanderBracketForDeck(scoreUC *usecase.ScoreUseCase, format string, cards []*domain.Card, quantities map[string]int) *commanderBracketResponse {
-	if scoreUC == nil || !strings.EqualFold(strings.TrimSpace(format), "commander") {
+func commanderBracketForDeck(scoreUC *usecase.ScoreUseCase, bracketUC *usecase.CommanderBracketUseCase, format string, cards []*domain.Card, quantities map[string]int) *commanderBracketResponse {
+	if !strings.EqualFold(strings.TrimSpace(format), "commander") {
+		return nil
+	}
+	if bracketUC != nil {
+		assessment := bracketUC.Evaluate(cards, quantities)
+		if assessment != nil {
+			return &commanderBracketResponse{Score: float64(assessment.Bracket), Bracket: assessment.Bracket, Label: assessment.Label}
+		}
+	}
+	if scoreUC == nil {
 		return nil
 	}
 	result, err := scoreUC.Execute(context.Background(), cards, quantities)
@@ -539,27 +555,15 @@ func commanderBracketForDeck(scoreUC *usecase.ScoreUseCase, format string, cards
 	}
 	score := result.Score
 	bracket := 1
-	switch {
-	case score >= 8.5:
-		bracket = 5
-	case score >= 6.5:
-		bracket = 4
-	case score >= 4.5:
-		bracket = 3
-	case score >= 2.5:
-		bracket = 2
-	default:
-		bracket = 1
-	}
-	label := map[int]string{
-		1: "Casual",
-		2: "Upgraded",
-		3: "Tuned",
-		4: "Optimized",
-		5: "cEDH",
-	}[bracket]
-	if label == "" {
-		label = "Casual"
+	label := "Casual"
+	if score >= 8.5 {
+		bracket, label = 5, "cEDH"
+	} else if score >= 6.5 {
+		bracket, label = 4, "Optimized"
+	} else if score >= 4.5 {
+		bracket, label = 3, "Tuned"
+	} else if score >= 2.5 {
+		bracket, label = 2, "Upgraded"
 	}
 	return &commanderBracketResponse{Score: score, Bracket: bracket, Label: label}
 }

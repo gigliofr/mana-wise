@@ -1,6 +1,8 @@
 param(
   [string]$OutputDir = "docs/rollout-evidence",
   [string]$TemplatePath = "docs/AI_ROLLOUT_EVIDENCE_TEMPLATE.md",
+  [ValidateSet("ai", "commander-brackets")]
+  [string]$TemplateKind = "ai",
   [string]$Owner = "",
   [string]$ReleaseCommit = "",
   [string]$EnvironmentSequence = "dev -> staging -> canary -> prod"
@@ -11,6 +13,13 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 Push-Location $root
 try {
+  if ($PSBoundParameters.ContainsKey("TemplateKind") -or -not $PSBoundParameters.ContainsKey("TemplatePath")) {
+    switch ($TemplateKind) {
+      "commander-brackets" { $TemplatePath = "docs/COMMANDER_BRACKETS_EVIDENCE_TEMPLATE.md" }
+      default { $TemplatePath = "docs/AI_ROLLOUT_EVIDENCE_TEMPLATE.md" }
+    }
+  }
+
   if (-not (Test-Path $TemplatePath)) {
     throw "Template not found: $TemplatePath"
   }
@@ -47,6 +56,7 @@ try {
   Set-Content -Path $outPath -Value $content -Encoding UTF8
 
   Write-Host "Created rollout evidence file: $outPath"
+  Write-Host "Template kind: $TemplateKind"
   Write-Host "Next step: fill sections and attach CI/metrics artifacts."
 }
 finally {

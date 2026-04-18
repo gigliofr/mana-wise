@@ -9,35 +9,37 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-chi/chi/v5"
-	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/gigliofr/mana-wise/api/handlers"
 	"github.com/gigliofr/mana-wise/api/middleware"
 	"github.com/gigliofr/mana-wise/domain"
 	"github.com/gigliofr/mana-wise/usecase"
+	"github.com/go-chi/chi/v5"
+	chimiddleware "github.com/go-chi/chi/v5/middleware"
 )
 
 // RouterDeps groups all handler dependencies.
 type RouterDeps struct {
-	CardRepo         domain.CardRepository
-	UserRepo         domain.UserRepository
-	DeckRepo         domain.DeckRepository
-	AnalyzeUC        *usecase.AnalyzeDeckUseCase
-	AISuggester      *usecase.AISuggester
-	EmbedBatchUC     *usecase.EmbedBatchUseCase
-	ResolveCardUC    *usecase.ResolveCardByNameUseCase
-	SideboardUC      *usecase.SideboardCoachUseCase
-	MulliganUC       *usecase.MulliganAssistantUseCase
-	MatchupUC        *usecase.MatchupSimulatorUseCase
-	DeckClassifyUC   *usecase.DeckClassifierUseCase
-	OTAUC            *usecase.OTAUpdateUseCase
-	ScoreUC          *usecase.ScoreUseCase
-	ImpactScoreUC    *usecase.ImpactScoreUseCase
-	Analytics        domain.AnalyticsTracker
-	AnalyticsMetrics domain.AnalyticsMetricsProvider
+	CardRepo          domain.CardRepository
+	UserRepo          domain.UserRepository
+	DeckRepo          domain.DeckRepository
+	AnalyzeUC         *usecase.AnalyzeDeckUseCase
+	AISuggester       *usecase.AISuggester
+	EmbedBatchUC      *usecase.EmbedBatchUseCase
+	ResolveCardUC     *usecase.ResolveCardByNameUseCase
+	SideboardUC       *usecase.SideboardCoachUseCase
+	MulliganUC        *usecase.MulliganAssistantUseCase
+	MatchupUC         *usecase.MatchupSimulatorUseCase
+	DeckClassifyUC    *usecase.DeckClassifierUseCase
+	CommanderBracketUC *usecase.CommanderBracketUseCase
+	CommanderBracketConfig *domain.CommanderBracketConfig
+	OTAUC             *usecase.OTAUpdateUseCase
+	ScoreUC           *usecase.ScoreUseCase
+	ImpactScoreUC     *usecase.ImpactScoreUseCase
+	Analytics         domain.AnalyticsTracker
+	AnalyticsMetrics  domain.AnalyticsMetricsProvider
 	PasswordResetRepo domain.PasswordResetTokenRepository
 	Mailer            domain.EmailSender
-	JWTSecret        string
+	JWTSecret         string
 	SessionTTLMinutes int
 	RefreshTTLMinutes int
 }
@@ -56,7 +58,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 	authH := handlers.NewAuthHandler(deps.UserRepo, deps.JWTSecret, deps.SessionTTLMinutes, deps.RefreshTTLMinutes).
 		WithPasswordResetRepo(deps.PasswordResetRepo).
 		WithMailer(deps.Mailer)
-	analyzeH := handlers.NewAnalyzeHandler(deps.AnalyzeUC, deps.AISuggester, deps.UserRepo, deps.Analytics)
+	analyzeH := handlers.NewAnalyzeHandler(deps.AnalyzeUC, deps.AISuggester, deps.CommanderBracketUC, deps.UserRepo, deps.Analytics)
 	cardsH := handlers.NewCardsHandler(deps.CardRepo, deps.ResolveCardUC)
 	sideboardH := handlers.NewSideboardCoachHandler(deps.SideboardUC)
 	mulliganH := handlers.NewMulliganHandler(deps.MulliganUC)
@@ -65,14 +67,14 @@ func NewRouter(deps RouterDeps) http.Handler {
 	embedH := handlers.NewEmbedBatchHandler(deps.EmbedBatchUC)
 	otaH := handlers.NewOTAHandler(deps.OTAUC)
 	analyticsH := handlers.NewAnalyticsHandler(deps.Analytics)
-	adminH := handlers.NewAdminHandler(deps.UserRepo, deps.AnalyticsMetrics)
-	scoreH := handlers.NewScoreHandler(deps.AnalyzeUC, deps.ScoreUC, deps.ImpactScoreUC, deps.UserRepo)
+	adminH := handlers.NewAdminHandler(deps.UserRepo, deps.AnalyticsMetrics, deps.CommanderBracketConfig)
+	scoreH := handlers.NewScoreHandler(deps.AnalyzeUC, deps.ScoreUC, deps.ImpactScoreUC, deps.CommanderBracketUC, deps.UserRepo)
 	metaH := handlers.NewMetaHandler()
 	notificationH := handlers.NewNotificationHandler(deps.DeckRepo, deps.CardRepo)
 	var deckH *handlers.DeckHandler
 	var deckImportExportH *handlers.DeckImportExportHandler
 	if deps.DeckRepo != nil {
-		deckH = handlers.NewDeckHandler(deps.DeckRepo, deps.UserRepo, deps.CardRepo, deps.AnalyzeUC, deps.DeckClassifyUC, deps.MulliganUC).WithTracker(deps.Analytics).WithScoreUC(deps.ScoreUC)
+		deckH = handlers.NewDeckHandler(deps.DeckRepo, deps.UserRepo, deps.CardRepo, deps.AnalyzeUC, deps.DeckClassifyUC, deps.MulliganUC).WithTracker(deps.Analytics).WithScoreUC(deps.ScoreUC).WithCommanderBracketUC(deps.CommanderBracketUC)
 		deckImportExportH = handlers.NewDeckImportExportHandler(deps.DeckRepo, deps.UserRepo, deps.CardRepo, deps.ResolveCardUC)
 	}
 
@@ -163,6 +165,8 @@ func NewRouter(deps RouterDeps) http.Handler {
 			r.Use(handlers.AdminSecretMiddleware)
 			r.Post("/user/plan", adminH.UpdateUserPlan)
 			r.Get("/metrics/funnel", adminH.FunnelMetrics)
+			r.Get("/commander-brackets", adminH.CommanderBrackets)
+			r.Put("/commander-brackets", adminH.UpdateCommanderBrackets)
 		})
 	})
 

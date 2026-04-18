@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"github.com/gigliofr/mana-wise/domain"
 )
 
 // Config holds all application configuration loaded from environment variables.
@@ -18,6 +19,7 @@ type Config struct {
 	Worker    WorkerConfig
 	Analytics AnalyticsConfig
 	OTA       OTAConfig
+	CommanderBrackets domain.CommanderBracketConfig
 }
 
 // ServerConfig contains HTTP server settings.
@@ -231,6 +233,9 @@ func Load() (*Config, error) {
 
 	// OTA
 	cfg.OTA.StorageDir = getEnv("OTA_STORAGE_DIR", "./ota-releases")
+
+	// Commander brackets
+	cfg.CommanderBrackets = domain.DefaultCommanderBracketConfig()
 
 	return cfg, nil
 }

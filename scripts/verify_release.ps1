@@ -4,7 +4,8 @@ param(
   [string]$AdminSecret = "",
   [switch]$SkipBackend,
   [switch]$SkipFrontend,
-  [switch]$SkipAISmoke
+  [switch]$SkipAISmoke,
+  [switch]$SkipCommanderBracketsSmoke
 )
 
 $ErrorActionPreference = "Stop"
@@ -64,6 +65,24 @@ try {
         }
         else {
           & $scriptPath -ApiBaseUrl $ApiBaseUrl -Token $Token -Calls 10 -AdminSecret $AdminSecret
+        }
+      }
+    }
+  }
+
+  if (-not $SkipCommanderBracketsSmoke) {
+    if ([string]::IsNullOrWhiteSpace($Token)) {
+      Write-Host ""
+      Write-Host "Skipping Commander Brackets smoke check: provide -Token to enable it."
+    }
+    else {
+      Run-Step -Name "Commander Brackets rollout smoke check" -Action {
+        $scriptPath = Join-Path $PSScriptRoot "verify_commander_brackets_rollout.ps1"
+        if ([string]::IsNullOrWhiteSpace($AdminSecret)) {
+          & $scriptPath -ApiBaseUrl $ApiBaseUrl -Token $Token -Calls 8
+        }
+        else {
+          & $scriptPath -ApiBaseUrl $ApiBaseUrl -Token $Token -Calls 8 -AdminSecret $AdminSecret
         }
       }
     }

@@ -8,6 +8,7 @@ import DeckLibrary from './components/DeckLibrary'
 import VisualDeckBuilder from './components/VisualDeckBuilder'
 import PlansSupport from './components/PlansSupport'
 import NotificationsCenter from './components/NotificationsCenter'
+import AdminCommanderBrackets from './components/AdminCommanderBrackets'
 import LegalFooter from './components/LegalFooter'
 import { LegalPage } from './components/LegalPages'
 import { LOCALES, translations } from './i18n'
@@ -104,6 +105,7 @@ function App() {
   const currentPath = window.location.pathname.toLowerCase()
   const isLegalPage = ['/privacy', '/cookie', '/contatti'].includes(currentPath)
   const hasActivePro = user?.plan === 'pro' && (!user?.pro_until || new Date(user.pro_until) > new Date())
+  const isHiddenAdmin = String(user?.email || '').toLowerCase().includes('admin')
 
   useEffect(() => {
     const intervalId = window.setInterval(() => setClockNow(Date.now()), 60_000)
@@ -269,6 +271,7 @@ function App() {
     { key: 'sideboard', label: messages.navSideboard },
     { key: 'mulligan', label: messages.navMulligan },
     { key: 'notifications', label: messages.navNotifications || 'Notifiche' },
+    ...(isHiddenAdmin ? [{ key: 'admin', label: messages.navAdmin || 'Admin' }] : []),
   ]
 
   return (
@@ -428,6 +431,9 @@ function App() {
               onSessionUpdate={handleSessionUpdate}
               focusProActivationKey={plansFocusKey}
             />
+          )}
+          {activeTool === 'admin' && isHiddenAdmin && (
+            <AdminCommanderBrackets token={token} user={user} messages={messages} />
           )}
         </div>
       </main>

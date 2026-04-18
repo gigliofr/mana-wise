@@ -132,7 +132,7 @@ func TestAnalyzeHandler_ArenaDeckPayload_Success(t *testing.T) {
 	uc := usecase.NewAnalyzeDeckUseCase(&analyzeMockFetcher{}, repo, 2)
 	users := &analyzeMockUserRepo{}
 	tracker := &mockTracker{}
-	h := NewAnalyzeHandler(uc, nil, users, tracker)
+	h := NewAnalyzeHandler(uc, nil, nil, users, tracker)
 
 	payload := map[string]string{
 		"format":   "Standard",

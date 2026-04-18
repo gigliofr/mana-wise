@@ -93,6 +93,7 @@ func main() {
 	mulliganUC := usecase.NewMulliganAssistantUseCase(cardRepo)
 	matchupUC := usecase.NewMatchupSimulatorUseCase(cardRepo)
 	deckClassifyUC := usecase.NewDeckClassifierUseCase(cardRepo)
+	commanderBracketUC := usecase.NewCommanderBracketUseCase(&cfg.CommanderBrackets)
 
 	// EDH Power Level Scoring
 	impactScoreUC := &usecase.ImpactScoreUseCase{
@@ -174,25 +175,27 @@ func main() {
 
 	// ── Router ───────────────────────────────────────────────────────────────
 	router := api.NewRouter(api.RouterDeps{
-		CardRepo:         cardRepo,
-		UserRepo:         userRepo,
-		DeckRepo:         deckRepo,
-		AnalyzeUC:        analyzeUC,
-		SideboardUC:      sideboardUC,
-		MulliganUC:       mulliganUC,
-		MatchupUC:        matchupUC,
-		DeckClassifyUC:   deckClassifyUC,
-		ScoreUC:          scoreUC,
-		ImpactScoreUC:    impactScoreUC,
-		AISuggester:      aiSuggester,
-		EmbedBatchUC:     embedBatchUC,
-		ResolveCardUC:    resolveCardUC,
-		OTAUC:            otaUC,
-		Analytics:        tracker,
-		AnalyticsMetrics: runtimeMetrics,
+		CardRepo:          cardRepo,
+		UserRepo:          userRepo,
+		DeckRepo:          deckRepo,
+		AnalyzeUC:         analyzeUC,
+		SideboardUC:       sideboardUC,
+		MulliganUC:        mulliganUC,
+		MatchupUC:         matchupUC,
+		DeckClassifyUC:    deckClassifyUC,
+		CommanderBracketUC: commanderBracketUC,
+		CommanderBracketConfig: &cfg.CommanderBrackets,
+		ScoreUC:           scoreUC,
+		ImpactScoreUC:     impactScoreUC,
+		AISuggester:       aiSuggester,
+		EmbedBatchUC:      embedBatchUC,
+		ResolveCardUC:     resolveCardUC,
+		OTAUC:             otaUC,
+		Analytics:         tracker,
+		AnalyticsMetrics:  runtimeMetrics,
 		PasswordResetRepo: passwordResetTokenRepo,
 		Mailer:            mailer,
-		JWTSecret:        cfg.JWT.Secret,
+		JWTSecret:         cfg.JWT.Secret,
 		SessionTTLMinutes: cfg.JWT.SessionTTLMinutes,
 		RefreshTTLMinutes: cfg.JWT.RefreshTTLMinutes,
 	})

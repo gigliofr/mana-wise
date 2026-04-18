@@ -48,6 +48,7 @@ function localizeSuggestion(s, messages, format, commanderScore) {
 }
 
 function commanderBracketForScore(score) {
+  if (typeof score === 'number' && Number.isInteger(score) && score >= 1 && score <= 5) return score
   if (score >= 8.5) return 5
   if (score >= 6.5) return 4
   if (score >= 4.5) return 3

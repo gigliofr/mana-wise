@@ -21,7 +21,7 @@ func TestAdminHandler_FunnelMetrics_Success(t *testing.T) {
 		TotalEvents:       7,
 		EventCounts:       map[string]int64{"analysis_completed": 3},
 		AnalysisFallbacks: 1,
-	}})
+	}}, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/metrics/funnel", nil)
 	rr := httptest.NewRecorder()
@@ -33,7 +33,7 @@ func TestAdminHandler_FunnelMetrics_Success(t *testing.T) {
 }
 
 func TestAdminHandler_FunnelMetrics_NoProvider(t *testing.T) {
-	h := NewAdminHandler(nil, nil)
+	h := NewAdminHandler(nil, nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/metrics/funnel", nil)
 	rr := httptest.NewRecorder()
 	h.FunnelMetrics(rr, req)

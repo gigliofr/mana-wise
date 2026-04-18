@@ -20,7 +20,7 @@ func TestJSONError_ContractShape(t *testing.T) {
 }
 
 func TestAnalyzeHandler_InvalidJSON_UsesStandardErrorContract(t *testing.T) {
-	h := NewAnalyzeHandler(nil, nil, nil, nil)
+	h := NewAnalyzeHandler(nil, nil, nil, nil, nil)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/analyze", bytes.NewBufferString("{"))
 	rr := httptest.NewRecorder()
 
