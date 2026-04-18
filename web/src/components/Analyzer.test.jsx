@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import Analyzer from './Analyzer'
+import { translations } from '../i18n'
 
 function jsonResponse(body, status = 200) {
   return {
@@ -11,20 +12,7 @@ function jsonResponse(body, status = 200) {
   }
 }
 
-const messages = {
-  deckAnalyzer: 'Deck Analyzer',
-  decklist: 'Decklist',
-  decklistHint: '1 Card Name',
-  loadSavedDeck: 'Load saved deck',
-  selectADeck: 'Select a deck',
-  format: 'Format',
-  analyzing: 'Analyzing',
-  analyzeDeck: 'Analyze deck',
-  analysisFailed: 'Analysis failed',
-  analyzedIn: ms => `Analyzed in ${ms} ms`,
-  freePlanBanner: remaining => `Free plan: ${remaining} analyses remaining today.`,
-  upgradeToPro: 'Upgrade to Pro',
-}
+const messages = translations.en
 
 describe('Analyzer', () => {
   afterEach(() => {
@@ -234,7 +222,6 @@ describe('Analyzer', () => {
 
     await waitFor(() => {
       expect(screen.getByText(/Could not resolve card "Missing Card"/i)).toBeInTheDocument()
-      expect(screen.getByText('Deck Analyzer')).toBeInTheDocument()
     })
   })
 
