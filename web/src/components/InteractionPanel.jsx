@@ -43,6 +43,30 @@ function localizeSuggestion(s, messages) {
   return messages.translateSuggestion(category, count, archetype, ideal)
 }
 
+function commanderBracketForScore(score) {
+  if (score >= 8.5) return 5
+  if (score >= 6.5) return 4
+  if (score >= 4.5) return 3
+  if (score >= 2.5) return 2
+  return 1
+}
+
+function commanderIdealMultiplier(bracket) {
+  if (bracket >= 5) return 1.4
+  if (bracket === 4) return 1.25
+  if (bracket === 3) return 1.1
+  if (bracket === 2) return 1.0
+  return 0.85
+}
+
+function adjustedIdeal(ideal, format, commanderScore) {
+  if (ideal <= 0) return 0
+  if (format !== 'commander' || typeof commanderScore !== 'number') return ideal
+  const bracket = commanderBracketForScore(commanderScore)
+  const scaled = Math.round(ideal * commanderIdealMultiplier(bracket))
+  return Math.max(1, scaled)
+}
+
 export default function InteractionPanel({ data }) {
   const messages = data.messages
   const labels = messages?.categoryLabels || {}
@@ -65,7 +89,8 @@ export default function InteractionPanel({ data }) {
       </p>
 
       {data.breakdowns?.map(bd => {
-        const status = rowStatus(bd.count, bd.ideal, messages)
+        const ideal = adjustedIdeal(bd.ideal, data.format, data.commanderScore)
+        const status = rowStatus(bd.count, ideal, messages)
         return (
           <div key={bd.category} className="score-row">
             <span className="score-label">
@@ -77,7 +102,7 @@ export default function InteractionPanel({ data }) {
                 style={{
                   width: `${status.width}%`,
                   background: status.color,
-                  opacity: bd.ideal <= 0 ? 0.45 : 1,
+                  opacity: ideal <= 0 ? 0.45 : 1,
                 }}
               />
             </div>

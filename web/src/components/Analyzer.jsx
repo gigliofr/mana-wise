@@ -444,7 +444,16 @@ export default function Analyzer({ token, user, locale, messages, decklist: deck
           </div>
 
           {tab === 'mana' && <ManaCurvePanel data={result.deterministic.mana} detectedArchetype={result.deterministic.interaction?.archetype} fingerprint={fingerprint} decklist={decklist} messages={messages} />}
-          {tab === 'interaction' && <InteractionPanel data={{ ...result.deterministic.interaction, messages }} />}
+          {tab === 'interaction' && (
+            <InteractionPanel
+              data={{
+                ...result.deterministic.interaction,
+                messages,
+                format,
+                commanderScore,
+              }}
+            />
+          )}
           {tab === 'fingerprint' && <FingerprintPanel data={fingerprint} messages={messages} />} 
           {tab === 'ai' && <AIPanel text={result.ai_suggestions} error={result.ai_error} source={result.ai_source} result={result} commanderScore={commanderScore} messages={messages} locale={locale} />}
         </div>
