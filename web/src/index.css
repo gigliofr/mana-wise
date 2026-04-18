@@ -690,13 +690,85 @@ button {
   margin-bottom: 12px;
 }
 
+.decklib-save-quick {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-secondary) 90%, transparent);
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.decklib-save-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.decklib-save-head h3 {
+  margin: 0;
+  font-size: .95rem;
+  color: var(--text);
+}
+
+.decklib-save-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.decklib-edit-toggle {
+  justify-self: start;
+  padding: 7px 12px;
+  font-size: .8rem;
+}
+
 .decklib-actions input {
   flex: 1;
 }
 
-.decklib-list {
+.decklib-tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 6px;
+  margin-bottom: 10px;
+  scrollbar-width: thin;
+}
+
+.decklib-tab-btn {
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  color: var(--muted);
+  border-radius: 10px;
+  padding: 9px 12px;
+  min-width: 170px;
+  text-align: left;
   display: grid;
-  gap: 12px;
+  gap: 2px;
+  line-height: 1.15;
+}
+
+.decklib-tab-btn.active {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--primary-h) 75%, var(--border));
+  background: linear-gradient(180deg, rgba(124,92,191,.18), rgba(124,92,191,.06));
+}
+
+.decklib-tab-name {
+  font-size: .86rem;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.decklib-tab-sub {
+  font-size: .72rem;
+  color: var(--muted);
 }
 
 .decklib-item {
@@ -730,6 +802,12 @@ button {
 
 .decklib-item-main {
   min-width: 0;
+}
+
+.decklib-item-actions-inline {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
 }
 
 .decklib-item-top {
@@ -851,44 +929,16 @@ button {
   min-width: 92px;
 }
 
-.decklib-save-step {
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 16px;
-  margin-bottom: 12px;
-  background: var(--bg-secondary);
-}
-
-.decklib-save-step h3 {
-  margin: 0 0 12px 0;
-  font-size: 1rem;
-}
-
-.decklib-save-step input,
-.decklib-save-step textarea {
-  width: 100%;
-  padding: 8px 12px;
-  border: 1px solid var(--border);
-  background: var(--bg);
-  color: var(--text);
-  border-radius: 4px;
-  font-family: inherit;
-  font-size: .9rem;
-}
-
-.decklib-save-step textarea {
-  resize: vertical;
-  font-family: 'Courier New', monospace;
-}
-
 @media (max-width: 860px) {
   .decklib-item {
     grid-template-columns: 1fr;
   }
 
-  .decklib-item-actions {
+  .decklib-item-actions,
+  .decklib-item-actions-inline {
     flex-direction: row;
-    justify-content: flex-end;
+    flex-wrap: wrap;
+    justify-content: flex-start;
   }
 
   .decklib-item-top {
@@ -903,6 +953,14 @@ button {
     flex-direction: column;
     align-items: flex-start;
     gap: 4px;
+  }
+
+  .decklib-save-row {
+    grid-template-columns: 1fr;
+  }
+
+  .decklib-tab-btn {
+    min-width: 152px;
   }
 }
 
@@ -1603,17 +1661,34 @@ button {
     flex-direction: column;
   }
 
-  .decklib-item {
+  .decklib-save-head {
     flex-direction: column;
     align-items: flex-start;
   }
 
-  .decklib-buttons {
+  .decklib-item {
     width: 100%;
   }
 
-  .decklib-buttons .btn-ghost {
+  .decklib-item-actions-inline {
+    width: 100%;
+  }
+
+  .decklib-item-actions-inline .btn-ghost {
     flex: 1;
+  }
+
+  .decklib-tabs {
+    margin-bottom: 12px;
+  }
+
+  .decklib-tab-btn {
+    min-width: 138px;
+    padding: 8px 10px;
+  }
+
+  .decklib-tab-name {
+    font-size: .8rem;
   }
 
   .decklib-grid-head {

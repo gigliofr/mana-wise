@@ -14,11 +14,13 @@ export default function DeckLibrary({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [name, setName] = useState('')
-  const [saveStep, setSaveStep] = useState(0) // 0=hidden, 1=name, 2=confirm
+  const [showSaveComposer, setShowSaveComposer] = useState(false)
+  const [editDeckBeforeSave, setEditDeckBeforeSave] = useState(false)
   const [editedDecklist, setEditedDecklist] = useState('')
   const [page, setPage] = useState(0)
   const [totalDecks, setTotalDecks] = useState(0)
   const [reloadNonce, setReloadNonce] = useState(0)
+  const [activeDeckId, setActiveDeckId] = useState('')
   const [expandedDecks, setExpandedDecks] = useState({})
   const [deckLegality, setDeckLegality] = useState({})
   const [deckSummaries, setDeckSummaries] = useState({})
@@ -80,6 +82,17 @@ export default function DeckLibrary({
       setPage(totalPages - 1)
     }
   }, [page, totalPages])
+
+  useEffect(() => {
+    if (paginatedDecks.length === 0) {
+      setActiveDeckId('')
+      return
+    }
+    const exists = paginatedDecks.some(deck => deck.id === activeDeckId)
+    if (!exists) {
+      setActiveDeckId(paginatedDecks[0].id)
+    }
+  }, [paginatedDecks, activeDeckId])
 
   useEffect(() => {
     let cancelled = false
@@ -309,55 +322,41 @@ export default function DeckLibrary({
 
   async function saveCurrentDeck() {
     setError('')
-    
-    // Step 1: Validate name and decklist, move to confirm
-    if (saveStep === 1) {
-      const cards = parseDecklistToCards(editedDecklist)
-      if (cards.length === 0) {
-        setError(messages.deckEmptyCannotSave)
-        return
-      }
-      if (!name.trim()) {
-        setError(messages.deckNameRequired)
-        return
-      }
-      setSaveStep(2)
+    if (!canSaveMore) {
+      setError(messages.deckLimitReached)
       return
     }
-
-    // Step 2: Confirm and save
-    if (saveStep === 2) {
-      if (!canSaveMore) {
-        setError(messages.deckLimitReached)
-        return
-      }
-      const cards = parseDecklistToCards(editedDecklist)
-      if (cards.length === 0) {
-        setError(messages.deckEmptyCannotSave)
-        return
-      }
-      const deckName = (name || '').trim() || `${messages.defaultDeckName} ${new Date().toISOString().slice(0, 10)}`
-      try {
-        const { res, data } = await apiRequest('/decks', {
-          token,
-          method: 'POST',
-          body: {
-            name: deckName,
-            format: currentFormat || 'standard',
-            cards,
-            is_public: false,
-          },
-        })
-        throwIfNotOK(res, data, messages.deckSaveFailed)
-        setTotalDecks(prev => prev + 1)
-        setPage(0)
-        setReloadNonce(prev => prev + 1)
-        setName('')
-        setEditedDecklist('')
-        setSaveStep(0)
-      } catch (err) {
-        setError(err.message)
-      }
+    const cards = parseDecklistToCards(editedDecklist)
+    if (cards.length === 0) {
+      setError(messages.deckEmptyCannotSave)
+      return
+    }
+    if (!name.trim()) {
+      setError(messages.deckNameRequired)
+      return
+    }
+    const deckName = (name || '').trim() || `${messages.defaultDeckName} ${new Date().toISOString().slice(0, 10)}`
+    try {
+      const { res, data } = await apiRequest('/decks', {
+        token,
+        method: 'POST',
+        body: {
+          name: deckName,
+          format: currentFormat || 'standard',
+          cards,
+          is_public: false,
+        },
+      })
+      throwIfNotOK(res, data, messages.deckSaveFailed)
+      setTotalDecks(prev => prev + 1)
+      setPage(0)
+      setReloadNonce(prev => prev + 1)
+      setName('')
+      setEditedDecklist('')
+      setShowSaveComposer(false)
+      setEditDeckBeforeSave(false)
+    } catch (err) {
+      setError(err.message)
     }
   }
 
@@ -407,94 +406,79 @@ export default function DeckLibrary({
         </div>
       </div>
 
-      {/* Step 0: Show save button */}
-      {saveStep === 0 && (
-        <div className="decklib-actions">
-          <button 
-            type="button" 
-            className="btn-primary" 
+      <div className="decklib-actions">
+        {!showSaveComposer ? (
+          <button
+            type="button"
+            className="btn-primary"
             onClick={() => {
               setError('')
               setName('')
               setEditedDecklist(currentDecklist || '')
-              setSaveStep(1)
+              setShowSaveComposer(true)
+              setEditDeckBeforeSave(false)
             }}
             disabled={!canSaveMore}
           >
             {messages.saveDeck}
           </button>
-        </div>
-      )}
-
-      {/* Step 1: Input deck name and decklist */}
-      {saveStep === 1 && (
-        <div className="decklib-save-step">
-          <h3>{messages.saveDeck}</h3>
-          <input
-            type="text"
-            value={name}
-            onChange={e => setName(e.target.value)}
-            placeholder={messages.deckNamePlaceholder}
-            autoFocus
-          />
-          <textarea
-            value={editedDecklist}
-            onChange={e => setEditedDecklist(e.target.value)}
-            placeholder={messages.decklistHint}
-            style={{ maxHeight: '200px', marginTop: '12px' }}
-          />
-          <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
-            <button type="button" className="btn-primary" onClick={saveCurrentDeck}>
-              {messages.next || 'Avanti'}
-            </button>
-            <button 
-              type="button" 
-              className="btn-ghost" 
+        ) : (
+          <div className="decklib-save-quick">
+            <div className="decklib-save-head">
+              <h3>{messages.saveDeck}</h3>
+              <span className="decklib-sub">
+                {messages.cardsCount(activeSummary.cards)} · {activeSummary.format}
+              </span>
+            </div>
+            <div className="decklib-save-row">
+              <input
+                type="text"
+                value={name}
+                onChange={e => setName(e.target.value)}
+                placeholder={messages.deckNamePlaceholder}
+                autoFocus
+              />
+              <button type="button" className="btn-primary" onClick={saveCurrentDeck}>
+                {messages.confirmSave || 'Salva'}
+              </button>
+              <button
+                type="button"
+                className="btn-ghost"
+                onClick={() => {
+                  setShowSaveComposer(false)
+                  setName('')
+                  setEditedDecklist('')
+                  setEditDeckBeforeSave(false)
+                  setError('')
+                }}
+              >
+                {messages.cancel || 'Annulla'}
+              </button>
+            </div>
+            <button
+              type="button"
+              className="btn-ghost decklib-edit-toggle"
               onClick={() => {
-                setSaveStep(0)
-                setName('')
-                setEditedDecklist('')
-                setError('')
+                if (!editDeckBeforeSave && !editedDecklist) {
+                  setEditedDecklist(currentDecklist || '')
+                }
+                setEditDeckBeforeSave(prev => !prev)
               }}
             >
-              {messages.cancel || 'Annulla'}
+              {editDeckBeforeSave
+                ? (messages.hideDecklistEditor || 'Nascondi editor lista')
+                : (messages.editDeckBeforeSave || 'Modifica lista prima di salvare')}
             </button>
+            {editDeckBeforeSave && (
+              <textarea
+                value={editedDecklist}
+                onChange={e => setEditedDecklist(e.target.value)}
+                placeholder={messages.decklistHint}
+                style={{ maxHeight: '220px' }}
+              />
+            )}
           </div>
-        </div>
-      )}
-
-      {/* Step 2: Confirm and show deck preview */}
-      {saveStep === 2 && (
-        <div className="decklib-save-step">
-          <h3>{messages.confirmSaveDeck || 'Conferma salvataggio'}</h3>
-          <div style={{ marginBottom: '12px', padding: '12px', background: 'var(--bg-secondary)', borderRadius: '4px' }}>
-            <strong>{name}</strong>
-            <div style={{ fontSize: '.9rem', color: 'var(--muted)', marginTop: '4px' }}>
-              {editedDecklist.split('\n').filter(l => l.trim()).length} {messages.cards} · {currentFormat || 'standard'}
-            </div>
-          </div>
-          <textarea
-            readOnly
-            value={editedDecklist}
-            placeholder={messages.noDecklistProvided}
-            style={{ maxHeight: '200px', opacity: 0.7 }}
-          />
-          <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
-            <button type="button" className="btn-primary" onClick={saveCurrentDeck}>
-              {messages.confirmSave || 'Salva'}
-            </button>
-            <button 
-              type="button" 
-              className="btn-ghost" 
-              onClick={() => setSaveStep(1)}
-            >
-              {messages.back || 'Indietro'}
-            </button>
-          </div>
-        </div>
-      )}
-
-      <div className="decklib-actions">
+        )}
       </div>
 
       {!isPro && !canSaveMore && (
@@ -511,152 +495,173 @@ export default function DeckLibrary({
         <div style={{ color: 'var(--muted)', fontSize: '.9rem' }}>{messages.noSavedDecks}</div>
       ) : (
         <>
-          <div className="decklib-list">
-            {paginatedDecks.map(deck => (
-              <div className="decklib-item" key={deck.id}>
-                {(() => {
-                  const normalizedFormat = (deck.format || 'standard').toLowerCase()
-                  const deckLegalityEntry = deckLegality[deck.id]
-                  const isLegalityLoading = deckLegalityEntry?.loading === true
-                  const isLegalityUnavailable = deckLegalityEntry?.unavailable === true
-                  const legality = deckLegalityEntry?.formats?.[normalizedFormat]
-                  const formatIsLegal = legality?.is_legal
-                  const chipColor = isLegalityUnavailable
-                    ? 'var(--orange)'
-                    : formatIsLegal === true
-                    ? 'var(--green)'
-                    : formatIsLegal === false
-                      ? 'var(--red)'
-                      : 'var(--muted)'
-                  const chipText = isLegalityLoading
-                    ? messages.loading
-                    : isLegalityUnavailable
-                      ? (messages.legalityUnavailableShort || 'N/D')
-                    : formatIsLegal === true
-                      ? messages.legalityLegalLabel
-                      : formatIsLegal === false
-                        ? messages.legalityIllegalLabel
-                        : (messages.unknownLabel || 'N/A')
-                  const chipTitle = isLegalityUnavailable
-                    ? (messages.legalityUnavailableHint || 'Verifica legalita non disponibile per questo mazzo')
-                    : undefined
-                  const summary = deckSummaries[deck.id]
-                  const estimatedUSD = Number(summary?.estimated_usd || 0)
-                  const commanderBracket = summary?.commander_bracket
-                  const cards = mainDeckCards(deck)
-                  const commanderCards = commanderDeckCards(deck)
-                  const expanded = isDeckExpanded(deck.id)
-                  const visibleCards = expanded ? cards : cards.slice(0, 14)
-                  const hiddenCards = Math.max(0, cards.length - visibleCards.length)
+          <div className="decklib-tabs" role="tablist" aria-label={messages.deckLibraryTitle}>
+            {paginatedDecks.map(deck => {
+              const cards = mainDeckCards(deck)
+              const commanderCards = commanderDeckCards(deck)
+              const isActive = deck.id === activeDeckId
+              return (
+                <button
+                  key={deck.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={isActive}
+                  className={`decklib-tab-btn${isActive ? ' active' : ''}`}
+                  onClick={() => setActiveDeckId(deck.id)}
+                >
+                  <span className="decklib-tab-name">{deck.name}</span>
+                  <span className="decklib-tab-sub">{cards.length + commanderCards.length} · {deck.format}</span>
+                </button>
+              )
+            })}
+          </div>
 
-                  return (
-                    <div className="decklib-item-main">
-                      <div className="decklib-item-top">
-                        <div>
-                          <div className="decklib-name">{deck.name}</div>
-                          <div className="decklib-sub">{cards.length + commanderCards.length} {messages.cards || 'cards'} · {deck.format}</div>
-                          {commanderCards.length > 0 && (
-                            <div className="decklib-sub" style={{ marginTop: 4 }}>
-                              Commander: {commanderCards.map(c => c.card_name || c.name).filter(Boolean).join(', ')}
-                            </div>
-                          )}
+          {(() => {
+            const activeDeck = paginatedDecks.find(deck => deck.id === activeDeckId) || paginatedDecks[0]
+            if (!activeDeck) return null
+
+            const normalizedFormat = (activeDeck.format || 'standard').toLowerCase()
+            const deckLegalityEntry = deckLegality[activeDeck.id]
+            const isLegalityLoading = deckLegalityEntry?.loading === true
+            const isLegalityUnavailable = deckLegalityEntry?.unavailable === true
+            const legality = deckLegalityEntry?.formats?.[normalizedFormat]
+            const formatIsLegal = legality?.is_legal
+            const chipColor = isLegalityUnavailable
+              ? 'var(--orange)'
+              : formatIsLegal === true
+                ? 'var(--green)'
+                : formatIsLegal === false
+                  ? 'var(--red)'
+                  : 'var(--muted)'
+            const chipText = isLegalityLoading
+              ? messages.loading
+              : isLegalityUnavailable
+                ? (messages.legalityUnavailableShort || 'N/D')
+                : formatIsLegal === true
+                  ? messages.legalityLegalLabel
+                  : formatIsLegal === false
+                    ? messages.legalityIllegalLabel
+                    : (messages.unknownLabel || 'N/A')
+            const chipTitle = isLegalityUnavailable
+              ? (messages.legalityUnavailableHint || 'Verifica legalita non disponibile per questo mazzo')
+              : undefined
+            const summary = deckSummaries[activeDeck.id]
+            const estimatedUSD = Number(summary?.estimated_usd || 0)
+            const commanderBracket = summary?.commander_bracket
+            const cards = mainDeckCards(activeDeck)
+            const commanderCards = commanderDeckCards(activeDeck)
+            const expanded = isDeckExpanded(activeDeck.id)
+            const visibleCards = expanded ? cards : cards.slice(0, 14)
+            const hiddenCards = Math.max(0, cards.length - visibleCards.length)
+
+            return (
+              <div className="decklib-item" role="tabpanel" key={activeDeck.id}>
+                <div className="decklib-item-main">
+                  <div className="decklib-item-top">
+                    <div>
+                      <div className="decklib-name">{activeDeck.name}</div>
+                      <div className="decklib-sub">{cards.length + commanderCards.length} {messages.cards || 'cards'} · {activeDeck.format}</div>
+                      {commanderCards.length > 0 && (
+                        <div className="decklib-sub" style={{ marginTop: 4 }}>
+                          Commander: {commanderCards.map(c => c.card_name || c.name).filter(Boolean).join(', ')}
                         </div>
-                        <div className="decklib-chip-row">
-                          <span
-                            className="decklib-chip"
-                            style={{ borderColor: chipColor, color: chipColor }}
-                            title={chipTitle}
-                          >
-                            {chipText}
-                          </span>
-                          {estimatedUSD > 0 && (
-                            <span className="decklib-chip decklib-chip-muted" title="Estimated deck value in USD">
-                              {`~$${estimatedUSD.toFixed(2)}`}
-                            </span>
-                          )}
-                          {commanderBracket && (
-                            <span
-                              className="decklib-chip decklib-chip-bracket"
-                              title={`Commander bracket ${commanderBracket.bracket} · ${commanderBracket.label}`}
-                            >
-                              Bracket {commanderBracket.bracket}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="decklib-grid-head" aria-hidden="true">
-                        <span>Qty</span>
-                        <span>Card</span>
-                      </div>
-                      <div className="decklib-card-grid">
-                        {visibleCards.map((c, idx) => {
-                          const quantity = Math.max(1, Number(c.quantity) || 1)
-                          const cardName = (c.card_name || c.name || '').trim()
-                          if (!cardName) return null
-                          const meta = cardMetadata[cardName.toLowerCase()]
-                          const illegalByFormat = deckLegality[deck.id]?.cardIllegalByFormat?.[normalizedFormat] || {}
-                          const isIllegalCard = Boolean(illegalByFormat[cardName.toLowerCase()])
-                          const rarity = String(meta?.rarity || '').trim().toUpperCase()
-                          const setCode = String(meta?.set_code || '').trim().toUpperCase()
-                          return (
-                            <div
-                              key={`${deck.id}-card-${idx}`}
-                              className={`decklib-card-row${isIllegalCard ? ' is-illegal' : ''}`}
-                              title={isIllegalCard ? `${messages.legalityIllegalLabel} (${normalizedFormat})` : undefined}
-                            >
-                              <span className="decklib-card-qty">{quantity}x</span>
-                              <div className="decklib-card-main">
-                                <CardHoverPreview cardName={cardName} token={token} messages={messages} metadata={meta}>
-                                  <span className="decklib-card-name">
-                                    {isIllegalCard ? `Illegal - ${cardName}` : cardName}
-                                  </span>
-                                </CardHoverPreview>
-                                {(rarity || setCode) && (
-                                  <span className="decklib-card-tags">
-                                    {rarity && <span className={`builder-badge rarity-${badgeClassName(rarity)}`}>{rarity}</span>}
-                                    {setCode && <span className="builder-badge builder-badge-set">{setCode}</span>}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-
-                      {hiddenCards > 0 && (
-                        <button
-                          type="button"
-                          className="btn-ghost decklib-expand-btn"
-                          onClick={() => toggleDeckExpanded(deck.id)}
-                        >
-                          {expanded
-                            ? (messages.showLessCards || 'Mostra meno')
-                            : `+${hiddenCards} ${messages.moreCards || 'altre carte'}`}
-                        </button>
                       )}
                     </div>
-                  )
-                })()}
-                <div className="decklib-buttons decklib-item-actions">
-                  <button
-                    type="button"
-                    className="btn-ghost"
-                    onClick={() => onSelectDeck?.(deckToDecklist(deck), deck.format || 'standard', deck)}
-                  >
-                    {messages.useDeck}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn-ghost"
-                    onClick={() => deleteDeck(deck.id)}
-                  >
-                    {messages.deleteDeck}
-                  </button>
+                    <div className="decklib-chip-row">
+                      <span
+                        className="decklib-chip"
+                        style={{ borderColor: chipColor, color: chipColor }}
+                        title={chipTitle}
+                      >
+                        {chipText}
+                      </span>
+                      {estimatedUSD > 0 && (
+                        <span className="decklib-chip decklib-chip-muted" title="Estimated deck value in USD">
+                          {`~$${estimatedUSD.toFixed(2)}`}
+                        </span>
+                      )}
+                      {commanderBracket && (
+                        <span
+                          className="decklib-chip decklib-chip-bracket"
+                          title={`Commander bracket ${commanderBracket.bracket} · ${commanderBracket.label}`}
+                        >
+                          Bracket {commanderBracket.bracket}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="decklib-item-actions-inline">
+                    <button
+                      type="button"
+                      className="btn-ghost"
+                      onClick={() => onSelectDeck?.(deckToDecklist(activeDeck), activeDeck.format || 'standard', activeDeck)}
+                    >
+                      {messages.useDeck}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-ghost"
+                      onClick={() => deleteDeck(activeDeck.id)}
+                    >
+                      {messages.deleteDeck}
+                    </button>
+                  </div>
+
+                  <div className="decklib-grid-head" aria-hidden="true">
+                    <span>Qty</span>
+                    <span>Card</span>
+                  </div>
+                  <div className="decklib-card-grid">
+                    {visibleCards.map((c, idx) => {
+                      const quantity = Math.max(1, Number(c.quantity) || 1)
+                      const cardName = (c.card_name || c.name || '').trim()
+                      if (!cardName) return null
+                      const meta = cardMetadata[cardName.toLowerCase()]
+                      const illegalByFormat = deckLegality[activeDeck.id]?.cardIllegalByFormat?.[normalizedFormat] || {}
+                      const isIllegalCard = Boolean(illegalByFormat[cardName.toLowerCase()])
+                      const rarity = String(meta?.rarity || '').trim().toUpperCase()
+                      const setCode = String(meta?.set_code || '').trim().toUpperCase()
+                      return (
+                        <div
+                          key={`${activeDeck.id}-card-${idx}`}
+                          className={`decklib-card-row${isIllegalCard ? ' is-illegal' : ''}`}
+                          title={isIllegalCard ? `${messages.legalityIllegalLabel} (${normalizedFormat})` : undefined}
+                        >
+                          <span className="decklib-card-qty">{quantity}x</span>
+                          <div className="decklib-card-main">
+                            <CardHoverPreview cardName={cardName} token={token} messages={messages} metadata={meta}>
+                              <span className="decklib-card-name">
+                                {isIllegalCard ? `Illegal - ${cardName}` : cardName}
+                              </span>
+                            </CardHoverPreview>
+                            {(rarity || setCode) && (
+                              <span className="decklib-card-tags">
+                                {rarity && <span className={`builder-badge rarity-${badgeClassName(rarity)}`}>{rarity}</span>}
+                                {setCode && <span className="builder-badge builder-badge-set">{setCode}</span>}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  {hiddenCards > 0 && (
+                    <button
+                      type="button"
+                      className="btn-ghost decklib-expand-btn"
+                      onClick={() => toggleDeckExpanded(activeDeck.id)}
+                    >
+                      {expanded
+                        ? (messages.showLessCards || 'Mostra meno')
+                        : `+${hiddenCards} ${messages.moreCards || 'altre carte'}`}
+                    </button>
+                  )}
                 </div>
               </div>
-            ))}
-          </div>
+            )
+          })()}
           {totalPages > 1 && (
             <div style={{ marginTop: '12px', display: 'flex', gap: '6px', justifyContent: 'center', alignItems: 'center' }}>
               <button

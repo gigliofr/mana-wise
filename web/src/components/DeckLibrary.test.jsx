@@ -106,7 +106,7 @@ describe('DeckLibrary', () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByText('Mono Black')).toBeInTheDocument()
+      expect(screen.getAllByText('Mono Black').length).toBeGreaterThan(0)
       expect(screen.queryByText('Other User Deck')).not.toBeInTheDocument()
       expect(screen.getByText('~$123.45')).toBeInTheDocument()
       expect(screen.getByText('Legal')).toBeInTheDocument()
@@ -173,7 +173,7 @@ describe('DeckLibrary', () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByText('Fallback Deck')).toBeInTheDocument()
+      expect(screen.getAllByText('Fallback Deck').length).toBeGreaterThan(0)
       expect(screen.getByText('Illegal')).toBeInTheDocument()
     })
 
