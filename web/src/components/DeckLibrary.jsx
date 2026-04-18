@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import CardHoverPreview from './CardHoverPreview'
 import { apiRequest, throwIfNotOK } from '../lib/apiClient'
 
+const FORMATS = ['standard', 'pioneer', 'modern', 'legacy', 'vintage', 'commander', 'pauper']
+
 export default function DeckLibrary({
   token,
   user,
@@ -18,12 +20,15 @@ export default function DeckLibrary({
   const [editDeckBeforeSave, setEditDeckBeforeSave] = useState(false)
   const [editedDecklist, setEditedDecklist] = useState('')
   const [deckSearch, setDeckSearch] = useState('')
+  const [showPinnedOnly, setShowPinnedOnly] = useState(false)
   const [page, setPage] = useState(0)
   const [totalDecks, setTotalDecks] = useState(0)
   const [reloadNonce, setReloadNonce] = useState(0)
   const [activeDeckId, setActiveDeckId] = useState('')
   const [pinnedDeckIds, setPinnedDeckIds] = useState([])
   const [draggedPinnedDeckId, setDraggedPinnedDeckId] = useState('')
+  const [collapsedDeckLists, setCollapsedDeckLists] = useState({})
+  const [updatingDeckId, setUpdatingDeckId] = useState('')
   const [expandedDecks, setExpandedDecks] = useState({})
   const [deckLegality, setDeckLegality] = useState({})
   const [deckSummaries, setDeckSummaries] = useState({})
@@ -39,13 +44,13 @@ export default function DeckLibrary({
 
   const visibleDecks = useMemo(() => {
     const query = deckSearch.trim().toLowerCase()
-    const filtered = query
-      ? paginatedDecks.filter(deck => {
-        const name = String(deck?.name || '').toLowerCase()
-        const format = String(deck?.format || '').toLowerCase()
-        return name.includes(query) || format.includes(query)
-      })
-      : paginatedDecks
+    const filtered = paginatedDecks.filter(deck => {
+      const name = String(deck?.name || '').toLowerCase()
+      const format = String(deck?.format || '').toLowerCase()
+      const passesSearch = !query || name.includes(query) || format.includes(query)
+      const passesPinnedFilter = !showPinnedOnly || pinnedDeckIds.includes(deck.id)
+      return passesSearch && passesPinnedFilter
+    })
 
     const pinIndex = new Map(pinnedDeckIds.map((id, idx) => [id, idx]))
     return [...filtered].sort((a, b) => {
@@ -56,7 +61,7 @@ export default function DeckLibrary({
       if (bPinned) return 1
       return 0
     })
-  }, [paginatedDecks, deckSearch, pinnedDeckIds])
+  }, [paginatedDecks, deckSearch, showPinnedOnly, pinnedDeckIds])
 
   const isPro = (user?.plan || '').toLowerCase() === 'pro'
   const canSaveMore = isPro || totalDecks < 1
@@ -332,6 +337,21 @@ export default function DeckLibrary({
     }))
   }
 
+  function isDeckListCollapsed(deckID) {
+    if (collapsedDeckLists[deckID] === undefined) return true
+    return Boolean(collapsedDeckLists[deckID])
+  }
+
+  function toggleDeckListCollapsed(deckID) {
+    setCollapsedDeckLists(prev => {
+      const currentlyCollapsed = prev[deckID] === undefined ? true : Boolean(prev[deckID])
+      return {
+        ...prev,
+        [deckID]: !currentlyCollapsed,
+      }
+    })
+  }
+
   function toggleDeckPinned(deckID) {
     setPinnedDeckIds(prev => {
       if (prev.includes(deckID)) {
@@ -475,24 +495,62 @@ export default function DeckLibrary({
     }
   }
 
+  async function updateDeckFormat(deck, nextFormat) {
+    const normalized = String(nextFormat || '').toLowerCase().trim()
+    if (!deck?.id || !FORMATS.includes(normalized)) return
+    if (String(deck.format || '').toLowerCase() === normalized) return
+
+    setError('')
+    setUpdatingDeckId(deck.id)
+    try {
+      const payload = {
+        name: deck.name,
+        format: normalized,
+        cards: Array.isArray(deck.cards) ? deck.cards : [],
+        is_public: Boolean(deck.is_public),
+        description: deck.description || '',
+        note: 'format-change',
+      }
+
+      const { res, data } = await apiRequest(`/decks/${deck.id}`, {
+        token,
+        method: 'PUT',
+        body: payload,
+      })
+      throwIfNotOK(res, data, messages.deckSaveFailed || 'Failed to update deck')
+
+      setDecks(prev => prev.map(item => (item.id === deck.id ? data : item)))
+      setDeckSummaries(prev => {
+        const existing = prev[deck.id]
+        if (!existing) return prev
+        return {
+          ...prev,
+          [deck.id]: {
+            ...existing,
+            format: normalized,
+          },
+        }
+      })
+      setDeckLegality(prev => {
+        const existing = prev[deck.id]
+        if (!existing) return prev
+        return {
+          ...prev,
+          [deck.id]: {
+            ...existing,
+          },
+        }
+      })
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setUpdatingDeckId('')
+    }
+  }
+
   return (
     <div className="card">
       <h2>📚 {messages.deckLibraryTitle}</h2>
-
-      <div className="decklib-meta">
-        <div>
-          <strong>{messages.currentDeck}</strong>
-          <div>{messages.cardsCount(activeSummary.cards)} · {activeSummary.format}</div>
-        </div>
-        <div>
-          <strong>{messages.planLabel}</strong>
-          <div>{isPro ? messages.planPro : messages.planFree}</div>
-        </div>
-        <div>
-          <strong>{messages.deckSlots}</strong>
-          <div>{isPro ? messages.unlimited : `${totalDecks}/1`}</div>
-        </div>
-      </div>
 
       <div className="decklib-actions">
         {!showSaveComposer ? (
@@ -578,6 +636,15 @@ export default function DeckLibrary({
             placeholder={messages.searchDecksPlaceholder || 'Search decks by name or format'}
             aria-label={messages.searchDecksPlaceholder || 'Search decks'}
           />
+          <button
+            type="button"
+            className={`btn-ghost decklib-filter-toggle${showPinnedOnly ? ' active' : ''}`}
+            onClick={() => setShowPinnedOnly(prev => !prev)}
+          >
+            {showPinnedOnly
+              ? (messages.showAllDecks || 'Mostra tutti')
+              : (messages.showPinnedOnly || 'Solo pinnati')}
+          </button>
         </div>
       )}
 
@@ -744,8 +811,9 @@ export default function DeckLibrary({
             const commanderBracket = summary?.commander_bracket
             const cards = mainDeckCards(activeDeck)
             const commanderCards = commanderDeckCards(activeDeck)
+            const listCollapsed = isDeckListCollapsed(activeDeck.id)
             const expanded = isDeckExpanded(activeDeck.id)
-            const visibleCards = expanded ? cards : cards.slice(0, 14)
+            const visibleCards = expanded ? cards : cards.slice(0, 10)
             const hiddenCards = Math.max(0, cards.length - visibleCards.length)
 
                 return (
@@ -793,6 +861,17 @@ export default function DeckLibrary({
                     >
                       {messages.useDeck}
                     </button>
+                    <select
+                      value={String(activeDeck.format || 'standard').toLowerCase()}
+                      onChange={e => updateDeckFormat(activeDeck, e.target.value)}
+                      disabled={updatingDeckId === activeDeck.id}
+                      aria-label={messages.changeDeckFormat || 'Change deck format'}
+                      className="decklib-format-select"
+                    >
+                      {FORMATS.map(fmt => (
+                        <option key={fmt} value={fmt}>{fmt.charAt(0).toUpperCase() + fmt.slice(1)}</option>
+                      ))}
+                    </select>
                     <button
                       type="button"
                       className="btn-ghost"
@@ -800,57 +879,70 @@ export default function DeckLibrary({
                     >
                       {messages.deleteDeck}
                     </button>
-                  </div>
-
-                  <div className="decklib-grid-head" aria-hidden="true">
-                    <span>Qty</span>
-                    <span>Card</span>
-                  </div>
-                  <div className="decklib-card-grid">
-                    {visibleCards.map((c, idx) => {
-                      const quantity = Math.max(1, Number(c.quantity) || 1)
-                      const cardName = (c.card_name || c.name || '').trim()
-                      if (!cardName) return null
-                      const meta = cardMetadata[cardName.toLowerCase()]
-                      const illegalByFormat = deckLegality[activeDeck.id]?.cardIllegalByFormat?.[normalizedFormat] || {}
-                      const isIllegalCard = Boolean(illegalByFormat[cardName.toLowerCase()])
-                      const rarity = String(meta?.rarity || '').trim().toUpperCase()
-                      const setCode = String(meta?.set_code || '').trim().toUpperCase()
-                      return (
-                        <div
-                          key={`${activeDeck.id}-card-${idx}`}
-                          className={`decklib-card-row${isIllegalCard ? ' is-illegal' : ''}`}
-                          title={isIllegalCard ? `${messages.legalityIllegalLabel} (${normalizedFormat})` : undefined}
-                        >
-                          <span className="decklib-card-qty">{quantity}x</span>
-                          <div className="decklib-card-main">
-                            <CardHoverPreview cardName={cardName} token={token} messages={messages} metadata={meta}>
-                              <span className="decklib-card-name">
-                                {isIllegalCard ? `Illegal - ${cardName}` : cardName}
-                              </span>
-                            </CardHoverPreview>
-                            {(rarity || setCode) && (
-                              <span className="decklib-card-tags">
-                                {rarity && <span className={`builder-badge rarity-${badgeClassName(rarity)}`}>{rarity}</span>}
-                                {setCode && <span className="builder-badge builder-badge-set">{setCode}</span>}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-
-                  {hiddenCards > 0 && (
                     <button
                       type="button"
-                      className="btn-ghost decklib-expand-btn"
-                      onClick={() => toggleDeckExpanded(activeDeck.id)}
+                      className="btn-ghost"
+                      onClick={() => toggleDeckListCollapsed(activeDeck.id)}
                     >
-                      {expanded
-                        ? (messages.showLessCards || 'Mostra meno')
-                        : `+${hiddenCards} ${messages.moreCards || 'altre carte'}`}
+                      {listCollapsed
+                        ? (messages.expandDeckList || 'Espandi lista')
+                        : (messages.collapseDeckList || 'Comprimi lista')}
                     </button>
+                  </div>
+
+                  {!listCollapsed && (
+                    <>
+                      <div className="decklib-grid-head" aria-hidden="true">
+                        <span>Qty</span>
+                        <span>Card</span>
+                      </div>
+                      <div className="decklib-card-grid">
+                        {visibleCards.map((c, idx) => {
+                          const quantity = Math.max(1, Number(c.quantity) || 1)
+                          const cardName = (c.card_name || c.name || '').trim()
+                          if (!cardName) return null
+                          const meta = cardMetadata[cardName.toLowerCase()]
+                          const illegalByFormat = deckLegality[activeDeck.id]?.cardIllegalByFormat?.[normalizedFormat] || {}
+                          const isIllegalCard = Boolean(illegalByFormat[cardName.toLowerCase()])
+                          const rarity = String(meta?.rarity || '').trim().toUpperCase()
+                          const setCode = String(meta?.set_code || '').trim().toUpperCase()
+                          return (
+                            <div
+                              key={`${activeDeck.id}-card-${idx}`}
+                              className={`decklib-card-row${isIllegalCard ? ' is-illegal' : ''}`}
+                              title={isIllegalCard ? `${messages.legalityIllegalLabel} (${normalizedFormat})` : undefined}
+                            >
+                              <span className="decklib-card-qty">{quantity}x</span>
+                              <div className="decklib-card-main">
+                                <CardHoverPreview cardName={cardName} token={token} messages={messages} metadata={meta}>
+                                  <span className="decklib-card-name">
+                                    {isIllegalCard ? `Illegal - ${cardName}` : cardName}
+                                  </span>
+                                </CardHoverPreview>
+                                {(rarity || setCode) && (
+                                  <span className="decklib-card-tags">
+                                    {rarity && <span className={`builder-badge rarity-${badgeClassName(rarity)}`}>{rarity}</span>}
+                                    {setCode && <span className="builder-badge builder-badge-set">{setCode}</span>}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+
+                      {hiddenCards > 0 && (
+                        <button
+                          type="button"
+                          className="btn-ghost decklib-expand-btn"
+                          onClick={() => toggleDeckExpanded(activeDeck.id)}
+                        >
+                          {expanded
+                            ? (messages.showLessCards || 'Mostra meno')
+                            : `+${hiddenCards} ${messages.moreCards || 'altre carte'}`}
+                        </button>
+                      )}
+                    </>
                   )}
                 </div>
               </div>

@@ -731,11 +731,24 @@ button {
 }
 
 .decklib-search-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
   margin-bottom: 10px;
 }
 
 .decklib-search-row input {
-  width: 100%;
+  flex: 1;
+}
+
+.decklib-filter-toggle {
+  white-space: nowrap;
+}
+
+.decklib-filter-toggle.active {
+  color: var(--text);
+  border-color: var(--primary-h);
+  background: rgba(124,92,191,.16);
 }
 
 .decklib-tabs {
@@ -863,8 +876,18 @@ button {
 
 .decklib-item-actions-inline {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
   margin-bottom: 10px;
+}
+
+.decklib-format-select {
+  min-width: 128px;
+  width: auto;
+  padding: 8px 10px;
+  font-size: .8rem;
+  border-radius: 999px;
 }
 
 .decklib-item-top {
@@ -1014,6 +1037,15 @@ button {
 
   .decklib-save-row {
     grid-template-columns: 1fr;
+  }
+
+  .decklib-search-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .decklib-filter-toggle {
+    width: 100%;
   }
 
   .decklib-tab-btn {
@@ -1741,8 +1773,10 @@ button {
     width: 100%;
   }
 
-  .decklib-item-actions-inline .btn-ghost {
+  .decklib-item-actions-inline .btn-ghost,
+  .decklib-item-actions-inline .decklib-format-select {
     flex: 1;
+    width: 100%;
   }
 
   .decklib-tabs {

@@ -23,6 +23,9 @@ const messages = {
   unknownLabel: 'N/A',
   useDeck: 'Use deck',
   deleteDeck: 'Delete deck',
+  expandDeckList: 'Expand deck list',
+  collapseDeckList: 'Collapse deck list',
+  changeDeckFormat: 'Change deck format',
 }
 
 function jsonResponse(body, status = 200) {
@@ -271,5 +274,77 @@ describe('DeckLibrary', () => {
       expect(tabs[0]).toHaveTextContent('Aggro Rush')
       expect(tabs[1]).toHaveTextContent('Control Shell')
     })
+  })
+
+  it('updates deck format inline and toggles compressed list', async () => {
+    let deckData = {
+      id: 'deck-fmt',
+      user_id: 'user-1',
+      name: 'Format Shift',
+      format: 'standard',
+      is_public: false,
+      cards: [{ card_name: 'Plains', quantity: 20, is_sideboard: false }],
+    }
+
+    const fetchMock = vi.fn(async (url, options = {}) => {
+      if (url === '/api/v1/decks?page=1&limit=3' && options.method === 'GET') {
+        return jsonResponse({
+          data: [deckData],
+          total: 1,
+          page: 1,
+          limit: 3,
+        })
+      }
+      if (url === '/api/v1/decks/deck-fmt/summary' && options.method === 'GET') {
+        return jsonResponse({ deck_id: 'deck-fmt', legality: { standard: { is_legal: true, illegal_cards: [] } } })
+      }
+      if (url === '/api/v1/cards/metadata/batch' && options.method === 'POST') {
+        return jsonResponse({ items: [] })
+      }
+      if (url === '/api/v1/decks/deck-fmt' && options.method === 'PUT') {
+        const parsedBody = JSON.parse(options.body)
+        deckData = {
+          ...deckData,
+          ...parsedBody,
+          id: 'deck-fmt',
+          user_id: 'user-1',
+        }
+        return jsonResponse(deckData)
+      }
+      throw new Error(`Unhandled request in test: ${String(url)} ${String(options.method)}`)
+    })
+
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(
+      <DeckLibrary
+        token="token-123"
+        user={{ id: 'user-1', plan: 'pro' }}
+        messages={messages}
+        currentDecklist={'20 Plains'}
+        currentFormat="standard"
+      />,
+    )
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Format Shift').length).toBeGreaterThan(0)
+      expect(screen.getByRole('button', { name: 'Expand deck list' })).toBeInTheDocument()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Expand deck list' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('Qty')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Collapse deck list' })).toBeInTheDocument()
+    })
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Change deck format' }), { target: { value: 'modern' } })
+
+    await waitFor(() => {
+      const tabs = screen.getAllByRole('tab')
+      expect(tabs[0]).toHaveTextContent('modern')
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/decks/deck-fmt', expect.objectContaining({ method: 'PUT' }))
   })
 })
