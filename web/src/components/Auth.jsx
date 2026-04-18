@@ -93,7 +93,13 @@ export default function Auth({ onLogin, locale, messages, onLocaleChange }) {
         if (!data?.token || !data?.user) {
           throw new Error(data?.message || 'Request failed')
         }
-        onLogin(data.token, data.user, data.refresh_token || '')
+        const maybeSessionMeta = Number(data?.session_ttl_minutes || 0) > 0
+          ? {
+              session_ttl_minutes: Number(data.session_ttl_minutes),
+              session_expires_at: String(data?.session_expires_at || ''),
+            }
+          : null
+        onLogin(data.token, data.user, data.refresh_token || '', maybeSessionMeta)
         return
       }
 

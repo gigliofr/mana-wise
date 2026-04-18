@@ -7,6 +7,8 @@ export const translations = {
   it: {
     appTagline: 'Analizzatore di mazzi Magic: The Gathering',
     signOut: 'Esci',
+    sessionDurationLabel: value => `Sessione ${value}`,
+    sessionRemainingLabel: value => `restano ${value}`,
     signIn: 'Accedi',
     createAccount: 'Crea account',
     noAccount: 'Non hai un account?',
@@ -465,6 +467,8 @@ export const translations = {
   en: {
     appTagline: 'Magic: The Gathering deck analyzer',
     signOut: 'Sign out',
+    sessionDurationLabel: value => `Session ${value}`,
+    sessionRemainingLabel: value => `${value} left`,
     signIn: 'Sign in',
     createAccount: 'Create account',
     noAccount: 'No account?',

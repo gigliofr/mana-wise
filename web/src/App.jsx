@@ -18,11 +18,77 @@ const REFRESH_TOKEN_KEY = 'manawise_refresh_token'
 const USER_KEY  = 'manawise_user'
 const LOCALE_KEY = 'manawise_locale'
 const THEME_KEY = 'manawise_theme'
+const SESSION_META_KEY = 'manawise_session_meta'
+
+function safeReadJSON(raw) {
+  if (!raw) return null
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return null
+  }
+}
+
+function decodeJWTPayload(token) {
+  const parts = String(token || '').split('.')
+  if (parts.length < 2) return null
+  try {
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/')
+    const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, '=')
+    return JSON.parse(atob(padded))
+  } catch {
+    return null
+  }
+}
+
+function buildSessionMetaFromToken(token, fallback = null) {
+  const payload = decodeJWTPayload(token)
+  const exp = Number(payload?.exp || 0)
+  const iat = Number(payload?.iat || 0)
+  if (exp > 0) {
+    const fallbackDuration = Number(fallback?.durationMinutes || fallback?.session_ttl_minutes || 0)
+    const durationMinutes = iat > 0 && exp > iat
+      ? Math.max(1, Math.round((exp - iat) / 60))
+      : (fallbackDuration > 0 ? fallbackDuration : 0)
+    return {
+      issuedAt: iat > 0 ? new Date(iat * 1000).toISOString() : '',
+      expiresAt: new Date(exp * 1000).toISOString(),
+      durationMinutes,
+    }
+  }
+
+  const ttlMinutes = Number(fallback?.durationMinutes || fallback?.session_ttl_minutes || 0)
+  if (ttlMinutes > 0) {
+    const now = Date.now()
+    return {
+      issuedAt: new Date(now).toISOString(),
+      expiresAt: new Date(now + ttlMinutes * 60 * 1000).toISOString(),
+      durationMinutes: ttlMinutes,
+    }
+  }
+  return null
+}
+
+function formatDurationMinutes(totalMinutes, localeCode) {
+  const minutes = Math.max(0, Number(totalMinutes) || 0)
+  const hours = Math.floor(minutes / 60)
+  const rem = minutes % 60
+  if (localeCode === 'it') {
+    if (hours > 0 && rem > 0) return `${hours}h ${rem}m`
+    if (hours > 0) return `${hours}h`
+    return `${rem}m`
+  }
+  if (hours > 0 && rem > 0) return `${hours}h ${rem}m`
+  if (hours > 0) return `${hours}h`
+  return `${rem}m`
+}
 
 function App() {
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) || '')
   const [locale, setLocale] = useState(() => localStorage.getItem(LOCALE_KEY) || 'it')
   const [theme, setTheme] = useState(() => localStorage.getItem(THEME_KEY) || 'night')
+  const [sessionMeta, setSessionMeta] = useState(() => safeReadJSON(localStorage.getItem(SESSION_META_KEY)))
+  const [clockNow, setClockNow] = useState(() => Date.now())
   const [user,  setUser]  = useState(() => {
     try { return JSON.parse(localStorage.getItem(USER_KEY) || 'null') } catch { return null }
   })
@@ -39,22 +105,47 @@ function App() {
   const isLegalPage = ['/privacy', '/cookie', '/contatti'].includes(currentPath)
   const hasActivePro = user?.plan === 'pro' && (!user?.pro_until || new Date(user.pro_until) > new Date())
 
-  function handleSessionUpdate(nextToken, nextRefreshToken, nextUser) {
+  useEffect(() => {
+    const intervalId = window.setInterval(() => setClockNow(Date.now()), 60_000)
+    return () => window.clearInterval(intervalId)
+  }, [])
+
+  function resolveSessionMeta(nextToken, maybeMeta) {
+    return buildSessionMetaFromToken(nextToken, maybeMeta)
+  }
+
+  function handleSessionUpdate(nextToken, nextRefreshToken, nextUser, nextSessionMeta = null) {
     localStorage.setItem(TOKEN_KEY, nextToken)
     if (nextRefreshToken) {
       localStorage.setItem(REFRESH_TOKEN_KEY, nextRefreshToken)
     }
     localStorage.setItem(USER_KEY, JSON.stringify(nextUser))
+    const normalizedSession = resolveSessionMeta(nextToken, nextSessionMeta)
+    if (normalizedSession) {
+      localStorage.setItem(SESSION_META_KEY, JSON.stringify(normalizedSession))
+      setSessionMeta(normalizedSession)
+    } else {
+      localStorage.removeItem(SESSION_META_KEY)
+      setSessionMeta(null)
+    }
     setToken(nextToken)
     setUser(nextUser)
   }
 
-  function handleLogin(token, user, refreshToken = '') {
+  function handleLogin(token, user, refreshToken = '', nextSessionMeta = null) {
     localStorage.setItem(TOKEN_KEY, token)
     if (refreshToken) {
       localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken)
     }
     localStorage.setItem(USER_KEY, JSON.stringify(user))
+    const normalizedSession = resolveSessionMeta(token, nextSessionMeta)
+    if (normalizedSession) {
+      localStorage.setItem(SESSION_META_KEY, JSON.stringify(normalizedSession))
+      setSessionMeta(normalizedSession)
+    } else {
+      localStorage.removeItem(SESSION_META_KEY)
+      setSessionMeta(null)
+    }
     setToken(token)
     setUser(user)
   }
@@ -63,9 +154,21 @@ function App() {
     localStorage.removeItem(TOKEN_KEY)
     localStorage.removeItem(REFRESH_TOKEN_KEY)
     localStorage.removeItem(USER_KEY)
+    localStorage.removeItem(SESSION_META_KEY)
     setToken('')
     setUser(null)
+    setSessionMeta(null)
   }
+
+  const sessionDurationMinutes = Number(sessionMeta?.durationMinutes || 0)
+  const sessionDurationText = sessionDurationMinutes > 0
+    ? formatDurationMinutes(sessionDurationMinutes, locale)
+    : ''
+  const expiresMs = sessionMeta?.expiresAt ? new Date(sessionMeta.expiresAt).getTime() : 0
+  const remainingMinutes = expiresMs > 0 ? Math.max(0, Math.ceil((expiresMs - clockNow) / 60000)) : 0
+  const sessionRemainingText = remainingMinutes > 0
+    ? formatDurationMinutes(remainingMinutes, locale)
+    : ''
 
   function handleLocaleChange(nextLocale) {
     localStorage.setItem(LOCALE_KEY, nextLocale)
@@ -191,10 +294,18 @@ function App() {
             <button type="button" className="btn-ghost" onClick={handleThemeToggle}>
               {theme === 'night' ? '☀️ Giorno' : '🌙 Notte'}
             </button>
-            <span style={{ fontSize: '.85rem', color: 'var(--muted)', alignSelf: 'center' }}>
-              {user?.name} · <strong style={{ color: user?.plan === 'pro' ? '#e5a22a' : 'var(--muted)' }}>
-                {user?.plan?.toUpperCase()}
-              </strong>
+            <span style={{ fontSize: '.85rem', color: 'var(--muted)', alignSelf: 'center', display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-end', lineHeight: 1.2 }}>
+              <span>
+                {user?.name} · <strong style={{ color: user?.plan === 'pro' ? '#e5a22a' : 'var(--muted)' }}>
+                  {user?.plan?.toUpperCase()}
+                </strong>
+              </span>
+              {(sessionDurationText || sessionRemainingText) && (
+                <span style={{ fontSize: '.72rem', opacity: .9 }}>
+                  {messages.sessionDurationLabel?.(sessionDurationText || '--') || `Session ${sessionDurationText || '--'}`}
+                  {sessionRemainingText ? ` · ${messages.sessionRemainingLabel?.(sessionRemainingText) || `left ${sessionRemainingText}`}` : ''}
+                </span>
+              )}
             </span>
             <button
               type="button"

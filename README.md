@@ -170,6 +170,8 @@ APP_TIMEZONE=Europe/Rome
 MONGODB_URI=...
 MONGODB_DB_NAME=manawise
 JWT_SECRET=...
+JWT_SESSION_TTL_MINUTES=4320
+JWT_REFRESH_TTL_MINUTES=10080
 JWT_EXPIRY_HOURS=72
 MANAWISE_ALLOWED_ORIGINS=https://your-frontend-domain
 FRONTEND_RESET_PASSWORD_URL=https://your-frontend-domain
@@ -188,6 +190,9 @@ Email handling uses the same SMTP variables as the previous deployment flow, so 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `MANAWISE_ALLOWED_ORIGINS` | `*` in development, empty in non-development | Comma-separated allowlist of origins for CORS. In non-development, when empty, cross-origin requests are blocked by default. |
+| `JWT_SESSION_TTL_MINUTES` | unset | Access token session duration in minutes. If unset, `JWT_EXPIRY_HOURS` is used as backward-compatible fallback. |
+| `JWT_REFRESH_TTL_MINUTES` | `10080` | Refresh token duration in minutes. |
+| `JWT_EXPIRY_HOURS` | `72` | Legacy fallback for access token duration, used only when `JWT_SESSION_TTL_MINUTES` is not set. |
 | `SMTP_HOST` | — | SMTP host for transactional auth emails |
 | `SMTP_PORT` | — | SMTP port |
 | `SMTP_USER` | — | SMTP username |

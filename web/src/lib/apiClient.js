@@ -79,7 +79,20 @@ export async function apiRequest(path, options = {}) {
     const refreshData = await parseMaybeJSON(refreshRes)
 
     if (refreshRes.ok && refreshData?.token && refreshData?.refresh_token) {
-      sessionHandlers.onSessionUpdate?.(refreshData.token, refreshData.refresh_token, refreshData.user)
+      const hasSessionTTL = Number(refreshData?.session_ttl_minutes || 0) > 0
+      if (hasSessionTTL) {
+        sessionHandlers.onSessionUpdate?.(
+          refreshData.token,
+          refreshData.refresh_token,
+          refreshData.user,
+          {
+            session_ttl_minutes: Number(refreshData.session_ttl_minutes),
+            session_expires_at: String(refreshData?.session_expires_at || ''),
+          },
+        )
+      } else {
+        sessionHandlers.onSessionUpdate?.(refreshData.token, refreshData.refresh_token, refreshData.user)
+      }
       result = await performRequest(refreshData.token)
     } else {
       sessionHandlers.onUnauthorized?.()
