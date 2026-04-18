@@ -6,6 +6,9 @@ import "strings"
 type CommanderBracketConfig struct {
 	Enabled                bool     `json:"enabled"`
 	DecisiveCards          []string `json:"decisive_cards"`
+	ComboCards             []string `json:"combo_cards"`
+	ExtraTurnCards         []string `json:"extra_turn_cards"`
+	MassLandDenialCards    []string `json:"mass_land_denial_cards"`
 	TutorKeywords          []string `json:"tutor_keywords"`
 	ExtraTurnKeywords      []string `json:"extra_turn_keywords"`
 	MassLandDenialKeywords []string `json:"mass_land_denial_keywords"`
@@ -27,10 +30,13 @@ func DefaultCommanderBracketConfig() CommanderBracketConfig {
 	return CommanderBracketConfig{
 		Enabled:                true,
 		DecisiveCards:          DefaultCommanderDecisiveCards(),
+		ComboCards:             DefaultCommanderComboCards(),
+		ExtraTurnCards:         DefaultCommanderExtraTurnCards(),
+		MassLandDenialCards:    DefaultCommanderMassLandDenialCards(),
 		TutorKeywords:          []string{"search your library for", "tutor", "demonic", "vampiric", "enlightened", "worldly", "mystical"},
-		ExtraTurnKeywords:      []string{"take an extra turn", "take another turn", "after this phase, there is an additional combat phase", "additional combat phase"},
-		MassLandDenialKeywords: []string{"destroy all lands", "sacrifice all lands", "lands you control don't untap", "each player sacrifices a land", "return all lands"},
-		ComboKeywords:          []string{"infinite", "loop", "create a copy of", "untap target", "repeat this process"},
+		ExtraTurnKeywords:      []string{"take an extra turn after this one", "take an extra turn"},
+		MassLandDenialKeywords: []string{"destroy all lands", "each player sacrifices all lands", "lands don't untap", "players can't play lands"},
+		ComboKeywords:          nil,
 		FastManaKeywords:       []string{"add two mana", "add three mana", "add four mana", "add {c}{c}", "treasure token", "mana crypt", "sol ring", "chrome mox", "mox", "lotus"},
 		Bracket1MaxSignals:     0,
 		Bracket2MaxSignals:     2,
@@ -41,6 +47,49 @@ func DefaultCommanderBracketConfig() CommanderBracketConfig {
 		CedhComboThreshold:     2,
 		CedhFastManaThreshold:  3,
 		CedhDecisiveThreshold:  4,
+	}
+}
+
+// DefaultCommanderComboCards returns a conservative list of cards strongly associated with fast two-card combo shells.
+func DefaultCommanderComboCards() []string {
+	return []string{
+		"Thassa's Oracle",
+		"Demonic Consultation",
+		"Tainted Pact",
+		"Underworld Breach",
+		"Dramatic Reversal",
+		"Dualcaster Mage",
+		"Food Chain",
+		"Heliod, Sun-Crowned",
+		"Walking Ballista",
+		"Sanguine Bond",
+		"Exquisite Blood",
+	}
+}
+
+// DefaultCommanderExtraTurnCards returns common extra-turn effects used for turn chains.
+func DefaultCommanderExtraTurnCards() []string {
+	return []string{
+		"Time Warp",
+		"Temporal Manipulation",
+		"Capture of Jingzhou",
+		"Nexus of Fate",
+		"Expropriate",
+		"Temporal Mastery",
+		"Walk the Aeons",
+	}
+}
+
+// DefaultCommanderMassLandDenialCards returns common mass land denial cards.
+func DefaultCommanderMassLandDenialCards() []string {
+	return []string{
+		"Armageddon",
+		"Ravages of War",
+		"Jokulhaups",
+		"Cataclysm",
+		"Ruination",
+		"Winter Orb",
+		"Static Orb",
 	}
 }
 

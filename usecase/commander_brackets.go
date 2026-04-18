@@ -59,6 +59,18 @@ func collectCommanderSignals(cards []*domain.Card, quantities map[string]int, cf
 	for _, name := range cfg.DecisiveCards {
 		decisiveSet[domain.NormalizeCommanderCardName(name)] = struct{}{}
 	}
+	comboSet := make(map[string]struct{}, len(cfg.ComboCards))
+	for _, name := range cfg.ComboCards {
+		comboSet[domain.NormalizeCommanderCardName(name)] = struct{}{}
+	}
+	extraTurnSet := make(map[string]struct{}, len(cfg.ExtraTurnCards))
+	for _, name := range cfg.ExtraTurnCards {
+		extraTurnSet[domain.NormalizeCommanderCardName(name)] = struct{}{}
+	}
+	massLandSet := make(map[string]struct{}, len(cfg.MassLandDenialCards))
+	for _, name := range cfg.MassLandDenialCards {
+		massLandSet[domain.NormalizeCommanderCardName(name)] = struct{}{}
+	}
 
 	tutorMatchers := normalizeTerms(append([]string{
 		"search your library for a card",
@@ -74,7 +86,6 @@ func collectCommanderSignals(cards []*domain.Card, quantities map[string]int, cf
 	}, cfg.TutorKeywords...))
 	extraTurnMatchers := normalizeTerms(cfg.ExtraTurnKeywords)
 	massLandMatchers := normalizeTerms(cfg.MassLandDenialKeywords)
-	comboMatchers := normalizeTerms(cfg.ComboKeywords)
 	fastManaMatchers := normalizeTerms(cfg.FastManaKeywords)
 
 	appendUnique := func(dst []string, name string) []string {
@@ -118,13 +129,13 @@ func collectCommanderSignals(cards []*domain.Card, quantities map[string]int, cf
 		if matchesAny(text, tutorMatchers) {
 			signals.TutorCards = appendUnique(signals.TutorCards, name)
 		}
-		if matchesAny(text, extraTurnMatchers) {
+		if _, ok := extraTurnSet[nameKey]; ok || matchesAny(text, extraTurnMatchers) {
 			signals.ExtraTurnCards = appendUnique(signals.ExtraTurnCards, name)
 		}
-		if matchesAny(text, massLandMatchers) {
+		if _, ok := massLandSet[nameKey]; ok || matchesAny(text, massLandMatchers) {
 			signals.MassLandDenialCards = appendUnique(signals.MassLandDenialCards, name)
 		}
-		if matchesAny(text, comboMatchers) {
+		if _, ok := comboSet[nameKey]; ok {
 			signals.ComboCards = appendUnique(signals.ComboCards, name)
 		}
 		if matchesAny(text, fastManaMatchers) {
@@ -151,39 +162,36 @@ func classifyCommanderBracket(cfg domain.CommanderBracketConfig, signals domain.
 	massDenial := len(signals.MassLandDenialCards)
 	comboCount := len(signals.ComboCards)
 	fastManaCount := len(signals.FastManaCards)
-	totalSignals := tutorCount + extraTurns + massDenial + comboCount + fastManaCount
+	forbiddenSignals := extraTurns + massDenial
+	competitiveSignals := comboCount + fastManaCount + tutorCount
 
-	if massDenial > 0 {
-		if fastManaCount >= cfg.CedhFastManaThreshold || comboCount >= cfg.CedhComboThreshold {
-			return 5, "Competitive", []string{"mass land denial plus competitive pressure signals"}
-		}
-		return 4, "Optimized", []string{"mass land denial pushes the deck beyond the lower brackets"}
-	}
-
-	if extraTurns >= 2 || comboCount >= cfg.CedhComboThreshold || fastManaCount >= cfg.CedhFastManaThreshold || tutorCount >= cfg.CedhTutorThreshold || decisiveCount >= cfg.CedhDecisiveThreshold {
-		return 5, "cEDH", []string{"competitive-density signals exceeded the cEDH thresholds"}
-	}
-
-	if decisiveCount > cfg.Bracket3MaxDecisive || totalSignals > cfg.Bracket4MaxSignals {
-		return 4, "Optimized", []string{"the deck carries too many advanced game-plan signals for bracket 3"}
-	}
-
-	if decisiveCount == 0 && totalSignals == 0 {
+	if forbiddenSignals == 0 && decisiveCount == 0 && fastManaCount == 0 && tutorCount == 0 {
 		if signals.AverageCMC >= 3.2 || signals.LandCount >= 37 {
 			return 1, "Casual", []string{"no advanced commander signals and a slower mana profile"}
 		}
 		return 2, "Upgraded", []string{"no advanced commander signals, but the shell is tighter than a raw precon"}
 	}
 
-	if decisiveCount == 0 && totalSignals <= cfg.Bracket2MaxSignals {
-		return 2, "Upgraded", []string{"limited commander-specific pressure signals"}
+	if forbiddenSignals == 0 && decisiveCount == 0 && fastManaCount <= cfg.Bracket2MaxSignals {
+		return 2, "Upgraded", []string{"no game changers and no forbidden patterns, with modest optimization"}
 	}
 
-	if decisiveCount <= cfg.Bracket3MaxDecisive && totalSignals <= cfg.Bracket3MaxSignals {
-		return 3, "Tuned", []string{"up to three decisive cards and limited support for higher brackets"}
+	if forbiddenSignals == 0 && decisiveCount > 0 && decisiveCount <= cfg.Bracket3MaxDecisive {
+		return 3, "Tuned", []string{"up to three game changer cards without forbidden patterns"}
 	}
 
-	return 4, "Optimized", []string{"the deck is tuned beyond bracket 3 but does not trip the competitive thresholds"}
+	if comboCount >= cfg.CedhComboThreshold &&
+		fastManaCount >= cfg.CedhFastManaThreshold &&
+		tutorCount >= cfg.CedhTutorThreshold &&
+		decisiveCount >= cfg.CedhDecisiveThreshold {
+		return 5, "cEDH", []string{"competitive-density signals exceeded the cEDH thresholds"}
+	}
+
+	if decisiveCount > cfg.Bracket3MaxDecisive || competitiveSignals > cfg.Bracket4MaxSignals || forbiddenSignals > 0 {
+		return 4, "Optimized", []string{"deck includes high-power patterns beyond bracket 1-3 constraints"}
+	}
+
+	return 3, "Tuned", []string{"deck has some commander pressure but not enough to justify bracket 4 or 5"}
 }
 
 func bracketLabel(bracket int) string {
