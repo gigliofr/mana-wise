@@ -30,6 +30,7 @@ type AnalyzeDeckResponse struct {
 	Result     domain.AnalysisResult
 	RawCards   []*domain.Card // resolved domain cards
 	Quantities map[string]int // cardID -> total quantity in decklist
+	Warnings   []string       // non-fatal resolution issues encountered during analysis
 	Commander  *CommanderInfo // populated for "commander" format decks
 	Sideboard  *SideboardInfo // populated when decklist contains a Sideboard section
 }
@@ -139,6 +140,7 @@ func (uc *AnalyzeDeckUseCase) Execute(ctx context.Context, req AnalyzeDeckReques
 
 	entryCardMap := make(map[string]*domain.Card, len(entries))
 	var missingEntries []deckEntry
+	warnings := make([]string, 0)
 
 	for _, e := range entries {
 		entryKey := e.identityKey()
@@ -212,12 +214,15 @@ func (uc *AnalyzeDeckUseCase) Execute(ctx context.Context, req AnalyzeDeckReques
 		for _, r := range results {
 			if r.Err != nil {
 				if r.Input.hasSetCollector() {
-					return nil, fmt.Errorf("resolve card %q (%s/%s): %w", r.Input.name, r.Input.setCode, r.Input.collectorNumber, r.Err)
+					warnings = append(warnings, fmt.Sprintf("Could not resolve card %q (%s/%s): %v; skipping", r.Input.name, r.Input.setCode, r.Input.collectorNumber, r.Err))
+				} else {
+					warnings = append(warnings, fmt.Sprintf("Could not resolve card %q: %v; skipping", r.Input.name, r.Err))
 				}
-				return nil, fmt.Errorf("resolve card %q: %w", r.Input.name, r.Err)
+				continue
 			}
 			if r.Output == nil {
-				return nil, fmt.Errorf("resolve card %q: resolver returned nil output", r.Input.name)
+				warnings = append(warnings, fmt.Sprintf("Could not resolve card %q: resolver returned nil output; skipping", r.Input.name))
+				continue
 			}
 			entryCardMap[r.Input.identityKey()] = r.Output
 			// Keep lookup keyed by the original decklist name to support fuzzy/localized matches.
@@ -243,16 +248,19 @@ func (uc *AnalyzeDeckUseCase) Execute(ctx context.Context, req AnalyzeDeckReques
 			card, ok = dbIndex[strings.ToLower(e.name)]
 		}
 		if !ok {
-			return nil, fmt.Errorf("card not found: %q", e.name)
+			continue
 		}
 		if card == nil {
-			return nil, fmt.Errorf("card resolved as nil: %q", e.name)
+			continue
 		}
 		if !seenMain[card.ID] {
 			mainCards = append(mainCards, card)
 			seenMain[card.ID] = true
 		}
 		quantities[card.ID] += e.qty
+	}
+	if len(mainEntries) > 0 && len(mainCards) == 0 {
+		return nil, fmt.Errorf("no cards could be resolved from decklist")
 	}
 
 	// Build sideboard quantities (cards resolved independently above).
@@ -268,10 +276,10 @@ func (uc *AnalyzeDeckUseCase) Execute(ctx context.Context, req AnalyzeDeckReques
 				card, ok = dbIndex[strings.ToLower(e.name)]
 			}
 			if !ok {
-				return nil, fmt.Errorf("sideboard card not found: %q", e.name)
+				continue
 			}
 			if card == nil {
-				return nil, fmt.Errorf("sideboard card resolved as nil: %q", e.name)
+				continue
 			}
 			sbQty[card.ID] += e.qty
 		}
@@ -292,10 +300,10 @@ func (uc *AnalyzeDeckUseCase) Execute(ctx context.Context, req AnalyzeDeckReques
 				card, ok = dbIndex[strings.ToLower(e.name)]
 			}
 			if !ok {
-				return nil, fmt.Errorf("commander card not found: %q", e.name)
+				continue
 			}
 			if card == nil {
-				return nil, fmt.Errorf("commander card resolved as nil: %q", e.name)
+				continue
 			}
 			if !seen[card.ID] {
 				cmdCards = append(cmdCards, card)
@@ -318,6 +326,7 @@ func (uc *AnalyzeDeckUseCase) Execute(ctx context.Context, req AnalyzeDeckReques
 		},
 		RawCards:   mainCards,
 		Quantities: quantities,
+		Warnings:   warnings,
 		Commander:  commanderInfo,
 		Sideboard:  sideboardInfo,
 	}

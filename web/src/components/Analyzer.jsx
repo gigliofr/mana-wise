@@ -320,6 +320,12 @@ export default function Analyzer({ token, user, locale, messages, decklist: deck
       {/* Error */}
       {error && <div className="banner banner-error">{error}</div>}
 
+      {!error && result?.warnings?.length > 0 && (
+        <div className="banner banner-info" style={{ marginTop: 16 }}>
+          {result.warnings.join(' ')}
+        </div>
+      )}
+
       {/* Results */}
       {result && (
         <div className="card">

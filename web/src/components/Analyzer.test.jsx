@@ -21,6 +21,7 @@ const messages = {
   analyzing: 'Analyzing',
   analyzeDeck: 'Analyze deck',
   analysisFailed: 'Analysis failed',
+  analyzedIn: ms => `Analyzed in ${ms} ms`,
   freePlanBanner: remaining => `Free plan: ${remaining} analyses remaining today.`,
   upgradeToPro: 'Upgrade to Pro',
 }
@@ -180,6 +181,60 @@ describe('Analyzer', () => {
 
     await waitFor(() => {
       expect(screen.getByText('Failed to fetch')).toBeInTheDocument()
+    })
+  })
+
+  it('shows analysis warnings without failing the result card', async () => {
+    const fetchMock = vi.fn(async (url, options = {}) => {
+      if (url === '/api/v1/decks' && options.method === 'GET') {
+        return jsonResponse([])
+      }
+      if (url === '/api/v1/analyze' && options.method === 'POST') {
+        return jsonResponse({
+          deterministic: {
+            format: 'modern',
+            mana: {
+              total_cards: 4,
+              average_cmc: 1,
+              land_count: 0,
+              ideal_land_count: 0,
+              distribution: [],
+              type_distribution: {},
+              color_distribution: {},
+              suggestions: [],
+            },
+            interaction: { archetype: 'aggro', total_score: 10, breakdowns: [], suggestions: [] },
+            latency_ms: 12,
+          },
+          ai_suggestions: '',
+          latency_ms: 12,
+          legality: {},
+          warnings: ['Could not resolve card "Missing Card": not found; skipping'],
+        })
+      }
+      if (url === '/api/v1/deck/classify' && options.method === 'POST') {
+        return jsonResponse({ archetype: 'aggro' })
+      }
+      throw new Error(`Unhandled request: ${String(url)} ${String(options.method)}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(
+      <Analyzer
+        token="token-123"
+        user={{ id: 'user-1', plan: 'pro' }}
+        locale="en"
+        messages={messages}
+        decklist={'4 Lightning Bolt\n1 Missing Card'}
+        format="modern"
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: /analyze deck/i }))
+
+    await waitFor(() => {
+      expect(screen.getByText(/Could not resolve card "Missing Card"/i)).toBeInTheDocument()
+      expect(screen.getByText('Deck Analyzer')).toBeInTheDocument()
     })
   })
 

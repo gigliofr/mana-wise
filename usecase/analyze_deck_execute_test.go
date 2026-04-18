@@ -3,6 +3,7 @@ package usecase
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/gigliofr/mana-wise/domain"
@@ -197,6 +198,43 @@ func TestAnalyzeDeckExecute_ReturnsErrorWhenResolverReturnsNilCard(t *testing.T)
 	})
 	if err == nil {
 		t.Fatal("expected error when resolver returns nil card")
+	}
+}
+
+func TestAnalyzeDeckExecute_SkipsUnresolvedCardsAndReturnsWarnings(t *testing.T) {
+	fetcher := &fakeCardFetcher{
+		exact: map[string]*scryfall.ScryfallCard{
+			"Lightning Bolt": {
+				ID:         "bolt-1",
+				Name:       "Lightning Bolt",
+				CMC:        1,
+				TypeLine:   "Instant",
+				OracleText: "Deal 3 damage to any target.",
+				Colors:     []string{"R"},
+				Legalities: map[string]string{"modern": "legal"},
+			},
+		},
+		fuzzy: map[string]*scryfall.ScryfallCard{},
+		bySet: map[string]*scryfall.ScryfallCard{},
+	}
+	repo := &fakeCardRepo{byName: map[string]*domain.Card{}}
+	uc := NewAnalyzeDeckUseCase(fetcher, repo, 2)
+
+	resp, err := uc.Execute(context.Background(), AnalyzeDeckRequest{
+		Decklist: "4 Lightning Bolt\n1 Missing Card",
+		Format:   "modern",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(resp.RawCards) != 1 {
+		t.Fatalf("expected 1 resolved card, got %d", len(resp.RawCards))
+	}
+	if len(resp.Warnings) == 0 {
+		t.Fatal("expected warnings for unresolved cards")
+	}
+	if got := resp.Warnings[0]; got == "" || !strings.Contains(got, "Missing Card") {
+		t.Fatalf("expected warning mentioning missing card, got %q", got)
 	}
 }
 

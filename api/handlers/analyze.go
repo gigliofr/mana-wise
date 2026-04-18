@@ -28,6 +28,7 @@ type AnalyzeResponse struct {
 	AIError       string                                `json:"ai_error,omitempty"`
 	LatencyMs     int64                                 `json:"latency_ms"`
 	Legality      map[string]usecase.DeckLegalityResult `json:"legality"`
+	Warnings      []string                              `json:"warnings,omitempty"`
 	Sideboard     *sideboardResponseInfo                `json:"sideboard,omitempty"`
 }
 
@@ -145,6 +146,7 @@ func (h *AnalyzeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		AIError:       aiError,
 		LatencyMs:     result.Result.LatencyMs,
 		Legality:      legality,
+		Warnings:      result.Warnings,
 		Sideboard:     sb,
 	})
 }
