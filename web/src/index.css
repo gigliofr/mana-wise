@@ -890,6 +890,12 @@ button {
   border-radius: 999px;
 }
 
+.decklib-view-toggle.active {
+  color: var(--text);
+  border-color: var(--primary-h);
+  background: rgba(124,92,191,.16);
+}
+
 .decklib-item-top {
   display: flex;
   justify-content: space-between;

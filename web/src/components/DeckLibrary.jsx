@@ -28,7 +28,7 @@ export default function DeckLibrary({
   const [pinnedDeckIds, setPinnedDeckIds] = useState([])
   const [draggedPinnedDeckId, setDraggedPinnedDeckId] = useState('')
   const [collapsedDeckLists, setCollapsedDeckLists] = useState({})
-  const [compactDeckLists, setCompactDeckLists] = useState({})
+  const [compactDeckView, setCompactDeckView] = useState(false)
   const [updatingDeckId, setUpdatingDeckId] = useState('')
   const [expandedDecks, setExpandedDecks] = useState({})
   const [deckLegality, setDeckLegality] = useState({})
@@ -38,6 +38,7 @@ export default function DeckLibrary({
   const ITEMS_PER_PAGE = 3
   const paginatedDecks = decks
   const pinStorageKey = `manawise.deckPins.${String(user?.id || 'anon')}`
+  const compactStorageKey = `manawise.deckCompactView.${String(user?.id || 'anon')}`
   const totalPages = useMemo(
     () => Math.max(1, Math.ceil(totalDecks / ITEMS_PER_PAGE)),
     [totalDecks],
@@ -151,6 +152,31 @@ export default function DeckLibrary({
     const validIds = new Set(paginatedDecks.map(deck => deck.id))
     setPinnedDeckIds(prev => prev.filter(id => validIds.has(id)))
   }, [paginatedDecks])
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(compactStorageKey)
+      if (raw === 'true' || raw === 'false') {
+        setCompactDeckView(raw === 'true')
+        return
+      }
+    } catch {
+      // Fallback to viewport default below.
+    }
+
+    const prefersCompact = typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia('(max-width: 768px)').matches
+      : false
+    setCompactDeckView(prefersCompact)
+  }, [compactStorageKey])
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(compactStorageKey, compactDeckView ? 'true' : 'false')
+    } catch {
+      // Ignore quota/storage access errors.
+    }
+  }, [compactStorageKey, compactDeckView])
 
   useEffect(() => {
     let cancelled = false
@@ -353,15 +379,8 @@ export default function DeckLibrary({
     })
   }
 
-  function isDeckListCompact(deckID) {
-    return Boolean(compactDeckLists[deckID])
-  }
-
-  function toggleDeckListCompact(deckID) {
-    setCompactDeckLists(prev => ({
-      ...prev,
-      [deckID]: !Boolean(prev[deckID]),
-    }))
+  function toggleDeckListCompact() {
+    setCompactDeckView(prev => !prev)
   }
 
   function toggleDeckPinned(deckID) {
@@ -824,7 +843,7 @@ export default function DeckLibrary({
             const cards = mainDeckCards(activeDeck)
             const commanderCards = commanderDeckCards(activeDeck)
             const listCollapsed = isDeckListCollapsed(activeDeck.id)
-            const listCompact = isDeckListCompact(activeDeck.id)
+            const listCompact = compactDeckView
             const expanded = isDeckExpanded(activeDeck.id)
             const visibleCards = expanded ? cards : cards.slice(0, 10)
             const hiddenCards = Math.max(0, cards.length - visibleCards.length)
@@ -904,8 +923,8 @@ export default function DeckLibrary({
                     {!listCollapsed && (
                       <button
                         type="button"
-                        className="btn-ghost"
-                        onClick={() => toggleDeckListCompact(activeDeck.id)}
+                        className={`btn-ghost decklib-view-toggle${listCompact ? ' active' : ''}`}
+                        onClick={toggleDeckListCompact}
                       >
                         {listCompact
                           ? (messages.comfortDeckView || 'Vista standard')
