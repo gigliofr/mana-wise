@@ -176,14 +176,35 @@ JWT_EXPIRY_HOURS=72
 MANAWISE_ALLOWED_ORIGINS=https://your-frontend-domain
 FRONTEND_RESET_PASSWORD_URL=https://your-frontend-domain
 PASSWORD_RESET_TOKEN_TTL_MINUTES=30
-SMTP_HOST=...
-SMTP_PORT=587
-SMTP_USER=...
-SMTP_KEY=...
-MAIL_FROM=...
+
+# Email (prefer Resend; SMTP as fallback)
+RESEND_API_KEY=re_...
+RESEND_FROM_EMAIL=noreply@yourdomain.com
 ```
 
-Email handling uses the same SMTP variables as the previous deployment flow, so reset and transactional mails keep working with the same provider settings.
+#### Email Configuration
+
+ManaWise sends transactional emails (registration verification, password reset) using either **Resend** or **SMTP** (fallback).
+
+**Resend (Preferred)**: Modern email service with built-in templates and analytics.
+- Sign up at [https://resend.com](https://resend.com)
+- Get API key from [https://resend.com/api-keys](https://resend.com/api-keys)
+- Verify your "From" domain to enable sending
+
+**SMTP (Fallback)**: Use if Resend is not configured.
+
+```env
+# Resend (preferred)
+RESEND_API_KEY=re_your_api_key_here
+RESEND_FROM_EMAIL=noreply@yourdomain.com
+
+# OR SMTP (fallback, used only if Resend not configured)
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your-email@gmail.com
+SMTP_KEY=your-app-password
+MAIL_FROM=your-email@gmail.com
+```
 
 ### Runtime / CORS variables
 
@@ -193,11 +214,13 @@ Email handling uses the same SMTP variables as the previous deployment flow, so 
 | `JWT_SESSION_TTL_MINUTES` | unset | Access token session duration in minutes. If unset, `JWT_EXPIRY_HOURS` is used as backward-compatible fallback. |
 | `JWT_REFRESH_TTL_MINUTES` | `10080` | Refresh token duration in minutes. |
 | `JWT_EXPIRY_HOURS` | `72` | Legacy fallback for access token duration, used only when `JWT_SESSION_TTL_MINUTES` is not set. |
-| `SMTP_HOST` | — | SMTP host for transactional auth emails |
-| `SMTP_PORT` | — | SMTP port |
-| `SMTP_USER` | — | SMTP username |
-| `SMTP_KEY` | — | SMTP password/API key |
-| `MAIL_FROM` | — | Sender email address |
+| `RESEND_API_KEY` | — | Resend API key for email sending (preferred) |
+| `RESEND_FROM_EMAIL` | — | Sender email address for Resend |
+| `SMTP_HOST` | — | SMTP host for transactional auth emails (fallback) |
+| `SMTP_PORT` | — | SMTP port (fallback) |
+| `SMTP_USER` | — | SMTP username (fallback) |
+| `SMTP_KEY` | — | SMTP password/API key (fallback) |
+| `MAIL_FROM` | — | Sender email address (fallback) |
 | `FRONTEND_RESET_PASSWORD_URL` | `/reset-password` fallback | Optional absolute frontend URL used in reset email links |
 | `PASSWORD_RESET_TOKEN_TTL_MINUTES` | `30` | Password reset token expiry in minutes |
 | `OTA_ENABLED` | `true` | Enable OTA firmware endpoints (`/ota/release`, `/ota/report-boot`, `/ota/manifest`). Set `false` for pure MTG deployments. |

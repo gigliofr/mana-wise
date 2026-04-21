@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/gigliofr/mana-wise/api/middleware"
 	"github.com/gigliofr/mana-wise/domain"
+	"github.com/gigliofr/mana-wise/infrastructure/notifications"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -244,9 +245,10 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	verificationURL := buildEmailVerificationURL(r, verificationToken)
-	textBody := "Welcome to ManaWise.\n\nPlease verify your email by opening this link: " + verificationURL + "\n\nThis link expires at: " + expiresAt.Format(time.RFC3339)
-	htmlBody := "<p>Welcome to ManaWise.</p><p>Please verify your email by opening this link: <a href=\"" + verificationURL + "\">verify email</a></p><p>This link expires at: " + expiresAt.Format(time.RFC3339) + "</p>"
-	_ = h.sendEmail(user.Email, "Verify your ManaWise account", textBody, htmlBody)
+	
+	// Generate formatted email template
+	tmpl := notifications.VerifyEmailTemplate(verificationURL, expiresAt)
+	_ = h.sendEmail(user.Email, tmpl.Subject, tmpl.TextBody, tmpl.HtmlBody)
 	log.Printf("[auth] verify-email link generated user=%s url=%s", user.Email, redactActionURLForLog(verificationURL))
 
 	w.Header().Set("Content-Type", "application/json")
@@ -353,9 +355,10 @@ func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 			if err := h.resetTokenRepo.Create(r.Context(), rec); err == nil {
 				resetURL := buildActionURL(strings.TrimSpace(os.Getenv("FRONTEND_RESET_PASSWORD_URL")), "/reset-password", token)
 				log.Printf("[auth] reset-password link generated user=%s url=%s", user.Email, redactActionURLForLog(resetURL))
-				textBody := "We received a password reset request.\nUse this link to reset your password: " + resetURL + "\nExpires at: " + expiresAt.Format(time.RFC3339)
-				htmlBody := "<p>We received a password reset request.</p><p>Use this link to reset your password: <a href=\"" + resetURL + "\">reset password</a></p><p>Expires at: " + expiresAt.Format(time.RFC3339) + "</p>"
-				_ = h.sendEmail(user.Email, "ManaWise password reset", textBody, htmlBody)
+				
+				// Generate formatted email template
+				tmpl := notifications.ResetPasswordTemplate(resetURL, expiresAt)
+				_ = h.sendEmail(user.Email, tmpl.Subject, tmpl.TextBody, tmpl.HtmlBody)
 			}
 		}
 	}

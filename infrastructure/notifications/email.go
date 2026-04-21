@@ -43,8 +43,14 @@ func smtpConfigFromEnv() smtpConfig {
 	}
 }
 
-// EmailSenderConfigStatus returns whether SMTP email sending is configured and a short diagnostic reason.
+// EmailSenderConfigStatus returns whether email sending is configured and a short diagnostic reason.
+// Prefers Resend over SMTP if both are configured.
 func EmailSenderConfigStatus() (bool, string) {
+	// Check Resend first (preferred)
+	if ok, reason := ResendEmailSenderConfigStatus(); ok {
+		return true, reason
+	}
+	// Fall back to SMTP
 	cfg := smtpConfigFromEnv()
 	missing := make([]string, 0, 5)
 	if cfg.host == "" {
@@ -74,9 +80,15 @@ func EmailSenderConfigStatus() (bool, string) {
 	return true, "smtp sender configured"
 }
 
-// NewEmailSenderFromEnv builds an SMTP sender from environment variables.
-// If required variables are missing, it falls back to a noop sender.
+// NewEmailSenderFromEnv builds an email sender from environment variables.
+// Prefers Resend over SMTP. Falls back to noop if neither is configured.
 func NewEmailSenderFromEnv() domain.EmailSender {
+	// Try Resend first (preferred)
+	if ok, _ := ResendEmailSenderConfigStatus(); ok {
+		return NewResendEmailSender()
+	}
+
+	// Fall back to SMTP
 	cfg := smtpConfigFromEnv()
 	if cfg.host == "" || cfg.port == "" || cfg.user == "" || cfg.key == "" || cfg.from == "" {
 		return domain.NoopEmailSender{}
