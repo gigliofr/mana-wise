@@ -1,12 +1,3 @@
-// IncrementVisit incrementa il contatore visite e aggiorna last_visit.
-func (r *SharedAnalysisLinkRepositoryMongo) IncrementVisit(ctx context.Context, id string, at time.Time) error {
-	update := bson.M{
-		"$inc": bson.M{"visit_count": 1},
-		"$set": bson.M{"last_visit": at},
-	}
-	_, err := r.col.UpdateByID(ctx, id, update)
-	return err
-}
 package mongodb
 
 import (
@@ -54,4 +45,14 @@ func (r *SharedAnalysisLinkRepositoryMongo) DeleteExpired(ctx context.Context, n
 		return 0, err
 	}
 	return res.DeletedCount, nil
+}
+
+// IncrementVisit incrementa il contatore visite e aggiorna last_visit.
+func (r *SharedAnalysisLinkRepositoryMongo) IncrementVisit(ctx context.Context, id string, at time.Time) error {
+	update := bson.M{
+		"$inc": bson.M{"visit_count": 1},
+		"$set": bson.M{"last_visit": at},
+	}
+	_, err := r.col.UpdateByID(ctx, id, update)
+	return err
 }

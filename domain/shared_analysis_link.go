@@ -5,6 +5,7 @@ import (
 )
 
 // SharedAnalysisLink rappresenta un link pubblico temporaneo per condividere un'analisi.
+type SharedAnalysisLink struct {
 	ID        string    `bson:"_id" json:"id"` // Token univoco
 	DeckID    string    `bson:"deck_id" json:"deck_id"`
 	UserID    string    `bson:"user_id,omitempty" json:"user_id,omitempty"`

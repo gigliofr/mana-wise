@@ -460,7 +460,7 @@ func ShareAnalysisTemplate(shareURL string, message string) EmailTemplate {
         .card { max-width: 600px; margin: 0 auto; background: #121217; border: 1px solid #2a2a3a; border-radius: 12px; padding: 24px; }
         .logo { font-size: 24px; font-weight:700; color: #9b7fe0; }
         .message { color: #b8b8cc; margin: 16px 0; }
-        .cta { display:inline-block; padding:12px 20px; background: linear-gradient(135deg,#7c5cbf 0%,#9b7fe0 100%); color:#fff; border-radius:8px; text-decoration:none; font-weight:600; }
+        .cta { display:inline-block; padding:12px 20px; background: linear-gradient(135deg,#7c5cbf 0%%,#9b7fe0 100%%); color:#fff; border-radius:8px; text-decoration:none; font-weight:600; }
         .link { margin-top:12px; color:#9b7fe0; word-break:break-all; font-family: monospace; font-size:13px; }
     </style>
 </head>

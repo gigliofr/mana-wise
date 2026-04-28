@@ -50,6 +50,7 @@ type DeckRepository interface {
 }
 
 // SharedAnalysisLinkRepository definisce le operazioni di persistenza per i link pubblici di analisi.
+type SharedAnalysisLinkRepository interface {
 	Create(ctx context.Context, link *SharedAnalysisLink) error
 	FindByID(ctx context.Context, id string) (*SharedAnalysisLink, error)
 	Delete(ctx context.Context, id string) error
