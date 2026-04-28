@@ -368,15 +368,17 @@ export default function Analyzer({ token, user, locale, messages, decklist: deck
             <span className="latency" style={{ marginTop: 0 }}>{messages.analyzedIn(result.latency_ms)}</span>
             <button
               type="button"
-              style={{ marginLeft: 8, background: '#9b7fe0', color: '#fff', border: 'none', borderRadius: 5, padding: '6px 12px', fontWeight: 600, cursor: 'pointer' }}
-              disabled={shareLoading}
+              style={{ marginLeft: 8, background: '#9b7fe0', color: '#fff', border: 'none', borderRadius: 5, padding: '6px 12px', fontWeight: 600, cursor: result?.deck_id ? 'pointer' : 'not-allowed', opacity: result?.deck_id ? 1 : 0.6 }}
+              disabled={shareLoading || !result?.deck_id}
+              title={!result?.deck_id ? 'Per condividere salva prima il mazzo nella tua libreria.' : ''}
               onClick={async () => {
+                if (!result?.deck_id) return;
                 setShareLoading(true); setShareError(""); setShareUrl("");
                 try {
                   const res = await fetch("/api/v1/analysis/share", {
                     method: "POST",
                     headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-                    body: JSON.stringify({ deck_id: result.deck_id || "", channel: "", recipient: "", message: "", ttl_hours: 24 })
+                    body: JSON.stringify({ deck_id: result.deck_id, channel: "link", recipient: "", message: "", ttl_hours: 24 })
                   });
                   if (!res.ok) throw new Error(await res.text());
                   const data = await res.json();
