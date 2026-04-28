@@ -120,6 +120,12 @@ export default function Analyzer({ token, user, locale, messages, decklist: deck
   const [savedDecks, setSavedDecks] = useState([])
   const [loadingSavedDecks, setLoadingSavedDecks] = useState(false)
 
+  // Stato per condivisione analisi
+  const [shareUrl, setShareUrl] = useState("");
+  const [shareLoading, setShareLoading] = useState(false);
+  const [shareError, setShareError] = useState("");
+  const [shareCopied, setShareCopied] = useState(false);
+
   function handleDecklistChange(val) {
     setDecklist(val)
     onDeckChange?.(val)
@@ -357,10 +363,62 @@ export default function Analyzer({ token, user, locale, messages, decklist: deck
       {/* Results */}
       {result && (
         <div className="card">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, gap: 8 }}>
             <h2 style={{ marginBottom: 0 }}>📊 {messages.analysisResults}</h2>
             <span className="latency" style={{ marginTop: 0 }}>{messages.analyzedIn(result.latency_ms)}</span>
+            <button
+              type="button"
+              style={{ marginLeft: 8, background: '#9b7fe0', color: '#fff', border: 'none', borderRadius: 5, padding: '6px 12px', fontWeight: 600, cursor: 'pointer' }}
+              disabled={shareLoading}
+              onClick={async () => {
+                setShareLoading(true); setShareError(""); setShareUrl("");
+                try {
+                  const res = await fetch("/api/v1/analysis/share", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+                    body: JSON.stringify({ deck_id: result.deck_id || "", channel: "", recipient: "", message: "", ttl_hours: 24 })
+                  });
+                  if (!res.ok) throw new Error(await res.text());
+                  const data = await res.json();
+                  setShareUrl(data.share_url || "");
+                } catch (e) {
+                  setShareError(e.message || "Errore condivisione");
+                } finally {
+                  setShareLoading(false);
+                }
+              }}
+            >{shareLoading ? "..." : "Condividi"}</button>
           </div>
+
+          {/* Banner condivisione */}
+          {shareError && <div className="banner banner-error">{shareError}</div>}
+          {shareUrl && (
+            <div className="banner banner-info" style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-start', marginBottom: 12 }}>
+              <div style={{ fontWeight: 600, color: '#9b7fe0' }}>Link pubblico generato:</div>
+              <div style={{ wordBreak: 'break-all', fontSize: 13 }}>{shareUrl}</div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <a aria-label="Condividi su WhatsApp" href={`https://wa.me/?text=${encodeURIComponent('Guarda questa analisi di un mazzo su ManaWise!\n' + shareUrl)}`} target="_blank" rel="noopener noreferrer" style={{ background: "#25D366", color: "#fff", padding: "7px 10px", borderRadius: 5, textDecoration: "none", fontWeight: 600, fontSize: 13 }}>WhatsApp</a>
+                <a aria-label="Condividi su Telegram" href={`https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent('Guarda questa analisi di un mazzo su ManaWise!')}`} target="_blank" rel="noopener noreferrer" style={{ background: "#229ED9", color: "#fff", padding: "7px 10px", borderRadius: 5, textDecoration: "none", fontWeight: 600, fontSize: 13 }}>Telegram</a>
+                <button aria-label="Copia link" onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(shareUrl);
+                    setShareCopied(true);
+                    setTimeout(() => setShareCopied(false), 2000);
+                  } catch (e) {
+                    const ta = document.createElement('textarea');
+                    ta.value = shareUrl;
+                    document.body.appendChild(ta);
+                    ta.select();
+                    try { document.execCommand('copy'); } catch {}
+                    document.body.removeChild(ta);
+                    setShareCopied(true);
+                    setTimeout(() => setShareCopied(false), 2000);
+                  }
+                }} style={{ background: '#444', color: '#fff', padding: '6px 10px', borderRadius: 5, border: 'none', fontSize: 13 }}>Copia link</button>
+              </div>
+              {shareCopied && <div style={{ color: '#2b2b2b', background: '#fff', borderRadius: 6, padding: '4px 10px', fontSize: 13 }}>Link copiato!</div>}
+            </div>
+          )}
 
           {result.commander?.cards?.length > 0 && (
             <div className="banner banner-info" style={{ marginBottom: 16, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
