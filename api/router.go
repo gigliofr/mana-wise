@@ -19,6 +19,7 @@ import (
 
 // RouterDeps groups all handler dependencies.
 type RouterDeps struct {
+		SharedAnalysisLinkRepo domain.SharedAnalysisLinkRepository
 	CardRepo          domain.CardRepository
 	UserRepo          domain.UserRepository
 	DeckRepo          domain.DeckRepository
@@ -47,6 +48,10 @@ type RouterDeps struct {
 // NewRouter builds and returns the chi router with all routes registered.
 func NewRouter(deps RouterDeps) http.Handler {
 	r := chi.NewRouter()
+
+	publicShareH := handlers.NewPublicShareHandler(deps.SharedAnalysisLinkRepo, deps.DeckRepo, deps.AnalyzeUC)
+	r.Get("/share/{token}", publicShareH.ServeHTTP)
+	shareAnalysisH := handlers.NewShareAnalysisHandler(deps.SharedAnalysisLinkRepo, deps.Mailer)
 
 	// Global middleware.
 	r.Use(panicShieldMiddleware)
@@ -84,6 +89,8 @@ func NewRouter(deps RouterDeps) http.Handler {
 	authRateMW := middleware.AuthRateLimit(time.Minute, 10)
 
 	r.Route("/api/v1", func(r chi.Router) {
+					// Endpoint per la condivisione analisi
+					r.Post("/analysis/share", shareAnalysisH.ServeHTTP)
 		// Public endpoints.
 		r.Get("/health", handlers.Health)
 		r.Get("/meta/{format}", metaH.Snapshot)

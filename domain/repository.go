@@ -1,6 +1,9 @@
 package domain
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // CardRepository defines persistence operations for cards.
 type CardRepository interface {
@@ -44,4 +47,12 @@ type DeckRepository interface {
 	Create(ctx context.Context, deck *Deck) error
 	Update(ctx context.Context, deck *Deck) error
 	Delete(ctx context.Context, id string) error
+}
+
+// SharedAnalysisLinkRepository definisce le operazioni di persistenza per i link pubblici di analisi.
+	Create(ctx context.Context, link *SharedAnalysisLink) error
+	FindByID(ctx context.Context, id string) (*SharedAnalysisLink, error)
+	Delete(ctx context.Context, id string) error
+	DeleteExpired(ctx context.Context, now time.Time) (int64, error)
+	IncrementVisit(ctx context.Context, id string, at time.Time) error
 }

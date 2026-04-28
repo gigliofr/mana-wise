@@ -1,8 +1,9 @@
 package notifications
 
 import (
-	"fmt"
-	"time"
+    "fmt"
+    "strings"
+    "time"
 )
 
 // EmailTemplate provides formatted HTML and text bodies for various email types.
@@ -439,4 +440,52 @@ ManaWise Team
 		TextBody: textBody,
 		HtmlBody: htmlBody,
 	}
+}
+
+// ShareAnalysisTemplate generates an email template for shared analysis links.
+func ShareAnalysisTemplate(shareURL string, message string) EmailTemplate {
+        textBody := "I've shared an analysis with you. Open the link to view it:\n\n" + shareURL
+        if strings.TrimSpace(message) != "" {
+                textBody = message + "\n\n" + textBody
+        }
+
+        htmlBody := fmt.Sprintf(`<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>ManaWise — Shared Analysis</title>
+    <style>
+        body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: #0e0e14; color: #e8e8f0; padding: 20px; }
+        .card { max-width: 600px; margin: 0 auto; background: #121217; border: 1px solid #2a2a3a; border-radius: 12px; padding: 24px; }
+        .logo { font-size: 24px; font-weight:700; color: #9b7fe0; }
+        .message { color: #b8b8cc; margin: 16px 0; }
+        .cta { display:inline-block; padding:12px 20px; background: linear-gradient(135deg,#7c5cbf 0%,#9b7fe0 100%); color:#fff; border-radius:8px; text-decoration:none; font-weight:600; }
+        .link { margin-top:12px; color:#9b7fe0; word-break:break-all; font-family: monospace; font-size:13px; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="logo">🔮 ManaWise — Shared Analysis</div>
+        <div class="message">%s</div>
+        <a class="cta" href="%s">View Analysis</a>
+        <div class="link">%s</div>
+        <div style="margin-top:18px;color:#8888aa;font-size:12px;">If you didn't expect this email, you can ignore it.</div>
+    </div>
+</body>
+</html>
+`, htmlEscape(message), shareURL, shareURL)
+
+        subject := "A ManaWise analysis was shared with you"
+        return EmailTemplate{Subject: subject, TextBody: textBody, HtmlBody: htmlBody}
+}
+
+// minimal html escaper for messages
+func htmlEscape(s string) string {
+        r := s
+        r = strings.ReplaceAll(r, "&", "&amp;")
+        r = strings.ReplaceAll(r, "<", "&lt;")
+        r = strings.ReplaceAll(r, ">", "&gt;")
+        r = strings.ReplaceAll(r, "\"", "&quot;")
+        return r
 }
