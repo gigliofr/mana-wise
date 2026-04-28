@@ -49,15 +49,15 @@ type RouterDeps struct {
 func NewRouter(deps RouterDeps) http.Handler {
 	r := chi.NewRouter()
 
-	publicShareH := handlers.NewPublicShareHandler(deps.SharedAnalysisLinkRepo, deps.DeckRepo, deps.AnalyzeUC)
-	r.Get("/share/{token}", publicShareH.ServeHTTP)
-	shareAnalysisH := handlers.NewShareAnalysisHandler(deps.SharedAnalysisLinkRepo, deps.Mailer)
-
-	// Global middleware.
+	// Global middleware must be registered before any routes.
 	r.Use(panicShieldMiddleware)
 	r.Use(chimiddleware.Logger)
 	r.Use(chimiddleware.RealIP)
 	r.Use(corsMiddleware)
+
+	publicShareH := handlers.NewPublicShareHandler(deps.SharedAnalysisLinkRepo, deps.DeckRepo, deps.AnalyzeUC)
+	r.Get("/share/{token}", publicShareH.ServeHTTP)
+	shareAnalysisH := handlers.NewShareAnalysisHandler(deps.SharedAnalysisLinkRepo, deps.Mailer)
 
 	// Instantiate handlers.
 	authH := handlers.NewAuthHandler(deps.UserRepo, deps.JWTSecret, deps.SessionTTLMinutes, deps.RefreshTTLMinutes).
