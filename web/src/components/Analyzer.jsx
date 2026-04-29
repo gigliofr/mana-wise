@@ -119,6 +119,7 @@ export default function Analyzer({ token, user, locale, messages, decklist: deck
   const [format,   setFormat]   = useState('standard')
   const [savedDecks, setSavedDecks] = useState([])
   const [loadingSavedDecks, setLoadingSavedDecks] = useState(false)
+  const [currentDeckId, setCurrentDeckId] = useState("");
 
   // Stato per condivisione analisi
   const [shareUrl, setShareUrl] = useState("");
@@ -257,7 +258,8 @@ export default function Analyzer({ token, user, locale, messages, decklist: deck
         throw new Error(data?.error || messages.analysisFailed)
       }
 
-      setResult(data)
+      const resultWithDeckId = currentDeckId ? { ...data, deck_id: currentDeckId } : data;
+      setResult(resultWithDeckId)
       setTab('mana')
 
       if (fingerprintOutcome.status === 'fulfilled') {
@@ -325,6 +327,7 @@ export default function Analyzer({ token, user, locale, messages, decklist: deck
                             const deckStr = cards.map(c => `${c.quantity || 1} ${c.card_name || c.name || ''}`).join('\n')
                             handleDecklistChange(deckStr)
                             handleFormatChange(deck.format || 'standard')
+                            setCurrentDeckId(deck.id || "");
                             e.target.value = ''
                           }
                         }}>
