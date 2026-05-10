@@ -91,6 +91,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 	r.Route("/api/v1", func(r chi.Router) {
 					// Endpoint per la condivisione analisi
 					r.Post("/analysis/share", shareAnalysisH.ServeHTTP)
+		r.Get("/analysis/share/{token}", publicShareH.ServeHTTP)
 		// Public endpoints.
 		r.Get("/health", handlers.Health)
 		r.Get("/meta/{format}", metaH.Snapshot)
