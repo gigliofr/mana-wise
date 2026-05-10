@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/gigliofr/mana-wise/domain"
 	"github.com/gigliofr/mana-wise/usecase"
+	"github.com/go-chi/chi/v5"
 )
 
 type PublicShareHandler struct {
@@ -55,9 +55,9 @@ func (h *PublicShareHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"deck_id": deck.ID,
-		"analysis": result.Result,
-		"shared_by": link.UserID,
+		"deck_id":    deck.ID,
+		"analysis":   result.Result,
+		"shared_by":  link.UserID,
 		"expires_at": link.ExpiresAt,
 	})
 }

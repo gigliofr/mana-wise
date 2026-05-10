@@ -70,6 +70,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("password reset token repo: %v", err)
 	}
+	sharedAnalysisLinkRepo := mongodb.NewSharedAnalysisLinkRepositoryMongo(mongoClient.Database())
 	log.Println("✅ Repositories ready")
 
 	mailer := notifications.NewEmailSenderFromEnv()
@@ -175,6 +176,7 @@ func main() {
 
 	// ── Router ───────────────────────────────────────────────────────────────
 	router := api.NewRouter(api.RouterDeps{
+		SharedAnalysisLinkRepo: sharedAnalysisLinkRepo,
 		CardRepo:          cardRepo,
 		UserRepo:          userRepo,
 		DeckRepo:          deckRepo,
