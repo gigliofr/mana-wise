@@ -3,6 +3,8 @@ package api
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -120,4 +122,39 @@ func TestPanicShieldMiddleware_TypedNilNext_ReturnsInternalServerError(t *testin
 func TestSafeWriteInternalError_NilWriter(t *testing.T) {
 	// Must not panic when writer is nil.
 	safeWriteInternalError(nil)
+}
+
+func TestNewRouter_SharePathFallsBackToSPA(t *testing.T) {
+	tmpDir := t.TempDir()
+	webDistDir := filepath.Join(tmpDir, "web", "dist")
+	if err := os.MkdirAll(webDistDir, 0o755); err != nil {
+		t.Fatalf("create temp dist dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(webDistDir, "index.html"), []byte("<html><body>share page</body></html>"), 0o644); err != nil {
+		t.Fatalf("write temp index.html: %v", err)
+	}
+
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get cwd: %v", err)
+	}
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("chdir temp dir: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(oldWD)
+	})
+
+	router := NewRouter(RouterDeps{})
+	req := httptest.NewRequest(http.MethodGet, "/share/abc123", nil)
+	rr := httptest.NewRecorder()
+
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 from SPA fallback, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if got := rr.Body.String(); got != "<html><body>share page</body></html>" {
+		t.Fatalf("expected SPA index.html body, got %q", got)
+	}
 }

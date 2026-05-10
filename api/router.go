@@ -56,7 +56,6 @@ func NewRouter(deps RouterDeps) http.Handler {
 	r.Use(corsMiddleware)
 
 	publicShareH := handlers.NewPublicShareHandler(deps.SharedAnalysisLinkRepo, deps.DeckRepo, deps.AnalyzeUC)
-	r.Get("/share/{token}", publicShareH.ServeHTTP)
 	shareAnalysisH := handlers.NewShareAnalysisHandler(deps.SharedAnalysisLinkRepo, deps.Mailer)
 
 	// Instantiate handlers.
