@@ -158,6 +158,14 @@ See `.env.example` for all variables.
 Required: `MONGODB_URI`, `JWT_SECRET`.  
 Optional: `OPENAI_API_KEY` or `GEMINI_API_KEY` (AI suggestions fall back to internal rules if absent).
 
+### Shared analysis links
+
+Public share pages are served by the React SPA at `/share/:token`, while the API data endpoint is `GET /api/v1/analysis/share/{token}`.
+
+For production, make sure the deployed frontend domain is the same origin used by users when opening shared links, or that your reverse proxy routes `/share/*` to the SPA and `/api/*` to the backend.
+
+If you generate share URLs behind a proxy or custom domain, set `PUBLIC_BASE_URL` to the public origin so the backend creates correct absolute links.
+
 ### Coolify / single-service deployment
 
 If you deploy ManaWise as a single service in Coolify, set at least:
@@ -167,6 +175,7 @@ PORT=8080
 ENVIRONMENT=production
 LOG_LEVEL=INFO
 APP_TIMEZONE=Europe/Rome
+PUBLIC_BASE_URL=https://your-domain.example
 MONGODB_URI=...
 MONGODB_DB_NAME=manawise
 JWT_SECRET=...
