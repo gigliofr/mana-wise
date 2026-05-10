@@ -65,7 +65,7 @@ func (h *ShareAnalysisHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 		UserID:    userIDString(userID),
 		TTL:       ttl,
 	}
-	resp, err := usecase.ShareAnalysis(r.Context(), h.Repo, shareReq, h.BaseURL)
+	resp, err := usecase.ShareAnalysis(r.Context(), h.Repo, shareReq, h.publicBaseURL(r))
 	if err != nil {
 		jsonError(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -81,6 +81,50 @@ func (h *ShareAnalysisHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 		ShareURL:  resp.ShareURL,
 		ExpiresAt: resp.ExpiresAt,
 	})
+}
+
+func (h *ShareAnalysisHandler) publicBaseURL(r *http.Request) string {
+	if resolved := requestPublicBaseURL(r); resolved != "" {
+		return resolved
+	}
+	fallback := strings.TrimSpace(h.BaseURL)
+	if fallback != "" {
+		return strings.TrimRight(fallback, "/")
+	}
+	return "https://mana-wise.app"
+}
+
+func requestPublicBaseURL(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	proto := firstHeaderValue(r.Header.Get("X-Forwarded-Proto"))
+	if proto == "" {
+		if r.TLS != nil {
+			proto = "https"
+		} else {
+			proto = "http"
+		}
+	}
+	host := firstHeaderValue(r.Header.Get("X-Forwarded-Host"))
+	if host == "" {
+		host = strings.TrimSpace(r.Host)
+	}
+	if host == "" {
+		return ""
+	}
+	if strings.HasPrefix(host, "http://") || strings.HasPrefix(host, "https://") {
+		return strings.TrimRight(host, "/")
+	}
+	return proto + "://" + strings.TrimRight(host, "/")
+}
+
+func firstHeaderValue(raw string) string {
+	parts := strings.Split(raw, ",")
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(parts[0])
 }
 
 func userIDString(v interface{}) string {
