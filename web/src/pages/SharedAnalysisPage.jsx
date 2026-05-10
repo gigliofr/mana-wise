@@ -16,61 +16,83 @@ function buildSummaryA4Canvas({ analysis, token, expiresAt }) {
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
 
-  ctx.fillStyle = "#f5f2ea";
+  // Palette and base
+  const bg = "#f7f3ec";
+  const border = "#cdbfa9";
+  const ink = "#1f2937";
+  const dim = "#6b7280";
+  ctx.fillStyle = bg;
   ctx.fillRect(0, 0, width, height);
 
-  ctx.fillStyle = "#1f2937";
+  // Outer card
+  const margin = 70;
+  ctx.strokeStyle = border;
+  ctx.lineWidth = 6;
+  ctx.strokeRect(margin, margin + 40, width - margin * 2, height - margin * 2 - 40);
+
+  // Header
+  ctx.fillStyle = ink;
   ctx.font = "700 56px Georgia";
-  ctx.fillText("ManaWise - Riepilogo Analisi", 80, 120);
+  ctx.fillText("ManaWise - Riepilogo Analisi", margin + 18, margin + 92);
 
-  ctx.strokeStyle = "#c8b89d";
-  ctx.lineWidth = 4;
-  ctx.strokeRect(70, 160, width - 140, height - 250);
+  // Token & expiry (small)
+  ctx.fillStyle = dim;
+  ctx.font = "400 18px Georgia";
+  ctx.fillText(`Token: ${token || "-"}`, margin + 24, margin + 132);
+  ctx.fillText(`Valido fino: ${expiresAt ? new Date(expiresAt).toLocaleString() : "-"}`, margin + 24, margin + 156);
 
-  ctx.fillStyle = "#374151";
-  ctx.font = "500 28px Georgia";
-  ctx.fillText(`Token: ${token || "-"}`, 100, 230);
-  ctx.fillText(`Valido fino: ${expiresAt ? new Date(expiresAt).toLocaleString() : "-"}`, 100, 280);
+  // Two-column stats block
+  const colLeft = margin + 40;
+  const colRight = width / 2 + 20;
+  let y = margin + 220;
 
-  const rows = [
-    ["Formato", String(analysis?.format || "-")],
-    ["Carte totali", String(analysis?.mana?.total_cards ?? "-")],
-    ["CMC medio", fmtNumber(analysis?.mana?.average_cmc, 2)],
-    ["Terre", String(analysis?.mana?.land_count ?? "-")],
-    ["Interazione", String(analysis?.interaction?.total_score ?? "-")],
-    ["Score", String(analysis?.score_detail?.score ?? "-")],
-  ];
+  const statLabelFont = "500 26px Georgia";
+  const statValueFont = "700 44px Georgia";
 
-  let y = 380;
-  for (const [label, value] of rows) {
-    ctx.fillStyle = "#6b7280";
-    ctx.font = "500 30px Georgia";
-    ctx.fillText(`${label}:`, 120, y);
-
-    ctx.fillStyle = "#111827";
-    ctx.font = "700 34px Georgia";
-    ctx.fillText(value, 430, y);
-    y += 90;
+  function drawStat(label, value, xLabel, xValue) {
+    ctx.fillStyle = dim;
+    ctx.font = statLabelFont;
+    ctx.fillText(label, xLabel, y);
+    ctx.fillStyle = ink;
+    ctx.font = statValueFont;
+    ctx.fillText(value, xValue, y);
+    y += 88;
   }
 
+  drawStat("Formato:", String(analysis?.format || "-"), colLeft, colLeft + 240);
+  drawStat("Carte totali:", String(analysis?.mana?.total_cards ?? "-"), colLeft, colLeft + 240);
+  drawStat("CMC medio:", fmtNumber(analysis?.mana?.average_cmc, 2), colLeft, colLeft + 240);
+  drawStat("Terre:", String(analysis?.mana?.land_count ?? "-"), colRight, colRight + 240);
+  drawStat("Interazione:", String(analysis?.interaction?.total_score ?? "-"), colRight, colRight + 240);
+  drawStat("Score:", String(analysis?.score_detail?.score ?? "-"), colRight, colRight + 240);
+
+  // Horizontal rule
+  ctx.strokeStyle = border;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(margin + 24, y + 8);
+  ctx.lineTo(width - margin - 24, y + 8);
+  ctx.stroke();
+
+  // Notes area
+  y += 40;
+  ctx.fillStyle = dim;
+  ctx.font = "500 20px Georgia";
   const notes = [
     `Archetipo: ${analysis?.interaction?.archetype || "-"}`,
     `Mulligan keep%: ${fmtNumber(analysis?.mulligan?.keep_probability, 1)}%`,
     `Mana screw: ${fmtNumber(analysis?.mana?.mana_screw_probability, 1)}%`,
     `Mana flood: ${fmtNumber(analysis?.mana?.mana_flood_probability, 1)}%`,
   ];
-
-  ctx.fillStyle = "#374151";
-  ctx.font = "500 26px Georgia";
-  y += 20;
-  for (const row of notes) {
-    ctx.fillText(row, 120, y);
-    y += 56;
+  for (const n of notes) {
+    ctx.fillText(n, margin + 28, y);
+    y += 38;
   }
 
-  ctx.fillStyle = "#9ca3af";
-  ctx.font = "500 22px Georgia";
-  ctx.fillText("Creato con ManaWise - formato A4", 120, height - 110);
+  // Footer
+  ctx.fillStyle = dim;
+  ctx.font = "500 18px Georgia";
+  ctx.fillText("Creato con ManaWise - formato A4", margin + 24, height - margin - 18);
 
   return canvas;
 }
