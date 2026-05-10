@@ -19,30 +19,30 @@ import (
 
 // RouterDeps groups all handler dependencies.
 type RouterDeps struct {
-		SharedAnalysisLinkRepo domain.SharedAnalysisLinkRepository
-	CardRepo          domain.CardRepository
-	UserRepo          domain.UserRepository
-	DeckRepo          domain.DeckRepository
-	AnalyzeUC         *usecase.AnalyzeDeckUseCase
-	AISuggester       *usecase.AISuggester
-	EmbedBatchUC      *usecase.EmbedBatchUseCase
-	ResolveCardUC     *usecase.ResolveCardByNameUseCase
-	SideboardUC       *usecase.SideboardCoachUseCase
-	MulliganUC        *usecase.MulliganAssistantUseCase
-	MatchupUC         *usecase.MatchupSimulatorUseCase
-	DeckClassifyUC    *usecase.DeckClassifierUseCase
-	CommanderBracketUC *usecase.CommanderBracketUseCase
+	SharedAnalysisLinkRepo domain.SharedAnalysisLinkRepository
+	CardRepo               domain.CardRepository
+	UserRepo               domain.UserRepository
+	DeckRepo               domain.DeckRepository
+	AnalyzeUC              *usecase.AnalyzeDeckUseCase
+	AISuggester            *usecase.AISuggester
+	EmbedBatchUC           *usecase.EmbedBatchUseCase
+	ResolveCardUC          *usecase.ResolveCardByNameUseCase
+	SideboardUC            *usecase.SideboardCoachUseCase
+	MulliganUC             *usecase.MulliganAssistantUseCase
+	MatchupUC              *usecase.MatchupSimulatorUseCase
+	DeckClassifyUC         *usecase.DeckClassifierUseCase
+	CommanderBracketUC     *usecase.CommanderBracketUseCase
 	CommanderBracketConfig *domain.CommanderBracketConfig
-	OTAUC             *usecase.OTAUpdateUseCase
-	ScoreUC           *usecase.ScoreUseCase
-	ImpactScoreUC     *usecase.ImpactScoreUseCase
-	Analytics         domain.AnalyticsTracker
-	AnalyticsMetrics  domain.AnalyticsMetricsProvider
-	PasswordResetRepo domain.PasswordResetTokenRepository
-	Mailer            domain.EmailSender
-	JWTSecret         string
-	SessionTTLMinutes int
-	RefreshTTLMinutes int
+	OTAUC                  *usecase.OTAUpdateUseCase
+	ScoreUC                *usecase.ScoreUseCase
+	ImpactScoreUC          *usecase.ImpactScoreUseCase
+	Analytics              domain.AnalyticsTracker
+	AnalyticsMetrics       domain.AnalyticsMetricsProvider
+	PasswordResetRepo      domain.PasswordResetTokenRepository
+	Mailer                 domain.EmailSender
+	JWTSecret              string
+	SessionTTLMinutes      int
+	RefreshTTLMinutes      int
 }
 
 // NewRouter builds and returns the chi router with all routes registered.
@@ -56,6 +56,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 	r.Use(corsMiddleware)
 
 	publicShareH := handlers.NewPublicShareHandler(deps.SharedAnalysisLinkRepo, deps.DeckRepo, deps.AnalyzeUC)
+	publicSharePDFH := handlers.NewPublicSharePDFHandler(deps.SharedAnalysisLinkRepo, deps.DeckRepo, deps.AnalyzeUC)
 	shareAnalysisH := handlers.NewShareAnalysisHandler(deps.SharedAnalysisLinkRepo, deps.Mailer)
 
 	// Instantiate handlers.
@@ -88,9 +89,10 @@ func NewRouter(deps RouterDeps) http.Handler {
 	authRateMW := middleware.AuthRateLimit(time.Minute, 10)
 
 	r.Route("/api/v1", func(r chi.Router) {
-					// Endpoint per la condivisione analisi
-					r.Post("/analysis/share", shareAnalysisH.ServeHTTP)
+		// Endpoint per la condivisione analisi
+		r.Post("/analysis/share", shareAnalysisH.ServeHTTP)
 		r.Get("/analysis/share/{token}", publicShareH.ServeHTTP)
+		r.Get("/analysis/share/{token}/pdf", publicSharePDFH.ServeHTTP)
 		// Public endpoints.
 		r.Get("/health", handlers.Health)
 		r.Get("/meta/{format}", metaH.Snapshot)

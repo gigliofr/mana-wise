@@ -135,6 +135,23 @@ async function downloadSummaryA4Image(payload) {
   URL.revokeObjectURL(url);
 }
 
+async function downloadSharedAnalysisPdf(token) {
+  const response = await fetch(`/api/v1/analysis/share/${token}/pdf`);
+  if (!response.ok) {
+    const maybeJSON = await response.json().catch(() => null);
+    throw new Error(maybeJSON?.error || "Impossibile scaricare il PDF");
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `mana-wise-share-${token}.pdf`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
 export default function SharedAnalysisPage() {
   const { token } = useParams();
   const [loading, setLoading] = useState(true);
@@ -143,6 +160,8 @@ export default function SharedAnalysisPage() {
   const [copied, setCopied] = useState(false);
   const [shareImageBusy, setShareImageBusy] = useState(false);
   const [shareImageError, setShareImageError] = useState("");
+  const [sharePdfBusy, setSharePdfBusy] = useState(false);
+  const [sharePdfError, setSharePdfError] = useState("");
 
   useEffect(() => {
     if (!token) return;
@@ -219,6 +238,24 @@ export default function SharedAnalysisPage() {
         >
           Scarica A4
         </button>
+        <button
+          aria-label="Scarica PDF"
+          disabled={sharePdfBusy}
+          onClick={async () => {
+            setSharePdfError("");
+            setSharePdfBusy(true);
+            try {
+              await downloadSharedAnalysisPdf(token);
+            } catch (e) {
+              setSharePdfError(e.message || "Impossibile scaricare il PDF");
+            } finally {
+              setSharePdfBusy(false);
+            }
+          }}
+          style={{background:"#0f172a",color:"#fff",padding:"6px 10px",borderRadius:5,border:"none",fontSize:13,fontWeight:600}}
+        >
+          {sharePdfBusy ? "..." : "Scarica PDF"}
+        </button>
         <button aria-label="Copia link" onClick={async () => {
           try {
             await navigator.clipboard.writeText(shareUrl)
@@ -239,6 +276,9 @@ export default function SharedAnalysisPage() {
       </div>
       {shareImageError && (
         <div className="banner banner-error" style={{ marginBottom: 8 }}>{shareImageError}</div>
+      )}
+      {sharePdfError && (
+        <div className="banner banner-error" style={{ marginBottom: 8 }}>{sharePdfError}</div>
       )}
       <div style={{background:"#191922",borderRadius:7,padding:"10px 12px",marginBottom:10,fontSize:14,lineHeight:1.6}}>
         <div><span style={{color:"#aaa"}}>Formato:</span> <b>{analysis?.format}</b></div>
