@@ -13,6 +13,18 @@ import (
 	"github.com/phpdave11/gofpdf"
 )
 
+const (
+	sharePageWidth       = 210.0
+	sharePageHeight      = 297.0
+	shareContentBottomY  = 250.0
+	shareFooterY         = 279.0
+	shareContentLeftX    = 18.0
+	shareContentRightX   = 192.0
+	shareCardPageStartY  = 28.0
+	shareCurveSectionH   = 48.0
+	shareCurveSectionMin = 58.0
+)
+
 type PublicSharePDFHandler struct {
 	Repo      domain.SharedAnalysisLinkRepository
 	DeckRepo  domain.DeckRepository
@@ -55,7 +67,6 @@ func renderSharedAnalysisPDF(bundle *sharedAnalysisBundle, shareURL string) ([]b
 	pdf := gofpdf.New("P", "mm", "A4", "")
 	pdf.SetMargins(14, 14, 14)
 	pdf.SetAutoPageBreak(true, 14)
-	pdf.AddPage()
 
 	const (
 		inkR    = 31
@@ -72,11 +83,16 @@ func renderSharedAnalysisPDF(bundle *sharedAnalysisBundle, shareURL string) ([]b
 		bgB     = 236
 	)
 
-	pdf.SetFillColor(bgR, bgG, bgB)
-	pdf.Rect(0, 0, 210, 297, "F")
-	pdf.SetDrawColor(borderR, borderG, borderB)
-	pdf.SetLineWidth(0.8)
-	pdf.Rect(12, 12, 186, 273, "D")
+	startSharePage := func() {
+		pdf.AddPage()
+		drawSharePageFrame(pdf, bgR, bgG, bgB, borderR, borderG, borderB)
+	}
+	advanceSharePage := func() {
+		writeShareFooter(pdf, dimR, dimG, dimB, borderR, borderG, borderB)
+		startSharePage()
+	}
+
+	startSharePage()
 
 	pdf.SetTextColor(inkR, inkG, inkB)
 	pdf.SetFont("Helvetica", "B", 22)
@@ -87,7 +103,7 @@ func renderSharedAnalysisPDF(bundle *sharedAnalysisBundle, shareURL string) ([]b
 	pdf.CellFormat(0, 6, fmt.Sprintf("Valido fino: %s", bundle.Link.ExpiresAt.Format("02/01/2006 15:04")), "", 1, "L", false, 0, "")
 	pdf.CellFormat(0, 6, fmt.Sprintf("Share URL: %s", shareURL), "", 1, "L", false, 0, "")
 
-	y := 48.0
+	y := pdf.GetY() + 4
 	drawStat := func(label, value string, xLabel, xValue, width float64) {
 		pdf.SetFont("Helvetica", "", 12)
 		pdf.SetTextColor(dimR, dimG, dimB)
@@ -160,27 +176,27 @@ func renderSharedAnalysisPDF(bundle *sharedAnalysisBundle, shareURL string) ([]b
 		}
 	}
 
-	renderManaCurveSection(pdf, bundle.Result.Result.Mana.Distribution, bundle.Result.Result.Mana.DrawProbabilities, 18, 228, 174)
+	if y+shareCurveSectionMin > shareContentBottomY {
+		advanceSharePage()
+		y = pdf.GetY() + 4
+	}
+	y = renderManaCurveSection(pdf, bundle.Result.Result.Mana.Distribution, bundle.Result.Result.Mana.DrawProbabilities, shareContentLeftX, y, 174)
 
 	if len(bundle.Deck.Cards) > 0 {
-		pdf.AddPage()
-		pdf.SetFillColor(bgR, bgG, bgB)
-		pdf.Rect(0, 0, 210, 297, "F")
-		pdf.SetDrawColor(borderR, borderG, borderB)
-		pdf.Rect(12, 12, 186, 273, "D")
+		if y+14 > shareContentBottomY {
+			advanceSharePage()
+			y = pdf.GetY() + 4
+		}
 		pdf.SetTextColor(inkR, inkG, inkB)
 		pdf.SetFont("Helvetica", "B", 16)
 		pdf.CellFormat(0, 10, "Carte del mazzo", "", 1, "L", false, 0, "")
 		pdf.SetFont("Helvetica", "", 10)
 		pdf.SetTextColor(dimR, dimG, dimB)
 		pdf.CellFormat(0, 6, fmt.Sprintf("Mainboard: %d carte | Sideboard: %d carte", countQuantity(bundle.Deck.MainboardCards()), countQuantity(sideboardCards(bundle.Deck.Cards))), "", 1, "L", false, 0, "")
-		renderCardList(pdf, bundle.Deck.Cards, 28)
+		renderCardList(pdf, bundle.Deck.Cards, pdf.GetY()+4, advanceSharePage)
 	}
 
-	pdf.SetY(264)
-	pdf.SetFont("Helvetica", "", 9)
-	pdf.SetTextColor(dimR, dimG, dimB)
-	pdf.CellFormat(0, 5, "Creato con ManaWise - export PDF A4", "", 1, "L", false, 0, "")
+	writeShareFooter(pdf, dimR, dimG, dimB, borderR, borderG, borderB)
 
 	var buf bytes.Buffer
 	if err := pdf.Output(&buf); err != nil {
@@ -189,7 +205,7 @@ func renderSharedAnalysisPDF(bundle *sharedAnalysisBundle, shareURL string) ([]b
 	return buf.Bytes(), nil
 }
 
-func renderManaCurveSection(pdf *gofpdf.Fpdf, buckets []domain.CMCBucket, draws *domain.DrawProbabilities, x, y, width float64) {
+func renderManaCurveSection(pdf *gofpdf.Fpdf, buckets []domain.CMCBucket, draws *domain.DrawProbabilities, x, y, width float64) float64 {
 	pdf.SetFont("Helvetica", "B", 13)
 	pdf.SetTextColor(31, 41, 55)
 	pdf.Text(x, y, "Curva mana e distribuzione")
@@ -200,7 +216,7 @@ func renderManaCurveSection(pdf *gofpdf.Fpdf, buckets []domain.CMCBucket, draws 
 		pdf.SetFont("Helvetica", "", 9)
 		pdf.SetTextColor(102, 116, 139)
 		pdf.Text(x+2, y+10, "Curva non disponibile")
-		return
+		return y + shareCurveSectionH
 	}
 
 	maxCount := 1
@@ -225,6 +241,7 @@ func renderManaCurveSection(pdf *gofpdf.Fpdf, buckets []domain.CMCBucket, draws 
 	}
 
 	renderManaRiskBars(pdf, draws, x+barAreaWidth+2, y+2, width-barAreaWidth-2, 46)
+	return y + shareCurveSectionH
 }
 
 func renderManaRiskBars(pdf *gofpdf.Fpdf, draws *domain.DrawProbabilities, x, y, width, height float64) {
@@ -261,7 +278,7 @@ func renderManaRiskBars(pdf *gofpdf.Fpdf, draws *domain.DrawProbabilities, x, y,
 	}
 }
 
-func renderCardList(pdf *gofpdf.Fpdf, cards []domain.DeckCard, startY float64) {
+func renderCardList(pdf *gofpdf.Fpdf, cards []domain.DeckCard, startY float64, advancePage func()) {
 	mainboard := make([]domain.DeckCard, 0, len(cards))
 	sideboard := make([]domain.DeckCard, 0)
 	for _, c := range cards {
@@ -278,14 +295,14 @@ func renderCardList(pdf *gofpdf.Fpdf, cards []domain.DeckCard, startY float64) {
 	}
 
 	y := startY
-	y = printDeckGroup(pdf, "Mainboard", mainboard, y)
+	y = printDeckGroup(pdf, "Mainboard", mainboard, y, advancePage)
 	if len(sideboard) > 0 {
 		y += 2
-		_ = printDeckGroup(pdf, "Sideboard", sideboard, y)
+		_ = printDeckGroup(pdf, "Sideboard", sideboard, y, advancePage)
 	}
 }
 
-func printDeckGroup(pdf *gofpdf.Fpdf, title string, list []domain.DeckCard, startY float64) float64 {
+func printDeckGroup(pdf *gofpdf.Fpdf, title string, list []domain.DeckCard, startY float64, advancePage func()) float64 {
 	if len(list) == 0 {
 		return startY
 	}
@@ -304,21 +321,34 @@ func printDeckGroup(pdf *gofpdf.Fpdf, title string, list []domain.DeckCard, star
 		line := fmt.Sprintf("%2d x %s", c.Quantity, c.CardName)
 		pdf.Text(x, y, line)
 		y += 4.3
-		if y > 255 {
-			pdf.AddPage()
-			pdf.SetFillColor(247, 243, 236)
-			pdf.Rect(0, 0, 210, 297, "F")
-			pdf.SetDrawColor(205, 191, 169)
-			pdf.Rect(12, 12, 186, 273, "D")
+		if y > shareContentBottomY {
+			advancePage()
 			pdf.SetFont("Helvetica", "B", 11)
 			pdf.SetTextColor(31, 41, 55)
-			y = 24
+			y = shareCardPageStartY
 			pdf.Text(x, y, fmt.Sprintf("%s (continua)", title))
 			y += 5
 			pdf.SetFont("Helvetica", "", 9)
 		}
 	}
 	return y + 2
+}
+
+func drawSharePageFrame(pdf *gofpdf.Fpdf, bgR, bgG, bgB, borderR, borderG, borderB int) {
+	pdf.SetFillColor(bgR, bgG, bgB)
+	pdf.Rect(0, 0, sharePageWidth, sharePageHeight, "F")
+	pdf.SetDrawColor(borderR, borderG, borderB)
+	pdf.SetLineWidth(0.8)
+	pdf.Rect(12, 12, 186, 273, "D")
+}
+
+func writeShareFooter(pdf *gofpdf.Fpdf, dimR, dimG, dimB, borderR, borderG, borderB int) {
+	pdf.SetY(shareFooterY)
+	pdf.SetDrawColor(borderR, borderG, borderB)
+	pdf.Line(18, shareFooterY-4, shareContentRightX, shareFooterY-4)
+	pdf.SetFont("Helvetica", "", 9)
+	pdf.SetTextColor(dimR, dimG, dimB)
+	pdf.CellFormat(0, 5, "Creato con ManaWise - export PDF A4", "", 1, "L", false, 0, "")
 }
 
 func sideboardCards(cards []domain.DeckCard) []domain.DeckCard {
