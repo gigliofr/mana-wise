@@ -57,7 +57,7 @@ func (h *PublicSharePDFHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 
 	filename := fmt.Sprintf("mana-wise-share-%s.pdf", token)
 	w.Header().Set("Content-Type", "application/pdf")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`inline; filename="%s"`, filename))
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(pdfBytes)

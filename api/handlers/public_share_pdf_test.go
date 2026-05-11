@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gigliofr/mana-wise/api/middleware"
@@ -79,8 +80,8 @@ func TestPublicSharePDFHandler_ReturnsPDFAttachment(t *testing.T) {
 	if ct := rr.Header().Get("Content-Type"); ct != "application/pdf" {
 		t.Fatalf("expected application/pdf, got %q", ct)
 	}
-	if cd := rr.Header().Get("Content-Disposition"); cd == "" {
-		t.Fatalf("expected Content-Disposition attachment, got empty header")
+	if cd := rr.Header().Get("Content-Disposition"); cd == "" || !strings.Contains(cd, "inline") {
+		t.Fatalf("expected inline Content-Disposition, got %q", cd)
 	}
 	body, err := io.ReadAll(rr.Body)
 	if err != nil {

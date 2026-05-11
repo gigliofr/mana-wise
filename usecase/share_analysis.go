@@ -55,7 +55,7 @@ func ShareAnalysis(ctx context.Context, repo domain.SharedAnalysisLinkRepository
 	if err := repo.Create(ctx, link); err != nil {
 		return nil, err
 	}
-	shareURL := strings.TrimRight(baseURL, "/") + "/share/" + token
+	shareURL := strings.TrimRight(baseURL, "/") + "/api/v1/analysis/share/" + token + "/pdf"
 	return &ShareAnalysisResponse{
 		ShareURL:  shareURL,
 		ExpiresAt: expiresAt,

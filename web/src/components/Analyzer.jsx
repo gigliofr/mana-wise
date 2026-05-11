@@ -399,11 +399,11 @@ export default function Analyzer({ token, user, locale, messages, decklist: deck
           {shareError && <div className="banner banner-error">{shareError}</div>}
           {shareUrl && (
             <div className="banner banner-info" style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-start', marginBottom: 12 }}>
-              <div style={{ fontWeight: 600, color: '#9b7fe0' }}>Link pubblico generato:</div>
+              <div style={{ fontWeight: 600, color: '#9b7fe0' }}>Link PDF generato:</div>
               <div style={{ wordBreak: 'break-all', fontSize: 13 }}>{shareUrl}</div>
               <div style={{ display: 'flex', gap: 8 }}>
-                <a aria-label="Condividi su WhatsApp" href={`https://wa.me/?text=${encodeURIComponent('Guarda questa analisi di un mazzo su ManaWise!\n' + shareUrl)}`} target="_blank" rel="noopener noreferrer" style={{ background: "#25D366", color: "#fff", padding: "7px 10px", borderRadius: 5, textDecoration: "none", fontWeight: 600, fontSize: 13 }}>WhatsApp</a>
-                <a aria-label="Condividi su Telegram" href={`https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent('Guarda questa analisi di un mazzo su ManaWise!')}`} target="_blank" rel="noopener noreferrer" style={{ background: "#229ED9", color: "#fff", padding: "7px 10px", borderRadius: 5, textDecoration: "none", fontWeight: 600, fontSize: 13 }}>Telegram</a>
+                <a aria-label="Condividi su WhatsApp" href={`https://wa.me/?text=${encodeURIComponent('Guarda questo PDF di ManaWise!\n' + shareUrl)}`} target="_blank" rel="noopener noreferrer" style={{ background: "#25D366", color: "#fff", padding: "7px 10px", borderRadius: 5, textDecoration: "none", fontWeight: 600, fontSize: 13 }}>WhatsApp</a>
+                <a aria-label="Condividi su Telegram" href={`https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent('Guarda questo PDF di ManaWise!')}`} target="_blank" rel="noopener noreferrer" style={{ background: "#229ED9", color: "#fff", padding: "7px 10px", borderRadius: 5, textDecoration: "none", fontWeight: 600, fontSize: 13 }}>Telegram</a>
                 <button aria-label="Copia link" onClick={async () => {
                   try {
                     await navigator.clipboard.writeText(shareUrl);

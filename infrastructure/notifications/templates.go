@@ -444,7 +444,7 @@ ManaWise Team
 
 // ShareAnalysisTemplate generates an email template for shared analysis links.
 func ShareAnalysisTemplate(shareURL string, message string) EmailTemplate {
-        textBody := "I've shared an analysis with you. Open the link to view it:\n\n" + shareURL
+        textBody := "I've shared a PDF with you. Open the link to view it:\n\n" + shareURL
         if strings.TrimSpace(message) != "" {
                 textBody = message + "\n\n" + textBody
         }
@@ -454,7 +454,7 @@ func ShareAnalysisTemplate(shareURL string, message string) EmailTemplate {
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>ManaWise — Shared Analysis</title>
+    <title>ManaWise — Shared PDF</title>
     <style>
         body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: #0e0e14; color: #e8e8f0; padding: 20px; }
         .card { max-width: 600px; margin: 0 auto; background: #121217; border: 1px solid #2a2a3a; border-radius: 12px; padding: 24px; }
@@ -466,9 +466,9 @@ func ShareAnalysisTemplate(shareURL string, message string) EmailTemplate {
 </head>
 <body>
     <div class="card">
-        <div class="logo">🔮 ManaWise — Shared Analysis</div>
+        <div class="logo">🔮 ManaWise — Shared PDF</div>
         <div class="message">%s</div>
-        <a class="cta" href="%s">View Analysis</a>
+        <a class="cta" href="%s">Open PDF</a>
         <div class="link">%s</div>
         <div style="margin-top:18px;color:#8888aa;font-size:12px;">If you didn't expect this email, you can ignore it.</div>
     </div>
@@ -476,7 +476,7 @@ func ShareAnalysisTemplate(shareURL string, message string) EmailTemplate {
 </html>
 `, htmlEscape(message), shareURL, shareURL)
 
-        subject := "A ManaWise analysis was shared with you"
+        subject := "A ManaWise PDF was shared with you"
         return EmailTemplate{Subject: subject, TextBody: textBody, HtmlBody: htmlBody}
 }
 

@@ -57,11 +57,11 @@ func TestShareAnalysisHandler_UsesForwardedHostAndProto(t *testing.T) {
 	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode response: %v body=%s", err, rr.Body.String())
 	}
-	const expectedPrefix = "https://mana-wise.geniuscrafters.it/share/"
+	const expectedPrefix = "https://mana-wise.geniuscrafters.it/api/v1/analysis/share/"
 	if !strings.HasPrefix(resp.ShareURL, expectedPrefix) {
 		t.Fatalf("expected forwarded host in share url, got %q", resp.ShareURL)
 	}
-	if token := strings.TrimPrefix(resp.ShareURL, expectedPrefix); token == "" {
-		t.Fatalf("expected non-empty share token in url, got %q", resp.ShareURL)
+	if suffix := strings.TrimPrefix(resp.ShareURL, expectedPrefix); suffix == "" || !strings.HasSuffix(suffix, "/pdf") {
+		t.Fatalf("expected pdf endpoint in share url, got %q", resp.ShareURL)
 	}
 }
