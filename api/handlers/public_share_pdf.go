@@ -3,6 +3,7 @@ package handlers
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"net/http"
 	"sort"
 	"strings"
@@ -268,13 +269,14 @@ func renderManaRiskBars(pdf *gofpdf.Fpdf, draws *domain.DrawProbabilities, x, y,
 	barH := (height - 12) / float64(len(items))
 	for i, item := range items {
 		y0 := y + 6 + float64(i)*barH
+		percent := percentValue(item.value)
 		pdf.SetTextColor(31, 41, 55)
 		pdf.SetFont("Helvetica", "", 8)
 		pdf.Text(x+2, y0+4, item.label)
 		pdf.SetFillColor(item.color[0], item.color[1], item.color[2])
-		pdf.Rect(x+18, y0+1, (width-22)*item.value, barH-4, "F")
+		pdf.Rect(x+18, y0+1, (width-22)*(percent/100), barH-4, "F")
 		pdf.SetTextColor(31, 41, 55)
-		pdf.Text(x+width-16, y0+4, fmt.Sprintf("%.0f%%", item.value*100))
+		pdf.Text(x+width-16, y0+4, fmt.Sprintf("%.1f%%", percent))
 	}
 }
 
@@ -422,5 +424,12 @@ func pct(draws *domain.DrawProbabilities, pick func(*domain.DrawProbabilities) f
 	if draws == nil {
 		return "-"
 	}
-	return fmt.Sprintf("%.1f%%", pick(draws)*100)
+	return fmt.Sprintf("%.1f%%", percentValue(pick(draws)))
+}
+
+func percentValue(value float64) float64 {
+	if math.Abs(value) <= 1 {
+		return value * 100
+	}
+	return value
 }
