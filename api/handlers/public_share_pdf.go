@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/gigliofr/mana-wise/domain"
@@ -56,10 +57,20 @@ func renderSharedAnalysisPDF(bundle *sharedAnalysisBundle, shareURL string) ([]b
 	pdf.SetAutoPageBreak(true, 14)
 	pdf.AddPage()
 
-	ink := 35
-	dim := 102
-	borderR, borderG, borderB := 205, 191, 169
-	bgR, bgG, bgB := 247, 243, 236
+	const (
+		inkR    = 31
+		inkG    = 41
+		inkB    = 55
+		dimR    = 102
+		dimG    = 116
+		dimB    = 139
+		borderR = 205
+		borderG = 191
+		borderB = 169
+		bgR     = 247
+		bgG     = 243
+		bgB     = 236
+	)
 
 	pdf.SetFillColor(bgR, bgG, bgB)
 	pdf.Rect(0, 0, 210, 297, "F")
@@ -67,11 +78,11 @@ func renderSharedAnalysisPDF(bundle *sharedAnalysisBundle, shareURL string) ([]b
 	pdf.SetLineWidth(0.8)
 	pdf.Rect(12, 12, 186, 273, "D")
 
-	pdf.SetTextColor(ink, ink, ink)
+	pdf.SetTextColor(inkR, inkG, inkB)
 	pdf.SetFont("Helvetica", "B", 22)
 	pdf.CellFormat(0, 12, "ManaWise - Riepilogo Analisi", "", 1, "L", false, 0, "")
 	pdf.SetFont("Helvetica", "", 10)
-	pdf.SetTextColor(dim, dim, dim)
+	pdf.SetTextColor(dimR, dimG, dimB)
 	pdf.CellFormat(0, 6, fmt.Sprintf("Token: %s", bundle.Token), "", 1, "L", false, 0, "")
 	pdf.CellFormat(0, 6, fmt.Sprintf("Valido fino: %s", bundle.Link.ExpiresAt.Format("02/01/2006 15:04")), "", 1, "L", false, 0, "")
 	pdf.CellFormat(0, 6, fmt.Sprintf("Share URL: %s", shareURL), "", 1, "L", false, 0, "")
@@ -79,11 +90,11 @@ func renderSharedAnalysisPDF(bundle *sharedAnalysisBundle, shareURL string) ([]b
 	y := 48.0
 	drawStat := func(label, value string, xLabel, xValue, width float64) {
 		pdf.SetFont("Helvetica", "", 12)
-		pdf.SetTextColor(dim, dim, dim)
+		pdf.SetTextColor(dimR, dimG, dimB)
 		pdf.SetXY(xLabel, y)
 		pdf.CellFormat(width, 7, label, "", 0, "L", false, 0, "")
 		pdf.SetFont("Helvetica", "B", 16)
-		pdf.SetTextColor(ink, ink, ink)
+		pdf.SetTextColor(inkR, inkG, inkB)
 		pdf.SetXY(xValue, y)
 		pdf.CellFormat(width, 7, value, "", 0, "L", false, 0, "")
 	}
@@ -102,11 +113,11 @@ func renderSharedAnalysisPDF(bundle *sharedAnalysisBundle, shareURL string) ([]b
 	y += 8
 
 	pdf.SetFont("Helvetica", "B", 13)
-	pdf.SetTextColor(ink, ink, ink)
+	pdf.SetTextColor(inkR, inkG, inkB)
 	pdf.Text(18, y, "Sintesi")
 	y += 8
 	pdf.SetFont("Helvetica", "", 11)
-	pdf.SetTextColor(ink, ink, ink)
+	pdf.SetTextColor(inkR, inkG, inkB)
 
 	lines := []string{
 		fmt.Sprintf("Archetipo: %s", fallbackText(bundle.Result.Result.Interaction.Archetype, "-")),
@@ -143,15 +154,32 @@ func renderSharedAnalysisPDF(bundle *sharedAnalysisBundle, shareURL string) ([]b
 			line := fmt.Sprintf("- %s: %d (score %.1f)", b.Category, b.Count, b.Score)
 			pdf.MultiCell(0, 5, line, "", "L", false)
 			y = pdf.GetY() + 1
-			if y > 252 {
+			if y > 220 {
 				break
 			}
 		}
 	}
 
+	renderManaCurveSection(pdf, bundle.Result.Result.Mana.Distribution, bundle.Result.Result.Mana.DrawProbabilities, 18, 228, 174)
+
+	if len(bundle.Deck.Cards) > 0 {
+		pdf.AddPage()
+		pdf.SetFillColor(bgR, bgG, bgB)
+		pdf.Rect(0, 0, 210, 297, "F")
+		pdf.SetDrawColor(borderR, borderG, borderB)
+		pdf.Rect(12, 12, 186, 273, "D")
+		pdf.SetTextColor(inkR, inkG, inkB)
+		pdf.SetFont("Helvetica", "B", 16)
+		pdf.CellFormat(0, 10, "Carte del mazzo", "", 1, "L", false, 0, "")
+		pdf.SetFont("Helvetica", "", 10)
+		pdf.SetTextColor(dimR, dimG, dimB)
+		pdf.CellFormat(0, 6, fmt.Sprintf("Mainboard: %d carte | Sideboard: %d carte", countQuantity(bundle.Deck.MainboardCards()), countQuantity(sideboardCards(bundle.Deck.Cards))), "", 1, "L", false, 0, "")
+		renderCardList(pdf, bundle.Deck.Cards, 28)
+	}
+
 	pdf.SetY(264)
 	pdf.SetFont("Helvetica", "", 9)
-	pdf.SetTextColor(dim, dim, dim)
+	pdf.SetTextColor(dimR, dimG, dimB)
 	pdf.CellFormat(0, 5, "Creato con ManaWise - export PDF A4", "", 1, "L", false, 0, "")
 
 	var buf bytes.Buffer
@@ -159,6 +187,156 @@ func renderSharedAnalysisPDF(bundle *sharedAnalysisBundle, shareURL string) ([]b
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+func renderManaCurveSection(pdf *gofpdf.Fpdf, buckets []domain.CMCBucket, draws *domain.DrawProbabilities, x, y, width float64) {
+	pdf.SetFont("Helvetica", "B", 13)
+	pdf.SetTextColor(31, 41, 55)
+	pdf.Text(x, y, "Curva mana e distribuzione")
+	y += 4
+	pdf.SetDrawColor(205, 191, 169)
+	pdf.Rect(x, y+2, width, 46, "D")
+	if len(buckets) == 0 {
+		pdf.SetFont("Helvetica", "", 9)
+		pdf.SetTextColor(102, 116, 139)
+		pdf.Text(x+2, y+10, "Curva non disponibile")
+		return
+	}
+
+	maxCount := 1
+	for _, bucket := range buckets {
+		if bucket.Count > maxCount {
+			maxCount = bucket.Count
+		}
+	}
+	barAreaWidth := width * 0.62
+	barW := barAreaWidth / float64(len(buckets))
+	baselineY := y + 42
+	for i, bucket := range buckets {
+		barH := 30.0 * float64(bucket.Count) / float64(maxCount)
+		barX := x + float64(i)*barW + 1.5
+		barY := baselineY - barH
+		pdf.SetFillColor(140, 84, 64)
+		pdf.Rect(barX, barY, barW-3, barH, "F")
+		pdf.SetTextColor(31, 41, 55)
+		pdf.SetFont("Helvetica", "", 7)
+		pdf.Text(barX, baselineY+4, fmt.Sprintf("%d", bucket.CMC))
+		pdf.Text(barX, barY-1, fmt.Sprintf("%d", bucket.Count))
+	}
+
+	renderManaRiskBars(pdf, draws, x+barAreaWidth+2, y+2, width-barAreaWidth-2, 46)
+}
+
+func renderManaRiskBars(pdf *gofpdf.Fpdf, draws *domain.DrawProbabilities, x, y, width, height float64) {
+	pdf.SetDrawColor(205, 191, 169)
+	pdf.Rect(x, y, width, height, "D")
+	pdf.SetFont("Helvetica", "B", 8)
+	pdf.SetTextColor(102, 116, 139)
+	pdf.Text(x+2, y+4, "Rischi")
+
+	if draws == nil {
+		pdf.SetFont("Helvetica", "", 8)
+		pdf.Text(x+2, y+10, "N/D")
+		return
+	}
+	items := []struct {
+		label string
+		value float64
+		color [3]int
+	}{
+		{"Screw", draws.ManaScrewRisk, [3]int{180, 83, 64}},
+		{"Flood", draws.ManaFloodRisk, [3]int{245, 158, 11}},
+		{"Keep", draws.Turn1LandProb, [3]int{34, 197, 94}},
+	}
+	barH := (height - 12) / float64(len(items))
+	for i, item := range items {
+		y0 := y + 6 + float64(i)*barH
+		pdf.SetTextColor(31, 41, 55)
+		pdf.SetFont("Helvetica", "", 8)
+		pdf.Text(x+2, y0+4, item.label)
+		pdf.SetFillColor(item.color[0], item.color[1], item.color[2])
+		pdf.Rect(x+18, y0+1, (width-22)*item.value, barH-4, "F")
+		pdf.SetTextColor(31, 41, 55)
+		pdf.Text(x+width-16, y0+4, fmt.Sprintf("%.0f%%", item.value*100))
+	}
+}
+
+func renderCardList(pdf *gofpdf.Fpdf, cards []domain.DeckCard, startY float64) {
+	mainboard := make([]domain.DeckCard, 0, len(cards))
+	sideboard := make([]domain.DeckCard, 0)
+	for _, c := range cards {
+		if c.IsSideboard {
+			sideboard = append(sideboard, c)
+			continue
+		}
+		mainboard = append(mainboard, c)
+	}
+	if len(mainboard) > 0 {
+		sort.SliceStable(mainboard, func(i, j int) bool {
+			return strings.ToLower(mainboard[i].CardName) < strings.ToLower(mainboard[j].CardName)
+		})
+	}
+
+	y := startY
+	y = printDeckGroup(pdf, "Mainboard", mainboard, y)
+	if len(sideboard) > 0 {
+		y += 2
+		_ = printDeckGroup(pdf, "Sideboard", sideboard, y)
+	}
+}
+
+func printDeckGroup(pdf *gofpdf.Fpdf, title string, list []domain.DeckCard, startY float64) float64 {
+	if len(list) == 0 {
+		return startY
+	}
+	x := 18.0
+	y := startY
+	pdf.SetFont("Helvetica", "B", 11)
+	pdf.SetTextColor(31, 41, 55)
+	pdf.Text(x, y, fmt.Sprintf("%s (%d)", title, countQuantity(list)))
+	y += 5
+	pdf.SetFont("Helvetica", "", 9)
+	pdf.SetTextColor(31, 41, 55)
+	for _, c := range list {
+		if c.Quantity <= 0 || strings.TrimSpace(c.CardName) == "" {
+			continue
+		}
+		line := fmt.Sprintf("%2d x %s", c.Quantity, c.CardName)
+		pdf.Text(x, y, line)
+		y += 4.3
+		if y > 255 {
+			pdf.AddPage()
+			pdf.SetFillColor(247, 243, 236)
+			pdf.Rect(0, 0, 210, 297, "F")
+			pdf.SetDrawColor(205, 191, 169)
+			pdf.Rect(12, 12, 186, 273, "D")
+			pdf.SetFont("Helvetica", "B", 11)
+			pdf.SetTextColor(31, 41, 55)
+			y = 24
+			pdf.Text(x, y, fmt.Sprintf("%s (continua)", title))
+			y += 5
+			pdf.SetFont("Helvetica", "", 9)
+		}
+	}
+	return y + 2
+}
+
+func sideboardCards(cards []domain.DeckCard) []domain.DeckCard {
+	out := make([]domain.DeckCard, 0)
+	for _, c := range cards {
+		if c.IsSideboard {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+func countQuantity(cards []domain.DeckCard) int {
+	total := 0
+	for _, c := range cards {
+		total += c.Quantity
+	}
+	return total
 }
 
 func scoreValue(detail *domain.ScoreDetail) string {
