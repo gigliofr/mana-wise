@@ -306,32 +306,66 @@ func printDeckGroup(pdf *gofpdf.Fpdf, title string, list []domain.DeckCard, star
 	if len(list) == 0 {
 		return startY
 	}
-	x := 18.0
+	x := shareContentLeftX
+	qtyWidth := 16.0
+	nameWidth := 142.0
+	rowGap := 1.2
 	y := startY
 	pdf.SetFont("Helvetica", "B", 11)
 	pdf.SetTextColor(31, 41, 55)
 	pdf.Text(x, y, fmt.Sprintf("%s (%d)", title, countQuantity(list)))
-	y += 5
+	y += 6
 	pdf.SetFont("Helvetica", "", 9)
 	pdf.SetTextColor(31, 41, 55)
 	for _, c := range list {
 		if c.Quantity <= 0 || strings.TrimSpace(c.CardName) == "" {
 			continue
 		}
-		line := fmt.Sprintf("%2d x %s", c.Quantity, c.CardName)
-		pdf.Text(x, y, line)
-		y += 4.3
-		if y > shareContentBottomY {
+		rowHeight := renderDeckCardRowHeight(pdf, c.CardName, nameWidth)
+		if y+rowHeight+rowGap > shareContentBottomY {
 			advancePage()
 			pdf.SetFont("Helvetica", "B", 11)
 			pdf.SetTextColor(31, 41, 55)
 			y = shareCardPageStartY
 			pdf.Text(x, y, fmt.Sprintf("%s (continua)", title))
-			y += 5
+			y += 6
 			pdf.SetFont("Helvetica", "", 9)
 		}
+		renderDeckCardRow(pdf, x, y, qtyWidth, nameWidth, rowHeight, c)
+		y += rowHeight + rowGap
 	}
 	return y + 2
+}
+
+func renderDeckCardRowHeight(pdf *gofpdf.Fpdf, cardName string, nameWidth float64) float64 {
+	lines := pdf.SplitText(strings.TrimSpace(cardName), nameWidth)
+	if len(lines) == 0 {
+		lines = []string{cardName}
+	}
+	height := float64(len(lines)) * 4.0
+	if height < 6 {
+		height = 6
+	}
+	return height + 1.2
+}
+
+func renderDeckCardRow(pdf *gofpdf.Fpdf, x, y, qtyWidth, nameWidth, rowHeight float64, card domain.DeckCard) {
+	rowFill := [3]int{252, 250, 247}
+	qtyFill := [3]int{140, 84, 64}
+	lineColor := [3]int{230, 225, 215}
+	pdf.SetDrawColor(lineColor[0], lineColor[1], lineColor[2])
+	pdf.SetFillColor(rowFill[0], rowFill[1], rowFill[2])
+	pdf.Rect(x, y, qtyWidth+nameWidth, rowHeight, "DF")
+	pdf.SetFillColor(qtyFill[0], qtyFill[1], qtyFill[2])
+	pdf.Rect(x, y, qtyWidth, rowHeight, "F")
+	pdf.SetTextColor(255, 255, 255)
+	pdf.SetFont("Helvetica", "B", 10)
+	pdf.SetXY(x, y + 0.5)
+	pdf.CellFormat(qtyWidth, rowHeight-1, fmt.Sprintf("%d", card.Quantity), "", 0, "C", false, 0, "")
+	pdf.SetTextColor(31, 41, 55)
+	pdf.SetFont("Helvetica", "", 9)
+	pdf.SetXY(x+qtyWidth+2, y+0.6)
+	pdf.MultiCell(nameWidth-4, 4.0, strings.TrimSpace(card.CardName), "", "L", false)
 }
 
 func drawSharePageFrame(pdf *gofpdf.Fpdf, bgR, bgG, bgB, borderR, borderG, borderB int) {
