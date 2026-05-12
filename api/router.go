@@ -33,6 +33,7 @@ type RouterDeps struct {
 	DeckClassifyUC         *usecase.DeckClassifierUseCase
 	CommanderBracketUC     *usecase.CommanderBracketUseCase
 	CommanderBracketConfig *domain.CommanderBracketConfig
+	LegalityEvaluator      *usecase.LegalityEvaluator
 	OTAUC                  *usecase.OTAUpdateUseCase
 	ScoreUC                *usecase.ScoreUseCase
 	ImpactScoreUC          *usecase.ImpactScoreUseCase
@@ -48,9 +49,9 @@ type RouterDeps struct {
 // NewRouter builds and returns the chi router with all routes registered.
 func NewRouter(deps RouterDeps) http.Handler {
 	r := chi.NewRouter()
-
 	// Global middleware must be registered before any routes.
 	r.Use(panicShieldMiddleware)
+	r.Use(chimiddleware.RequestID)
 	r.Use(chimiddleware.Logger)
 	r.Use(chimiddleware.RealIP)
 	r.Use(corsMiddleware)
@@ -63,7 +64,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 	authH := handlers.NewAuthHandler(deps.UserRepo, deps.JWTSecret, deps.SessionTTLMinutes, deps.RefreshTTLMinutes).
 		WithPasswordResetRepo(deps.PasswordResetRepo).
 		WithMailer(deps.Mailer)
-	analyzeH := handlers.NewAnalyzeHandler(deps.AnalyzeUC, deps.AISuggester, deps.CommanderBracketUC, deps.UserRepo, deps.Analytics)
+	analyzeH := handlers.NewAnalyzeHandler(deps.AnalyzeUC, deps.AISuggester, deps.CommanderBracketUC, deps.UserRepo, deps.Analytics).WithLegalityEvaluator(deps.LegalityEvaluator)
 	cardsH := handlers.NewCardsHandler(deps.CardRepo, deps.ResolveCardUC)
 	sideboardH := handlers.NewSideboardCoachHandler(deps.SideboardUC)
 	mulliganH := handlers.NewMulliganHandler(deps.MulliganUC)
@@ -79,7 +80,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 	var deckH *handlers.DeckHandler
 	var deckImportExportH *handlers.DeckImportExportHandler
 	if deps.DeckRepo != nil {
-		deckH = handlers.NewDeckHandler(deps.DeckRepo, deps.UserRepo, deps.CardRepo, deps.AnalyzeUC, deps.DeckClassifyUC, deps.MulliganUC).WithTracker(deps.Analytics).WithScoreUC(deps.ScoreUC).WithCommanderBracketUC(deps.CommanderBracketUC)
+		deckH = handlers.NewDeckHandler(deps.DeckRepo, deps.UserRepo, deps.CardRepo, deps.AnalyzeUC, deps.DeckClassifyUC, deps.MulliganUC).WithTracker(deps.Analytics).WithScoreUC(deps.ScoreUC).WithCommanderBracketUC(deps.CommanderBracketUC).WithLegalityEvaluator(deps.LegalityEvaluator)
 		deckImportExportH = handlers.NewDeckImportExportHandler(deps.DeckRepo, deps.UserRepo, deps.CardRepo, deps.ResolveCardUC)
 	}
 
@@ -205,7 +206,12 @@ func safeServeHTTP(next http.Handler, w http.ResponseWriter, r *http.Request, sc
 			if scope == "" {
 				scope = "unknown"
 			}
-			log.Printf("panic in %s: %v\n%s", scope, rec, debug.Stack())
+			reqID := chimiddleware.GetReqID(r.Context())
+			if reqID != "" {
+				log.Printf("panic in %s req_id=%s: %v\n%s", scope, reqID, rec, debug.Stack())
+			} else {
+				log.Printf("panic in %s: %v\n%s", scope, rec, debug.Stack())
+			}
 			safeWriteInternalError(w)
 		}
 	}()
@@ -241,7 +247,12 @@ func spaFallbackHandler(distDir string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				log.Printf("panic in spaFallbackHandler: %v\n%s", rec, debug.Stack())
+				reqID := chimiddleware.GetReqID(r.Context())
+				if reqID != "" {
+					log.Printf("panic in spaFallbackHandler req_id=%s: %v\n%s", reqID, rec, debug.Stack())
+				} else {
+					log.Printf("panic in spaFallbackHandler: %v\n%s", rec, debug.Stack())
+				}
 				safeWriteInternalError(w)
 			}
 		}()

@@ -15,6 +15,8 @@ type AnalyticsMetricsSnapshot struct {
 	AnalysisByAISource   map[string]int64 `json:"analysis_by_ai_source"`
 	ForwardingErrors     int64            `json:"forwarding_errors"`
 	LastEventAtUnixMilli int64            `json:"last_event_at_unix_ms"`
+	CacheHits            int64            `json:"cache_hits"`
+	CacheMisses          int64            `json:"cache_misses"`
 }
 
 // AnalyticsMetricsProvider exposes runtime metrics snapshots for admin/ops endpoints.

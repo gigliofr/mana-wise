@@ -16,6 +16,7 @@ import (
 	"github.com/gigliofr/mana-wise/config"
 	"github.com/gigliofr/mana-wise/domain"
 	"github.com/gigliofr/mana-wise/infrastructure/analytics"
+	"github.com/gigliofr/mana-wise/infrastructure/cache"
 	"github.com/gigliofr/mana-wise/infrastructure/llm"
 	"github.com/gigliofr/mana-wise/infrastructure/mongodb"
 	"github.com/gigliofr/mana-wise/infrastructure/notifications"
@@ -88,13 +89,16 @@ func main() {
 	)
 
 	// ── Use cases ────────────────────────────────────────────────────────────
-	analyzeUC := usecase.NewAnalyzeDeckUseCase(scryfallClient, cardRepo, cfg.Worker.PoolSize)
+	analysisCache := cache.New()
+	legalityCache := cache.New()
+	analyzeUC := usecase.NewAnalyzeDeckUseCase(scryfallClient, cardRepo, cfg.Worker.PoolSize).WithCache(analysisCache, 30*time.Minute)
 	resolveCardUC := usecase.NewResolveCardByNameUseCase(scryfallClient, cardRepo)
 	sideboardUC := usecase.NewSideboardCoachUseCase(cardRepo)
 	mulliganUC := usecase.NewMulliganAssistantUseCase(cardRepo)
 	matchupUC := usecase.NewMatchupSimulatorUseCase(cardRepo)
 	deckClassifyUC := usecase.NewDeckClassifierUseCase(cardRepo)
 	commanderBracketUC := usecase.NewCommanderBracketUseCase(&cfg.CommanderBrackets)
+	legalityEvaluator := usecase.NewLegalityEvaluator(legalityCache, 30*time.Minute)
 
 	// EDH Power Level Scoring
 	impactScoreUC := &usecase.ImpactScoreUseCase{
@@ -155,6 +159,7 @@ func main() {
 	aiSuggester := usecase.NewAISuggester(cfg.LLM.AIMode, primaryLLM, secondaryLLM, cfg.LLM.InternalRulesEnabled).
 		WithFallbackPolicy(cfg.LLM.FallbackOnStatus, cfg.LLM.FallbackOnTimeout)
 	log.Printf("✅ AI suggester ready (mode: %s, internal_rules: %t)", cfg.LLM.AIMode, cfg.LLM.InternalRulesEnabled)
+	log.Printf("✅ AI fallback policy: statuses=%v timeout_fallback=%t timeout=%s secondary=%s", cfg.LLM.FallbackOnStatus, cfg.LLM.FallbackOnTimeout, cfg.LLM.Timeout, cfg.LLM.SecondaryProvider)
 
 	// ── Analytics tracker (optional) ─────────────────────────────────────────
 	var baseTracker domain.AnalyticsTracker = domain.NoopAnalyticsTracker{}
@@ -167,6 +172,16 @@ func main() {
 	runtimeMetrics := analytics.NewRuntimeMetricsTracker(baseTracker)
 	var tracker domain.AnalyticsTracker = runtimeMetrics
 
+	// Wire cache metrics callbacks to runtime metrics tracker (increment counters asynchronously).
+	analysisCache.SetCallbacks(runtimeMetrics.RecordCacheHit, runtimeMetrics.RecordCacheMiss)
+	legalityCache.SetCallbacks(runtimeMetrics.RecordCacheHit, runtimeMetrics.RecordCacheMiss)
+
+	// Start janitor goroutines for caches (evict expired entries periodically).
+	analysisCacheDone := make(chan struct{})
+	legalityCacheDone := make(chan struct{})
+	analysisCache.StartJanitor(1*time.Minute, analysisCacheDone)
+	legalityCache.StartJanitor(1*time.Minute, legalityCacheDone)
+
 	// ── OTA storage/use case ────────────────────────────────────────────────
 	otaRepo, err := ota.NewStorageRepository(cfg.OTA.StorageDir)
 	if err != nil {
@@ -177,29 +192,30 @@ func main() {
 	// ── Router ───────────────────────────────────────────────────────────────
 	router := api.NewRouter(api.RouterDeps{
 		SharedAnalysisLinkRepo: sharedAnalysisLinkRepo,
-		CardRepo:          cardRepo,
-		UserRepo:          userRepo,
-		DeckRepo:          deckRepo,
-		AnalyzeUC:         analyzeUC,
-		SideboardUC:       sideboardUC,
-		MulliganUC:        mulliganUC,
-		MatchupUC:         matchupUC,
-		DeckClassifyUC:    deckClassifyUC,
-		CommanderBracketUC: commanderBracketUC,
+		CardRepo:               cardRepo,
+		UserRepo:               userRepo,
+		DeckRepo:               deckRepo,
+		AnalyzeUC:              analyzeUC,
+		LegalityEvaluator:      legalityEvaluator,
+		SideboardUC:            sideboardUC,
+		MulliganUC:             mulliganUC,
+		MatchupUC:              matchupUC,
+		DeckClassifyUC:         deckClassifyUC,
+		CommanderBracketUC:     commanderBracketUC,
 		CommanderBracketConfig: &cfg.CommanderBrackets,
-		ScoreUC:           scoreUC,
-		ImpactScoreUC:     impactScoreUC,
-		AISuggester:       aiSuggester,
-		EmbedBatchUC:      embedBatchUC,
-		ResolveCardUC:     resolveCardUC,
-		OTAUC:             otaUC,
-		Analytics:         tracker,
-		AnalyticsMetrics:  runtimeMetrics,
-		PasswordResetRepo: passwordResetTokenRepo,
-		Mailer:            mailer,
-		JWTSecret:         cfg.JWT.Secret,
-		SessionTTLMinutes: cfg.JWT.SessionTTLMinutes,
-		RefreshTTLMinutes: cfg.JWT.RefreshTTLMinutes,
+		ScoreUC:                scoreUC,
+		ImpactScoreUC:          impactScoreUC,
+		AISuggester:            aiSuggester,
+		EmbedBatchUC:           embedBatchUC,
+		ResolveCardUC:          resolveCardUC,
+		OTAUC:                  otaUC,
+		Analytics:              tracker,
+		AnalyticsMetrics:       runtimeMetrics,
+		PasswordResetRepo:      passwordResetTokenRepo,
+		Mailer:                 mailer,
+		JWTSecret:              cfg.JWT.Secret,
+		SessionTTLMinutes:      cfg.JWT.SessionTTLMinutes,
+		RefreshTTLMinutes:      cfg.JWT.RefreshTTLMinutes,
 	})
 
 	// ── HTTP server ───────────────────────────────────────────────────────────
@@ -224,6 +240,9 @@ func main() {
 
 	<-quit
 	log.Println("🛑 Shutting down...")
+	// Stop cache janitors first.
+	close(analysisCacheDone)
+	close(legalityCacheDone)
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer shutdownCancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {

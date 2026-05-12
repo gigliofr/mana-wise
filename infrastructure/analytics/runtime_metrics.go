@@ -21,6 +21,8 @@ type RuntimeMetricsTracker struct {
 	analysisBySource  map[string]int64
 	forwardingErrors  int64
 	lastEventAt       time.Time
+	cacheHits         int64
+	cacheMisses       int64
 }
 
 // NewRuntimeMetricsTracker wraps an existing tracker and adds runtime counters.
@@ -76,6 +78,20 @@ func (t *RuntimeMetricsTracker) Track(ctx context.Context, distinctID, event str
 	return nil
 }
 
+// RecordCacheHit increments the in-process cache hit counter.
+func (t *RuntimeMetricsTracker) RecordCacheHit() {
+	t.mu.Lock()
+	t.cacheHits++
+	t.mu.Unlock()
+}
+
+// RecordCacheMiss increments the in-process cache miss counter.
+func (t *RuntimeMetricsTracker) RecordCacheMiss() {
+	t.mu.Lock()
+	t.cacheMisses++
+	t.mu.Unlock()
+}
+
 // Snapshot returns a copy of the current runtime counters.
 func (t *RuntimeMetricsTracker) Snapshot() domain.AnalyticsMetricsSnapshot {
 	t.mu.RLock()
@@ -103,5 +119,7 @@ func (t *RuntimeMetricsTracker) Snapshot() domain.AnalyticsMetricsSnapshot {
 		AnalysisByAISource:   analysisBySource,
 		ForwardingErrors:     t.forwardingErrors,
 		LastEventAtUnixMilli: lastEventMs,
+		CacheHits:            t.cacheHits,
+		CacheMisses:          t.cacheMisses,
 	}
 }

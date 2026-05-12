@@ -15,6 +15,8 @@ type entry struct {
 type Cache struct {
 	mu      sync.RWMutex
 	entries map[string]entry
+	hitCb   func()
+	missCb  func()
 }
 
 // New creates an empty Cache. Start the optional janitor with StartJanitor.
@@ -35,9 +37,23 @@ func (c *Cache) Get(key string) (interface{}, bool) {
 	defer c.mu.RUnlock()
 	e, ok := c.entries[key]
 	if !ok || time.Now().After(e.expiresAt) {
+		if c.missCb != nil {
+			go c.missCb()
+		}
 		return nil, false
 	}
+	if c.hitCb != nil {
+		go c.hitCb()
+	}
 	return e.value, true
+}
+
+// SetCallbacks configures optional functions invoked on cache hits and misses.
+func (c *Cache) SetCallbacks(hit func(), miss func()) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.hitCb = hit
+	c.missCb = miss
 }
 
 // Delete removes a key from the cache.
