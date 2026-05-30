@@ -121,34 +121,34 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	if userID == "" {
 		refreshToken, badRequest, err := extractRefreshToken(r)
 		if err != nil {
-			jsonError(w, "invalid request body", http.StatusBadRequest)
+			WriteAPIErrorFromMsg(w, "invalid request body", http.StatusBadRequest)
 			return
 		}
 		if badRequest || strings.TrimSpace(refreshToken) == "" {
-			jsonError(w, "refresh_token is required", http.StatusBadRequest)
+			WriteAPIErrorFromMsg(w, "refresh_token is required", http.StatusBadRequest)
 			return
 		}
 
 		claims, parseErr := middleware.ParseTokenClaims(refreshToken, h.jwtSecret)
 		if parseErr != nil {
-			jsonError(w, "invalid or expired token", http.StatusUnauthorized)
+			WriteAPIErrorFromMsg(w, "invalid or expired token", http.StatusUnauthorized)
 			return
 		}
 		if claims.TokenType != "" && claims.TokenType != "refresh" {
-			jsonError(w, "invalid token type", http.StatusUnauthorized)
+			WriteAPIErrorFromMsg(w, "invalid token type", http.StatusUnauthorized)
 			return
 		}
 
 		userID = strings.TrimSpace(claims.UserID)
 		if userID == "" {
-			jsonError(w, "invalid token claims", http.StatusUnauthorized)
+			WriteAPIErrorFromMsg(w, "invalid token claims", http.StatusUnauthorized)
 			return
 		}
 	}
 
 	user, err := h.userRepo.FindByID(r.Context(), userID)
 	if err != nil || user == nil {
-		jsonError(w, "user not found", http.StatusNotFound)
+		WriteAPIErrorFromMsg(w, "user not found", http.StatusNotFound)
 		return
 	}
 
@@ -161,7 +161,7 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	user.Remaining = user.RemainingAnalyses(domain.CurrentBusinessDay())
 	resp, err := h.issueTokens(user)
 	if err != nil {
-		jsonError(w, "could not generate token", http.StatusInternalServerError)
+		WriteAPIErrorFromMsg(w, "could not generate token", http.StatusInternalServerError)
 		return
 	}
 
@@ -172,7 +172,7 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	var req RegisterRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		jsonError(w, "invalid request body", http.StatusBadRequest)
+		WriteAPIErrorFromMsg(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
@@ -180,27 +180,27 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	req.Name = strings.TrimSpace(req.Name)
 
 	if req.Email == "" || req.Password == "" || req.Name == "" {
-		jsonError(w, "email, password and name are required", http.StatusBadRequest)
+		WriteAPIErrorFromMsg(w, "email, password and name are required", http.StatusBadRequest)
 		return
 	}
 	if len(req.Password) < 8 {
-		jsonError(w, "password must be at least 8 characters", http.StatusBadRequest)
+		WriteAPIErrorFromMsg(w, "password must be at least 8 characters", http.StatusBadRequest)
 		return
 	}
 
 	existing, err := h.userRepo.FindByEmail(r.Context(), req.Email)
 	if err != nil {
-		jsonError(w, "internal error", http.StatusInternalServerError)
+		WriteAPIErrorFromMsg(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	if existing != nil {
-		jsonError(w, "email already registered", http.StatusConflict)
+		WriteAPIErrorFromMsg(w, "email already registered", http.StatusConflict)
 		return
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
-		jsonError(w, "internal error", http.StatusInternalServerError)
+		WriteAPIErrorFromMsg(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 
@@ -214,18 +214,18 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:    time.Now().UTC(),
 	}
 	if err = h.userRepo.Create(r.Context(), user); err != nil {
-		jsonError(w, "could not create user", http.StatusInternalServerError)
+		WriteAPIErrorFromMsg(w, "could not create user", http.StatusInternalServerError)
 		return
 	}
 
 	if h.resetTokenRepo == nil {
-		jsonError(w, "email verification is not configured", http.StatusServiceUnavailable)
+		WriteAPIErrorFromMsg(w, "email verification is not configured", http.StatusServiceUnavailable)
 		return
 	}
 
 	verificationToken, err := generateHexToken(24)
 	if err != nil {
-		jsonError(w, "could not generate verification token", http.StatusInternalServerError)
+		WriteAPIErrorFromMsg(w, "could not generate verification token", http.StatusInternalServerError)
 		return
 	}
 
@@ -240,7 +240,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		CreatedAt: time.Now().UTC(),
 	}
 	if err := h.resetTokenRepo.Create(r.Context(), rec); err != nil {
-		jsonError(w, "could not create verification token", http.StatusInternalServerError)
+		WriteAPIErrorFromMsg(w, "could not create verification token", http.StatusInternalServerError)
 		return
 	}
 
@@ -263,7 +263,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 // VerifyEmail handles GET/POST /auth/verify-email.
 func (h *AuthHandler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
 	if h.resetTokenRepo == nil {
-		jsonError(w, "email verification is not configured", http.StatusServiceUnavailable)
+		WriteAPIErrorFromMsg(w, "email verification is not configured", http.StatusServiceUnavailable)
 		return
 	}
 
@@ -271,7 +271,7 @@ func (h *AuthHandler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
 	if token == "" && r.Method == http.MethodPost {
 		var req VerifyEmailRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			jsonError(w, "invalid request body", http.StatusBadRequest)
+			WriteAPIErrorFromMsg(w, "invalid request body", http.StatusBadRequest)
 			return
 		}
 		token = strings.TrimSpace(req.Token)
@@ -284,7 +284,7 @@ func (h *AuthHandler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
 
 	rec, err := h.resetTokenRepo.Consume(r.Context(), token)
 	if err != nil {
-		jsonError(w, "internal error", http.StatusInternalServerError)
+		WriteAPIErrorFromMsg(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	if rec == nil || rec.Purpose != "email_verification" {
@@ -294,7 +294,7 @@ func (h *AuthHandler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
 
 	user, err := h.userRepo.FindByID(r.Context(), rec.UserID)
 	if err != nil {
-		jsonError(w, "internal error", http.StatusInternalServerError)
+		WriteAPIErrorFromMsg(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	if user == nil {
@@ -307,7 +307,7 @@ func (h *AuthHandler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
 	user.EmailVerifiedAt = &now
 	user.UpdatedAt = now
 	if err := h.userRepo.Update(r.Context(), user); err != nil {
-		jsonError(w, "could not verify account", http.StatusInternalServerError)
+		WriteAPIErrorFromMsg(w, "could not verify account", http.StatusInternalServerError)
 		return
 	}
 
@@ -318,13 +318,13 @@ func (h *AuthHandler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
 func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 	var req ForgotPasswordRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		jsonError(w, "invalid request body", http.StatusBadRequest)
+		WriteAPIErrorFromMsg(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
 	email := strings.ToLower(strings.TrimSpace(req.Email))
 	if email == "" {
-		jsonError(w, "email is required", http.StatusBadRequest)
+		WriteAPIErrorFromMsg(w, "email is required", http.StatusBadRequest)
 		return
 	}
 
@@ -335,7 +335,7 @@ func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 
 	user, err := h.userRepo.FindByEmail(r.Context(), email)
 	if err != nil {
-		jsonError(w, "internal error", http.StatusInternalServerError)
+		WriteAPIErrorFromMsg(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 
@@ -370,52 +370,52 @@ func (h *AuthHandler) ForgotPassword(w http.ResponseWriter, r *http.Request) {
 func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	var req ResetPasswordRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		jsonError(w, "invalid request body", http.StatusBadRequest)
+		WriteAPIErrorFromMsg(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
 	if len(strings.TrimSpace(req.NewPassword)) < 8 {
-		jsonError(w, "password must be at least 8 characters", http.StatusBadRequest)
+		WriteAPIErrorFromMsg(w, "password must be at least 8 characters", http.StatusBadRequest)
 		return
 	}
 	if strings.TrimSpace(req.Token) == "" {
-		jsonError(w, "token is required", http.StatusBadRequest)
+		WriteAPIErrorFromMsg(w, "token is required", http.StatusBadRequest)
 		return
 	}
 	if h.resetTokenRepo == nil {
-		jsonError(w, "password reset is not configured", http.StatusServiceUnavailable)
+		WriteAPIErrorFromMsg(w, "password reset is not configured", http.StatusServiceUnavailable)
 		return
 	}
 
 	rec, err := h.resetTokenRepo.Consume(r.Context(), strings.TrimSpace(req.Token))
 	if err != nil {
-		jsonError(w, "internal error", http.StatusInternalServerError)
+		WriteAPIErrorFromMsg(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	if rec == nil || rec.Purpose != "password_reset" {
-		jsonError(w, "invalid or expired token", http.StatusUnauthorized)
+		WriteAPIErrorFromMsg(w, "invalid or expired token", http.StatusUnauthorized)
 		return
 	}
 
 	user, err := h.userRepo.FindByID(r.Context(), rec.UserID)
 	if err != nil {
-		jsonError(w, "internal error", http.StatusInternalServerError)
+		WriteAPIErrorFromMsg(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	if user == nil {
-		jsonError(w, "user not found", http.StatusNotFound)
+		WriteAPIErrorFromMsg(w, "user not found", http.StatusNotFound)
 		return
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(strings.TrimSpace(req.NewPassword)), bcrypt.DefaultCost)
 	if err != nil {
-		jsonError(w, "internal error", http.StatusInternalServerError)
+		WriteAPIErrorFromMsg(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	user.PasswordHash = string(hash)
 	user.UpdatedAt = time.Now().UTC()
 	if err := h.userRepo.Update(r.Context(), user); err != nil {
-		jsonError(w, "could not update password", http.StatusInternalServerError)
+		WriteAPIErrorFromMsg(w, "could not update password", http.StatusInternalServerError)
 		return
 	}
 
@@ -430,7 +430,7 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var req LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		jsonError(w, "invalid request body", http.StatusBadRequest)
+		WriteAPIErrorFromMsg(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
@@ -438,21 +438,21 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	user, err := h.userRepo.FindByEmail(r.Context(), req.Email)
 	if err != nil {
-		jsonError(w, "internal error", http.StatusInternalServerError)
+		WriteAPIErrorFromMsg(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	if user == nil {
-		jsonError(w, "invalid credentials", http.StatusUnauthorized)
+		WriteAPIErrorFromMsg(w, "invalid credentials", http.StatusUnauthorized)
 		return
 	}
 
 	if err = bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
-		jsonError(w, "invalid credentials", http.StatusUnauthorized)
+		WriteAPIErrorFromMsg(w, "invalid credentials", http.StatusUnauthorized)
 		return
 	}
 
 	if user.EmailVerificationPending {
-		jsonError(w, "email not verified; please verify your email first", http.StatusForbidden)
+		WriteAPIErrorFromMsg(w, "email not verified; please verify your email first", http.StatusForbidden)
 		return
 	}
 
@@ -464,7 +464,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := h.issueTokens(user)
 	if err != nil {
-		jsonError(w, "could not generate token", http.StatusInternalServerError)
+		WriteAPIErrorFromMsg(w, "could not generate token", http.StatusInternalServerError)
 		return
 	}
 	user.Remaining = user.RemainingAnalyses(domain.CurrentBusinessDay())
@@ -476,13 +476,13 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 func (h *AuthHandler) UpdatePlan(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.UserIDFromContext(r.Context())
 	if userID == "" {
-		jsonError(w, "unauthenticated", http.StatusUnauthorized)
+		WriteAPIErrorFromMsg(w, "unauthenticated", http.StatusUnauthorized)
 		return
 	}
 
 	var req UpdatePlanRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		jsonError(w, "invalid request body", http.StatusBadRequest)
+		WriteAPIErrorFromMsg(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
@@ -490,19 +490,19 @@ func (h *AuthHandler) UpdatePlan(w http.ResponseWriter, r *http.Request) {
 	switch plan {
 	case domain.PlanFree, domain.PlanPro:
 	default:
-		jsonError(w, "invalid plan: supported values are free, pro", http.StatusBadRequest)
+		WriteAPIErrorFromMsg(w, "invalid plan: supported values are free, pro", http.StatusBadRequest)
 		return
 	}
 
 	user, err := h.userRepo.FindByID(r.Context(), userID)
 	if err != nil || user == nil {
-		jsonError(w, "user not found", http.StatusNotFound)
+		WriteAPIErrorFromMsg(w, "user not found", http.StatusNotFound)
 		return
 	}
 
 	if user.Plan != plan {
 		if plan == domain.PlanFree && user.Plan == domain.PlanPro && user.ProUntil != nil && user.ProUntil.After(time.Now().UTC()) {
-			jsonError(w, fmt.Sprintf("active pro entitlement until %s", user.ProUntil.UTC().Format(time.RFC3339)), http.StatusConflict)
+			WriteAPIErrorFromMsg(w, fmt.Sprintf("active pro entitlement until %s", user.ProUntil.UTC().Format(time.RFC3339)), http.StatusConflict)
 			return
 		}
 		user.Plan = plan
@@ -516,7 +516,7 @@ func (h *AuthHandler) UpdatePlan(w http.ResponseWriter, r *http.Request) {
 		tier := strings.ToLower(strings.TrimSpace(req.DonationTier))
 		ref := strings.TrimSpace(req.DonationReference)
 		if ref == "" {
-			jsonError(w, "donation_reference is required to activate pro", http.StatusBadRequest)
+			WriteAPIErrorFromMsg(w, "donation_reference is required to activate pro", http.StatusBadRequest)
 			return
 		}
 		base := time.Now().UTC()
@@ -532,7 +532,7 @@ func (h *AuthHandler) UpdatePlan(w http.ResponseWriter, r *http.Request) {
 			expires := base.AddDate(1, 0, 0)
 			user.ProUntil = &expires
 		default:
-			jsonError(w, "invalid donation_tier: use beta_month_1eur or beta_year_190eur", http.StatusBadRequest)
+			WriteAPIErrorFromMsg(w, "invalid donation_tier: use beta_month_1eur or beta_year_190eur", http.StatusBadRequest)
 			return
 		}
 
@@ -540,14 +540,14 @@ func (h *AuthHandler) UpdatePlan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.userRepo.Update(r.Context(), user); err != nil {
-		jsonError(w, "could not update plan", http.StatusInternalServerError)
+		WriteAPIErrorFromMsg(w, "could not update plan", http.StatusInternalServerError)
 		return
 	}
 
 	user.Remaining = user.RemainingAnalyses(domain.CurrentBusinessDay())
 	resp, err := h.issueTokens(user)
 	if err != nil {
-		jsonError(w, "could not generate token", http.StatusInternalServerError)
+		WriteAPIErrorFromMsg(w, "could not generate token", http.StatusInternalServerError)
 		return
 	}
 
@@ -559,7 +559,7 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.UserIDFromContext(r.Context())
 	user, err := h.userRepo.FindByID(r.Context(), userID)
 	if err != nil || user == nil {
-		jsonError(w, "user not found", http.StatusNotFound)
+		WriteAPIErrorFromMsg(w, "user not found", http.StatusNotFound)
 		return
 	}
 	if user.Plan == domain.PlanPro && user.ProUntil != nil && !user.ProUntil.After(time.Now().UTC()) {

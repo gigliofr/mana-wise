@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gigliofr/mana-wise/domain"
+	"github.com/gigliofr/mana-wise/infrastructure/circuitbreaker"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -16,12 +17,14 @@ const passwordResetTokensCollection = "password_reset_tokens"
 // PasswordResetTokenRepository implements domain.PasswordResetTokenRepository against MongoDB.
 type PasswordResetTokenRepository struct {
 	col *mongo.Collection
+	cb  *circuitbreaker.CircuitBreaker
 }
 
 // NewPasswordResetTokenRepository creates a repository and ensures indexes.
 func NewPasswordResetTokenRepository(ctx context.Context, client *Client) (*PasswordResetTokenRepository, error) {
 	col := client.Collection(passwordResetTokensCollection)
 	repo := &PasswordResetTokenRepository{col: col}
+	repo.cb = defaultCircuitBreaker
 	if err := repo.ensureIndexes(ctx); err != nil {
 		return nil, fmt.Errorf("password reset token repo indexes: %w", err)
 	}

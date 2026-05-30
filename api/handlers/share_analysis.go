@@ -46,11 +46,11 @@ func (h *ShareAnalysisHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 	userID := r.Context().Value("user_id")
 	var req ShareAnalysisAPIRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		jsonError(w, "invalid request body", http.StatusBadRequest)
+		WriteAPIErrorFromMsg(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 	if strings.TrimSpace(req.DeckID) == "" || strings.TrimSpace(req.Channel) == "" {
-		jsonError(w, "deck_id e channel sono obbligatori", http.StatusBadRequest)
+		WriteAPIErrorFromMsg(w, "deck_id e channel sono obbligatori", http.StatusBadRequest)
 		return
 	}
 	var ttl time.Duration
@@ -67,7 +67,7 @@ func (h *ShareAnalysisHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 	}
 	resp, err := usecase.ShareAnalysis(r.Context(), h.Repo, shareReq, h.publicBaseURL(r))
 	if err != nil {
-		jsonError(w, err.Error(), http.StatusInternalServerError)
+		WriteAPIErrorFromMsg(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 

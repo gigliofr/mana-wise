@@ -45,19 +45,19 @@ func NewCardsHandler(cardRepo domain.CardRepository, resolveCard *usecase.Resolv
 // SearchByName handles GET /cards/search?name=... with fuzzy fallback.
 func (h *CardsHandler) SearchByName(w http.ResponseWriter, r *http.Request) {
 	if h.resolveCard == nil {
-		jsonError(w, "card resolver is not configured", http.StatusServiceUnavailable)
+		WriteAPIErrorFromMsg(w, "card resolver is not configured", http.StatusServiceUnavailable)
 		return
 	}
 
 	name := strings.TrimSpace(r.URL.Query().Get("name"))
 	if name == "" {
-		jsonError(w, "name query parameter is required", http.StatusBadRequest)
+		WriteAPIErrorFromMsg(w, "name query parameter is required", http.StatusBadRequest)
 		return
 	}
 
 	card, err := h.resolveCard.Execute(r.Context(), name)
 	if err != nil {
-		jsonError(w, err.Error(), http.StatusNotFound)
+		WriteAPIErrorFromMsg(w, err.Error(), http.StatusNotFound)
 		return
 	}
 	jsonOK(w, card)
@@ -66,13 +66,13 @@ func (h *CardsHandler) SearchByName(w http.ResponseWriter, r *http.Request) {
 // MetadataBatch handles POST /cards/metadata/batch.
 func (h *CardsHandler) MetadataBatch(w http.ResponseWriter, r *http.Request) {
 	if h.cardRepo == nil {
-		jsonError(w, "card repository unavailable", http.StatusServiceUnavailable)
+		WriteAPIErrorFromMsg(w, "card repository unavailable", http.StatusServiceUnavailable)
 		return
 	}
 
 	var req cardMetadataBatchRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		jsonError(w, "invalid request body", http.StatusBadRequest)
+		WriteAPIErrorFromMsg(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
@@ -91,13 +91,13 @@ func (h *CardsHandler) MetadataBatch(w http.ResponseWriter, r *http.Request) {
 		cleaned = append(cleaned, name)
 	}
 	if len(cleaned) == 0 {
-		jsonError(w, "names must contain at least one non-empty card name", http.StatusBadRequest)
+		WriteAPIErrorFromMsg(w, "names must contain at least one non-empty card name", http.StatusBadRequest)
 		return
 	}
 
 	cards, err := h.cardRepo.FindByNames(r.Context(), cleaned)
 	if err != nil {
-		jsonError(w, err.Error(), http.StatusInternalServerError)
+		WriteAPIErrorFromMsg(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -135,11 +135,11 @@ func (h *CardsHandler) GetCard(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	card, err := h.cardRepo.FindByID(r.Context(), id)
 	if err != nil {
-		jsonError(w, fmt.Sprintf("DB error: %s", err.Error()), http.StatusInternalServerError)
+		WriteAPIErrorFromMsg(w, fmt.Sprintf("DB error: %s", err.Error()), http.StatusInternalServerError)
 		return
 	}
 	if card == nil {
-		jsonError(w, "card not found", http.StatusNotFound)
+		WriteAPIErrorFromMsg(w, "card not found", http.StatusNotFound)
 		return
 	}
 	jsonOK(w, card)
@@ -150,11 +150,11 @@ func (h *CardsHandler) PriceTrend(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	card, err := h.cardRepo.FindByID(r.Context(), id)
 	if err != nil {
-		jsonError(w, err.Error(), http.StatusInternalServerError)
+		WriteAPIErrorFromMsg(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	if card == nil {
-		jsonError(w, "card not found", http.StatusNotFound)
+		WriteAPIErrorFromMsg(w, "card not found", http.StatusNotFound)
 		return
 	}
 	jsonOK(w, computePriceTrend(card))
@@ -270,13 +270,13 @@ func (h *CardsHandler) synergiesForCard(w http.ResponseWriter, r *http.Request, 
 	}
 
 	if len(target.EmbeddingVector) == 0 {
-		jsonError(w, "card has no embedding — run /embed/batch first", http.StatusUnprocessableEntity)
+		WriteAPIErrorFromMsg(w, "card has no embedding — run /embed/batch first", http.StatusUnprocessableEntity)
 		return
 	}
 
 	candidates, err := h.cardRepo.FindWithEmbeddings(r.Context(), 2000)
 	if err != nil {
-		jsonError(w, err.Error(), http.StatusInternalServerError)
+		WriteAPIErrorFromMsg(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -298,11 +298,11 @@ func (h *CardsHandler) synergiesForCard(w http.ResponseWriter, r *http.Request, 
 func (h *CardsHandler) loadCardByID(w http.ResponseWriter, r *http.Request, id string) (*domain.Card, bool) {
 	card, err := h.cardRepo.FindByID(r.Context(), id)
 	if err != nil {
-		jsonError(w, err.Error(), http.StatusInternalServerError)
+		WriteAPIErrorFromMsg(w, err.Error(), http.StatusInternalServerError)
 		return nil, false
 	}
 	if card == nil {
-		jsonError(w, "card not found", http.StatusNotFound)
+		WriteAPIErrorFromMsg(w, "card not found", http.StatusNotFound)
 		return nil, false
 	}
 	return card, true
@@ -310,17 +310,17 @@ func (h *CardsHandler) loadCardByID(w http.ResponseWriter, r *http.Request, id s
 
 func (h *CardsHandler) resolveFromQueryName(w http.ResponseWriter, r *http.Request) (*domain.Card, bool) {
 	if h.resolveCard == nil {
-		jsonError(w, "card resolver is not configured", http.StatusServiceUnavailable)
+		WriteAPIErrorFromMsg(w, "card resolver is not configured", http.StatusServiceUnavailable)
 		return nil, false
 	}
 	name := strings.TrimSpace(r.URL.Query().Get("name"))
 	if name == "" {
-		jsonError(w, "name query parameter is required", http.StatusBadRequest)
+		WriteAPIErrorFromMsg(w, "name query parameter is required", http.StatusBadRequest)
 		return nil, false
 	}
 	card, err := h.resolveCard.Execute(r.Context(), name)
 	if err != nil {
-		jsonError(w, err.Error(), http.StatusNotFound)
+		WriteAPIErrorFromMsg(w, err.Error(), http.StatusNotFound)
 		return nil, false
 	}
 	return card, true
@@ -403,23 +403,3 @@ func jsonOK(w http.ResponseWriter, v interface{}) {
 	json.NewEncoder(w).Encode(v)
 }
 
-func jsonError(w http.ResponseWriter, msg string, code int) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"error":  msg,
-		"code":   statusCodeSlug(code),
-		"status": code,
-	})
-}
-
-func statusCodeSlug(code int) string {
-	status := strings.ToLower(strings.TrimSpace(http.StatusText(code)))
-	if status == "" {
-		return "unknown_error"
-	}
-	status = strings.ReplaceAll(status, "-", " ")
-	status = strings.ReplaceAll(status, "  ", " ")
-	status = strings.ReplaceAll(status, " ", "_")
-	return status
-}

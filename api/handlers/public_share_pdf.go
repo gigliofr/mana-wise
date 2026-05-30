@@ -41,7 +41,7 @@ func (h *PublicSharePDFHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 	token := chi.URLParam(r, "token")
 	bundle, status, message := (&PublicShareHandler{Repo: h.Repo, DeckRepo: h.DeckRepo, AnalyzeUC: h.AnalyzeUC}).loadSharedAnalysis(r.Context(), token)
 	if bundle == nil {
-		jsonError(w, message, status)
+		WriteAPIErrorFromMsg(w, message, status)
 		return
 	}
 	baseURL := requestPublicBaseURL(r)
@@ -52,7 +52,7 @@ func (h *PublicSharePDFHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 
 	pdfBytes, err := renderSharedAnalysisPDF(bundle, shareURL)
 	if err != nil {
-		jsonError(w, "pdf generation failed", http.StatusInternalServerError)
+		WriteAPIErrorFromMsg(w, "pdf generation failed", http.StatusInternalServerError)
 		return
 	}
 

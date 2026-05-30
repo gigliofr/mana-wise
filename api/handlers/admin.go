@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/gigliofr/mana-wise/domain"
 )
@@ -41,7 +42,7 @@ type UpdateCommanderBracketsRequest struct {
 func (h *AdminHandler) UpdateUserPlan(w http.ResponseWriter, r *http.Request) {
 	var req UpdateUserPlanRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		jsonError(w, "invalid request body", http.StatusBadRequest)
+		WriteAPIErrorFromMsg(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
@@ -49,13 +50,13 @@ func (h *AdminHandler) UpdateUserPlan(w http.ResponseWriter, r *http.Request) {
 	req.Plan = strings.ToLower(strings.TrimSpace(req.Plan))
 
 	if req.Email == "" || (req.Plan != "free" && req.Plan != "pro") {
-		jsonError(w, "email and plan (free/pro) are required", http.StatusBadRequest)
+		WriteAPIErrorFromMsg(w, "email and plan (free/pro) are required", http.StatusBadRequest)
 		return
 	}
 
 	user, err := h.userRepo.FindByEmail(r.Context(), req.Email)
 	if err != nil || user == nil {
-		jsonError(w, "user not found", http.StatusNotFound)
+		WriteAPIErrorFromMsg(w, "user not found", http.StatusNotFound)
 		return
 	}
 
@@ -67,7 +68,7 @@ func (h *AdminHandler) UpdateUserPlan(w http.ResponseWriter, r *http.Request) {
 	user.Plan = plan
 
 	if err := h.userRepo.Update(r.Context(), user); err != nil {
-		jsonError(w, "failed to update user", http.StatusInternalServerError)
+		WriteAPIErrorFromMsg(w, "failed to update user", http.StatusInternalServerError)
 		return
 	}
 
@@ -80,7 +81,7 @@ func (h *AdminHandler) UpdateUserPlan(w http.ResponseWriter, r *http.Request) {
 // FunnelMetrics handles GET /admin/metrics/funnel (secret-key protected).
 func (h *AdminHandler) FunnelMetrics(w http.ResponseWriter, r *http.Request) {
 	if h.metrics == nil {
-		jsonError(w, "metrics provider unavailable", http.StatusServiceUnavailable)
+		WriteAPIErrorFromMsg(w, "metrics provider unavailable", http.StatusServiceUnavailable)
 		return
 	}
 
@@ -89,10 +90,38 @@ func (h *AdminHandler) FunnelMetrics(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// StabilityMetrics handles GET /admin/metrics/stability (secret-key protected).
+func (h *AdminHandler) StabilityMetrics(w http.ResponseWriter, r *http.Request) {
+	if h.metrics == nil {
+		WriteAPIErrorFromMsg(w, "metrics provider unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	snapshot := h.metrics.Snapshot()
+	cacheHitRatio := 0.0
+	if snapshot.CacheHits+snapshot.CacheMisses > 0 {
+		cacheHitRatio = float64(snapshot.CacheHits) / float64(snapshot.CacheHits+snapshot.CacheMisses)
+	}
+
+	jsonOK(w, map[string]interface{}{
+		"timestamp_unix_ms": time.Now().UnixMilli(),
+		"cache_stats": map[string]interface{}{
+			"hits":       snapshot.CacheHits,
+			"misses":     snapshot.CacheMisses,
+			"hit_ratio":  cacheHitRatio,
+		},
+		"errors_24h":                  snapshot.EventCounts,
+		"analysis_fallbacks":          snapshot.AnalysisFallbacks,
+		"analysis_by_ai_source":       snapshot.AnalysisByAISource,
+		"forwarding_errors":           snapshot.ForwardingErrors,
+		"last_event_at_unix_ms":       snapshot.LastEventAtUnixMilli,
+	})
+}
+
 // CommanderBrackets returns the current bracket configuration.
 func (h *AdminHandler) CommanderBrackets(w http.ResponseWriter, r *http.Request) {
 	if h.commanderBrackets == nil {
-		jsonError(w, "commander bracket config unavailable", http.StatusServiceUnavailable)
+		WriteAPIErrorFromMsg(w, "commander bracket config unavailable", http.StatusServiceUnavailable)
 		return
 	}
 	jsonOK(w, CommanderBracketsResponse{Config: *h.commanderBrackets})
@@ -101,13 +130,13 @@ func (h *AdminHandler) CommanderBrackets(w http.ResponseWriter, r *http.Request)
 // UpdateCommanderBrackets updates the in-memory bracket configuration.
 func (h *AdminHandler) UpdateCommanderBrackets(w http.ResponseWriter, r *http.Request) {
 	if h.commanderBrackets == nil {
-		jsonError(w, "commander bracket config unavailable", http.StatusServiceUnavailable)
+		WriteAPIErrorFromMsg(w, "commander bracket config unavailable", http.StatusServiceUnavailable)
 		return
 	}
 
 	var req UpdateCommanderBracketsRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		jsonError(w, "invalid request body", http.StatusBadRequest)
+		WriteAPIErrorFromMsg(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
@@ -133,7 +162,7 @@ func AdminSecretMiddleware(next http.Handler) http.Handler {
 
 		authHeader := r.Header.Get("X-Admin-Secret")
 		if authHeader != secret {
-			jsonError(w, "unauthorized", http.StatusUnauthorized)
+			WriteAPIErrorFromMsg(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 

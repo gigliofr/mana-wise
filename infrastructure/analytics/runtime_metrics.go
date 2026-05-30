@@ -23,6 +23,9 @@ type RuntimeMetricsTracker struct {
 	lastEventAt       time.Time
 	cacheHits         int64
 	cacheMisses       int64
+	cbOpenCount       int64
+	cbHalfOpenCount   int64
+	cbCloseCount      int64
 }
 
 // NewRuntimeMetricsTracker wraps an existing tracker and adds runtime counters.
@@ -92,6 +95,27 @@ func (t *RuntimeMetricsTracker) RecordCacheMiss() {
 	t.mu.Unlock()
 }
 
+// RecordCircuitBreakerOpen increments the counter for CB open transitions.
+func (t *RuntimeMetricsTracker) RecordCircuitBreakerOpen() {
+	t.mu.Lock()
+	t.cbOpenCount++
+	t.mu.Unlock()
+}
+
+// RecordCircuitBreakerHalfOpen increments the counter for CB half-open transitions.
+func (t *RuntimeMetricsTracker) RecordCircuitBreakerHalfOpen() {
+	t.mu.Lock()
+	t.cbHalfOpenCount++
+	t.mu.Unlock()
+}
+
+// RecordCircuitBreakerClosed increments the counter for CB closed transitions.
+func (t *RuntimeMetricsTracker) RecordCircuitBreakerClosed() {
+	t.mu.Lock()
+	t.cbCloseCount++
+	t.mu.Unlock()
+}
+
 // Snapshot returns a copy of the current runtime counters.
 func (t *RuntimeMetricsTracker) Snapshot() domain.AnalyticsMetricsSnapshot {
 	t.mu.RLock()
@@ -121,5 +145,9 @@ func (t *RuntimeMetricsTracker) Snapshot() domain.AnalyticsMetricsSnapshot {
 		LastEventAtUnixMilli: lastEventMs,
 		CacheHits:            t.cacheHits,
 		CacheMisses:          t.cacheMisses,
+		// Circuit breaker counters
+		CircuitBreakerOpenCount:     t.cbOpenCount,
+		CircuitBreakerHalfOpenCount: t.cbHalfOpenCount,
+		CircuitBreakerCloseCount:    t.cbCloseCount,
 	}
 }

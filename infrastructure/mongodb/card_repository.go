@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gigliofr/mana-wise/domain"
+	"github.com/gigliofr/mana-wise/infrastructure/circuitbreaker"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -16,12 +17,14 @@ const cardsCollection = "cards"
 // CardRepository implements domain.CardRepository against MongoDB.
 type CardRepository struct {
 	col *mongo.Collection
+	cb  *circuitbreaker.CircuitBreaker
 }
 
 // NewCardRepository creates a CardRepository and ensures required indexes.
 func NewCardRepository(ctx context.Context, client *Client) (*CardRepository, error) {
 	col := client.Collection(cardsCollection)
 	repo := &CardRepository{col: col}
+	repo.cb = defaultCircuitBreaker
 	if err := repo.ensureIndexes(ctx); err != nil {
 		return nil, fmt.Errorf("card repo indexes: %w", err)
 	}

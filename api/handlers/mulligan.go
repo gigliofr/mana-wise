@@ -30,24 +30,24 @@ func NewMulliganHandler(uc *usecase.MulliganAssistantUseCase) *MulliganHandler {
 // ServeHTTP handles POST /mulligan/simulate.
 func (h *MulliganHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h.uc == nil {
-		jsonError(w, "mulligan assistant unavailable", http.StatusServiceUnavailable)
+		WriteAPIErrorFromMsg(w, "mulligan assistant unavailable", http.StatusServiceUnavailable)
 		return
 	}
 
 	var req MulliganRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		jsonError(w, "invalid request body", http.StatusBadRequest)
+		WriteAPIErrorFromMsg(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 	req.Decklist = strings.TrimSpace(req.Decklist)
 	if req.Decklist == "" {
-		jsonError(w, "decklist is required", http.StatusBadRequest)
+		WriteAPIErrorFromMsg(w, "decklist is required", http.StatusBadRequest)
 		return
 	}
 
 	req.Archetype = normalizeArchetypeInput(req.Archetype)
 	if req.Archetype != "" && !isPlayableArchetype(req.Archetype) {
-		jsonError(w, "invalid archetype: supported values are aggro, midrange, control, combo, ramp", http.StatusBadRequest)
+		WriteAPIErrorFromMsg(w, "invalid archetype: supported values are aggro, midrange, control, combo, ramp", http.StatusBadRequest)
 		return
 	}
 
@@ -64,7 +64,7 @@ func (h *MulliganHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		OnPlay:     onPlay,
 	})
 	if err != nil {
-		jsonError(w, err.Error(), http.StatusUnprocessableEntity)
+		WriteAPIErrorFromMsg(w, err.Error(), http.StatusUnprocessableEntity)
 		return
 	}
 

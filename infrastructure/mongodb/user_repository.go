@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gigliofr/mana-wise/domain"
+	"github.com/gigliofr/mana-wise/infrastructure/circuitbreaker"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -16,12 +17,15 @@ const usersCollection = "users"
 // UserRepository implements domain.UserRepository against MongoDB.
 type UserRepository struct {
 	col *mongo.Collection
+	cb  *circuitbreaker.CircuitBreaker
 }
 
 // NewUserRepository creates a UserRepository and ensures required indexes.
 func NewUserRepository(ctx context.Context, client *Client) (*UserRepository, error) {
 	col := client.Collection(usersCollection)
 	repo := &UserRepository{col: col}
+	// attach package-level default circuit breaker if configured
+	repo.cb = defaultCircuitBreaker
 	if err := repo.ensureIndexes(ctx); err != nil {
 		return nil, fmt.Errorf("user repo indexes: %w", err)
 	}
@@ -46,12 +50,29 @@ func (r *UserRepository) ensureIndexes(ctx context.Context) error {
 // FindByID returns a user by their internal ID.
 func (r *UserRepository) FindByID(ctx context.Context, id string) (*domain.User, error) {
 	var user domain.User
-	err := r.col.FindOne(ctx, bson.M{"_id": id}).Decode(&user)
-	if err == mongo.ErrNoDocuments {
-		return nil, nil
+	var notFound bool
+
+	op := func() error {
+		err := r.col.FindOne(ctx, bson.M{"_id": id}).Decode(&user)
+		if err == mongo.ErrNoDocuments {
+			notFound = true
+			return nil
+		}
+		return err
 	}
-	if err != nil {
-		return nil, fmt.Errorf("UserRepo.FindByID: %w", err)
+
+	if r.cb != nil {
+		if err := r.cb.Call(op); err != nil {
+			return nil, fmt.Errorf("UserRepo.FindByID: %w", err)
+		}
+	} else {
+		if err := op(); err != nil {
+			return nil, fmt.Errorf("UserRepo.FindByID: %w", err)
+		}
+	}
+
+	if notFound {
+		return nil, nil
 	}
 	return &user, nil
 }
@@ -59,12 +80,29 @@ func (r *UserRepository) FindByID(ctx context.Context, id string) (*domain.User,
 // FindByEmail returns a user by their email address.
 func (r *UserRepository) FindByEmail(ctx context.Context, email string) (*domain.User, error) {
 	var user domain.User
-	err := r.col.FindOne(ctx, bson.M{"email": email}).Decode(&user)
-	if err == mongo.ErrNoDocuments {
-		return nil, nil
+	var notFound bool
+
+	op := func() error {
+		err := r.col.FindOne(ctx, bson.M{"email": email}).Decode(&user)
+		if err == mongo.ErrNoDocuments {
+			notFound = true
+			return nil
+		}
+		return err
 	}
-	if err != nil {
-		return nil, fmt.Errorf("UserRepo.FindByEmail: %w", err)
+
+	if r.cb != nil {
+		if err := r.cb.Call(op); err != nil {
+			return nil, fmt.Errorf("UserRepo.FindByEmail: %w", err)
+		}
+	} else {
+		if err := op(); err != nil {
+			return nil, fmt.Errorf("UserRepo.FindByEmail: %w", err)
+		}
+	}
+
+	if notFound {
+		return nil, nil
 	}
 	return &user, nil
 }
@@ -74,8 +112,18 @@ func (r *UserRepository) Create(ctx context.Context, user *domain.User) error {
 	now := time.Now().UTC()
 	user.CreatedAt = now
 	user.UpdatedAt = now
-	_, err := r.col.InsertOne(ctx, user)
-	if err != nil {
+	op := func() error {
+		_, err := r.col.InsertOne(ctx, user)
+		return err
+	}
+
+	if r.cb != nil {
+		if err := r.cb.Call(op); err != nil {
+			return fmt.Errorf("UserRepo.Create: %w", err)
+		}
+		return nil
+	}
+	if err := op(); err != nil {
 		return fmt.Errorf("UserRepo.Create: %w", err)
 	}
 	return nil
@@ -84,8 +132,18 @@ func (r *UserRepository) Create(ctx context.Context, user *domain.User) error {
 // Update replaces an existing user document.
 func (r *UserRepository) Update(ctx context.Context, user *domain.User) error {
 	user.UpdatedAt = time.Now().UTC()
-	_, err := r.col.ReplaceOne(ctx, bson.M{"_id": user.ID}, user)
-	if err != nil {
+	op := func() error {
+		_, err := r.col.ReplaceOne(ctx, bson.M{"_id": user.ID}, user)
+		return err
+	}
+
+	if r.cb != nil {
+		if err := r.cb.Call(op); err != nil {
+			return fmt.Errorf("UserRepo.Update: %w", err)
+		}
+		return nil
+	}
+	if err := op(); err != nil {
 		return fmt.Errorf("UserRepo.Update: %w", err)
 	}
 	return nil
@@ -131,13 +189,30 @@ func (r *UserRepository) CheckAndIncrementDailyAnalyses(ctx context.Context, use
 
 	opts := options.FindOneAndUpdate().SetReturnDocument(options.After)
 	var updated struct{} // we only need to know if a document was matched
-	err := r.col.FindOneAndUpdate(ctx, filter, pipeline, opts).Decode(&updated)
-	if err == mongo.ErrNoDocuments {
-		// No match: either user not found or quota exhausted.
-		return false, nil
+	var opErr error
+	op := func() error {
+		err := r.col.FindOneAndUpdate(ctx, filter, pipeline, opts).Decode(&updated)
+		if err == mongo.ErrNoDocuments {
+			// No match: either user not found or quota exhausted.
+			return nil
+		}
+		return err
 	}
-	if err != nil {
-		return false, fmt.Errorf("UserRepo.CheckAndIncrementDailyAnalyses: %w", err)
+
+	if r.cb != nil {
+		if err := r.cb.Call(op); err != nil {
+			return false, fmt.Errorf("UserRepo.CheckAndIncrementDailyAnalyses: %w", err)
+		}
+	} else {
+		if err := op(); err != nil {
+			return false, fmt.Errorf("UserRepo.CheckAndIncrementDailyAnalyses: %w", err)
+		}
 	}
+
+	if opErr != nil {
+		return false, opErr
+	}
+	// If operation didn't decode a document, it means no match → quota exhausted or not found.
+	// We can't distinguish here, so return false,nil to indicate quota not granted.
 	return true, nil
 }

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gigliofr/mana-wise/domain"
+	"github.com/gigliofr/mana-wise/infrastructure/circuitbreaker"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -16,12 +17,14 @@ const decksCollection = "decks"
 // DeckRepository implements domain.DeckRepository against MongoDB.
 type DeckRepository struct {
 	col *mongo.Collection
+	cb  *circuitbreaker.CircuitBreaker
 }
 
 // NewDeckRepository creates a DeckRepository and ensures required indexes.
 func NewDeckRepository(ctx context.Context, client *Client) (*DeckRepository, error) {
 	col := client.Collection(decksCollection)
 	repo := &DeckRepository{col: col}
+	repo.cb = defaultCircuitBreaker
 	if err := repo.ensureIndexes(ctx); err != nil {
 		return nil, fmt.Errorf("deck repo indexes: %w", err)
 	}

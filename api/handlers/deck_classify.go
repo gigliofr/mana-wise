@@ -27,19 +27,19 @@ func NewDeckClassifyHandler(uc *usecase.DeckClassifierUseCase) *DeckClassifyHand
 // ServeHTTP handles POST /deck/classify.
 func (h *DeckClassifyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h.uc == nil {
-		jsonError(w, "deck classifier unavailable", http.StatusServiceUnavailable)
+		WriteAPIErrorFromMsg(w, "deck classifier unavailable", http.StatusServiceUnavailable)
 		return
 	}
 
 	var req DeckClassifyRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		jsonError(w, "invalid request body", http.StatusBadRequest)
+		WriteAPIErrorFromMsg(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
 	req.Decklist = strings.TrimSpace(req.Decklist)
 	if req.Decklist == "" {
-		jsonError(w, "decklist is required", http.StatusBadRequest)
+		WriteAPIErrorFromMsg(w, "decklist is required", http.StatusBadRequest)
 		return
 	}
 
@@ -48,7 +48,7 @@ func (h *DeckClassifyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		Format:   req.Format,
 	})
 	if err != nil {
-		jsonError(w, err.Error(), http.StatusUnprocessableEntity)
+		WriteAPIErrorFromMsg(w, err.Error(), http.StatusUnprocessableEntity)
 		return
 	}
 

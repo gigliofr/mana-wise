@@ -17,6 +17,10 @@ type AnalyticsMetricsSnapshot struct {
 	LastEventAtUnixMilli int64            `json:"last_event_at_unix_ms"`
 	CacheHits            int64            `json:"cache_hits"`
 	CacheMisses          int64            `json:"cache_misses"`
+	// Circuit breaker state transition counters
+	CircuitBreakerOpenCount     int64 `json:"circuit_breaker_open_count"`
+	CircuitBreakerHalfOpenCount int64 `json:"circuit_breaker_half_open_count"`
+	CircuitBreakerCloseCount    int64 `json:"circuit_breaker_close_count"`
 }
 
 // AnalyticsMetricsProvider exposes runtime metrics snapshots for admin/ops endpoints.

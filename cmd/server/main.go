@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -17,7 +18,9 @@ import (
 	"github.com/gigliofr/mana-wise/domain"
 	"github.com/gigliofr/mana-wise/infrastructure/analytics"
 	"github.com/gigliofr/mana-wise/infrastructure/cache"
+	"github.com/gigliofr/mana-wise/infrastructure/circuitbreaker"
 	"github.com/gigliofr/mana-wise/infrastructure/llm"
+	"github.com/gigliofr/mana-wise/infrastructure/logging"
 	"github.com/gigliofr/mana-wise/infrastructure/mongodb"
 	"github.com/gigliofr/mana-wise/infrastructure/notifications"
 	"github.com/gigliofr/mana-wise/infrastructure/ota"
@@ -30,6 +33,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("config error: %v", err)
 	}
+
+	// ── Structured logging ───────────────────────────────────────────────────
+	logger := logging.InitLogger(os.Getenv("LOG_LEVEL"), cfg.Server.Environment)
+	slog.SetDefault(logger)
 
 	log.Printf("🔧 Environment: %s | Port: %s", cfg.Server.Environment, cfg.Server.Port)
 	log.Printf("🔎 Mongo target: %s", sanitizeMongoURI(cfg.MongoDB.URI))
@@ -54,6 +61,8 @@ func main() {
 
 	// ── Repositories ─────────────────────────────────────────────────────────
 	setupCtx := context.Background()
+
+	// circuit breaker will be initialized after runtime metrics are available
 
 	cardRepo, err := mongodb.NewCardRepository(setupCtx, mongoClient)
 	if err != nil {
@@ -171,6 +180,30 @@ func main() {
 	}
 	runtimeMetrics := analytics.NewRuntimeMetricsTracker(baseTracker)
 	var tracker domain.AnalyticsTracker = runtimeMetrics
+
+	// Attach MongoDB circuit breaker for repository protection.
+	mongoCB := mongodb.NewCircuitBreakerForMongoDB(logger)
+	mongodb.SetDefaultCircuitBreaker(mongoCB)
+
+	// Register a combined state-change callback: log + runtime metrics.
+	mongoCB.AddStateChangeCallback(func(from, to circuitbreaker.State) {
+		// Logging
+		logger.Warn("circuit breaker state change",
+			slog.String("service", "mongodb"),
+			slog.String("from", string(from)),
+			slog.String("to", string(to)),
+		)
+
+		// Metrics
+		switch to {
+		case circuitbreaker.StateOpen:
+			runtimeMetrics.RecordCircuitBreakerOpen()
+		case circuitbreaker.StateHalfOpen:
+			runtimeMetrics.RecordCircuitBreakerHalfOpen()
+		case circuitbreaker.StateClosed:
+			runtimeMetrics.RecordCircuitBreakerClosed()
+		}
+	})
 
 	// Wire cache metrics callbacks to runtime metrics tracker (increment counters asynchronously).
 	analysisCache.SetCallbacks(runtimeMetrics.RecordCacheHit, runtimeMetrics.RecordCacheMiss)

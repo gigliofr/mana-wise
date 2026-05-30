@@ -49,7 +49,7 @@ func (h *ScoreHandler) Score(w http.ResponseWriter, r *http.Request) {
 
 	var req ScoreRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		jsonError(w, "invalid request body", http.StatusBadRequest)
+		WriteAPIErrorFromMsg(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
@@ -57,11 +57,11 @@ func (h *ScoreHandler) Score(w http.ResponseWriter, r *http.Request) {
 	req.Decklist = strings.TrimSpace(req.Decklist)
 
 	if req.Decklist == "" {
-		jsonError(w, "decklist is required", http.StatusBadRequest)
+		WriteAPIErrorFromMsg(w, "decklist is required", http.StatusBadRequest)
 		return
 	}
 	if req.Format == "" {
-		jsonError(w, "format is required", http.StatusBadRequest)
+		WriteAPIErrorFromMsg(w, "format is required", http.StatusBadRequest)
 		return
 	}
 
@@ -71,14 +71,14 @@ func (h *ScoreHandler) Score(w http.ResponseWriter, r *http.Request) {
 		Format:   req.Format,
 	})
 	if err != nil {
-		jsonError(w, err.Error(), http.StatusUnprocessableEntity)
+		WriteAPIErrorFromMsg(w, err.Error(), http.StatusUnprocessableEntity)
 		return
 	}
 
 	// Calculate score
 	scoreResult, err := h.scoreUC.Execute(r.Context(), result.RawCards, result.Quantities)
 	if err != nil {
-		jsonError(w, "score calculation failed: "+err.Error(), http.StatusInternalServerError)
+		WriteAPIErrorFromMsg(w, "score calculation failed: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 

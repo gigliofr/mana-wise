@@ -56,6 +56,17 @@ func NewRouter(deps RouterDeps) http.Handler {
 	r.Use(chimiddleware.RealIP)
 	r.Use(corsMiddleware)
 
+	// Create rate limiter for expensive endpoints (free: 5/min, pro: 50/min).
+	rateLimitMW := middleware.RateLimitMiddleware(deps.UserRepo, func(plan string) float64 {
+		if plan == "pro" {
+			return 50.0 / 60.0 // 50 requests per minute
+		}
+		return 5.0 / 60.0 // 5 requests per minute (default for free)
+	})
+
+	// Context deadline for expensive operations (30 second timeout).
+	contextDeadlineMW := middleware.ContextDeadlineMiddleware(30 * time.Second)
+
 	publicShareH := handlers.NewPublicShareHandler(deps.SharedAnalysisLinkRepo, deps.DeckRepo, deps.AnalyzeUC)
 	publicSharePDFH := handlers.NewPublicSharePDFHandler(deps.SharedAnalysisLinkRepo, deps.DeckRepo, deps.AnalyzeUC)
 	shareAnalysisH := handlers.NewShareAnalysisHandler(deps.SharedAnalysisLinkRepo, deps.Mailer)
@@ -116,9 +127,9 @@ func NewRouter(deps RouterDeps) http.Handler {
 		r.Group(func(r chi.Router) {
 			r.Use(jwtMW)
 
-			// Analyze — also gate by freemium quota.
-			r.With(freemiumMW).Post("/analyze", analyzeH.ServeHTTP)
-			r.With(freemiumMW).Post("/score", scoreH.Score)
+			// Analyze — also gate by freemium quota, with rate limit and context deadline.
+			r.With(freemiumMW, rateLimitMW, contextDeadlineMW).Post("/analyze", analyzeH.ServeHTTP)
+			r.With(freemiumMW, rateLimitMW, contextDeadlineMW).Post("/score", scoreH.Score)
 			r.Get("/users/me/notifications", notificationH.Feed)
 			r.Post("/sideboard/plan", sideboardH.ServeHTTP)
 			r.Post("/mulligan/simulate", mulliganH.ServeHTTP)
@@ -175,6 +186,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 			r.Use(handlers.AdminSecretMiddleware)
 			r.Post("/user/plan", adminH.UpdateUserPlan)
 			r.Get("/metrics/funnel", adminH.FunnelMetrics)
+			r.Get("/metrics/stability", adminH.StabilityMetrics)
 			r.Get("/commander-brackets", adminH.CommanderBrackets)
 			r.Put("/commander-brackets", adminH.UpdateCommanderBrackets)
 		})

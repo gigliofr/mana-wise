@@ -32,31 +32,31 @@ type collectionGapResponse struct {
 func (h *DeckHandler) CollectionGaps(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.UserIDFromContext(r.Context())
 	if userID == "" {
-		jsonError(w, "unauthorized", http.StatusUnauthorized)
+		WriteAPIErrorFromMsg(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	if h.cardRepo == nil {
-		jsonError(w, "card repository unavailable", http.StatusServiceUnavailable)
+		WriteAPIErrorFromMsg(w, "card repository unavailable", http.StatusServiceUnavailable)
 		return
 	}
 
 	deckID := strings.TrimSpace(chi.URLParam(r, "deck_id"))
 	if deckID == "" {
-		jsonError(w, "missing deck id", http.StatusBadRequest)
+		WriteAPIErrorFromMsg(w, "missing deck id", http.StatusBadRequest)
 		return
 	}
 
 	deck, err := h.repo.FindByID(r.Context(), deckID)
 	if err != nil {
-		jsonError(w, "failed to retrieve deck", http.StatusInternalServerError)
+		WriteAPIErrorFromMsg(w, "failed to retrieve deck", http.StatusInternalServerError)
 		return
 	}
 	if deck == nil {
-		jsonError(w, "deck not found", http.StatusNotFound)
+		WriteAPIErrorFromMsg(w, "deck not found", http.StatusNotFound)
 		return
 	}
 	if deck.UserID != userID && !deck.IsPublic {
-		jsonError(w, "deck not found", http.StatusNotFound)
+		WriteAPIErrorFromMsg(w, "deck not found", http.StatusNotFound)
 		return
 	}
 

@@ -22,16 +22,16 @@ type AnalyzeRequest struct {
 
 // AnalyzeResponse is the JSON response for POST /analyze.
 type AnalyzeResponse struct {
-	Deterministic domain.AnalysisResult                 `json:"deterministic"`
-	AISuggestions string                                `json:"ai_suggestions"`
-	AISource      string                                `json:"ai_source,omitempty"`
-	AIError       string                                `json:"ai_error,omitempty"`
-	LatencyMs     int64                                 `json:"latency_ms"`
-	Legality      map[string]usecase.DeckLegalityResult `json:"legality"`
-	Warnings      []string                              `json:"warnings,omitempty"`
-	Commander     *usecase.CommanderInfo                `json:"commander,omitempty"`
-	CommanderBracket *domain.CommanderBracketAssessment `json:"commander_bracket,omitempty"`
-	Sideboard     *sideboardResponseInfo                `json:"sideboard,omitempty"`
+	Deterministic    domain.AnalysisResult                 `json:"deterministic"`
+	AISuggestions    string                                `json:"ai_suggestions"`
+	AISource         string                                `json:"ai_source,omitempty"`
+	AIError          string                                `json:"ai_error,omitempty"`
+	LatencyMs        int64                                 `json:"latency_ms"`
+	Legality         map[string]usecase.DeckLegalityResult `json:"legality"`
+	Warnings         []string                              `json:"warnings,omitempty"`
+	Commander        *usecase.CommanderInfo                `json:"commander,omitempty"`
+	CommanderBracket *domain.CommanderBracketAssessment    `json:"commander_bracket,omitempty"`
+	Sideboard        *sideboardResponseInfo                `json:"sideboard,omitempty"`
 }
 
 // sideboardResponseInfo is the sideboard portion included in the analyze response.
@@ -42,6 +42,7 @@ type sideboardResponseInfo struct {
 // AnalyzeHandler handles POST /analyze requests.
 type AnalyzeHandler struct {
 	analyzeDeck *usecase.AnalyzeDeckUseCase
+	legality    *usecase.LegalityEvaluator
 	ai          *usecase.AISuggester
 	bracketUC   *usecase.CommanderBracketUseCase
 	userRepo    domain.UserRepository
@@ -56,12 +57,18 @@ func NewAnalyzeHandler(uc *usecase.AnalyzeDeckUseCase, ai *usecase.AISuggester, 
 	return &AnalyzeHandler{analyzeDeck: uc, ai: ai, bracketUC: bracketUC, userRepo: userRepo, tracker: tracker}
 }
 
+// WithLegalityEvaluator sets the cached legality evaluator when available.
+func (h *AnalyzeHandler) WithLegalityEvaluator(legality *usecase.LegalityEvaluator) *AnalyzeHandler {
+	h.legality = legality
+	return h
+}
+
 // ServeHTTP handles POST /analyze.
 func (h *AnalyzeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		if rec := recover(); rec != nil {
 			log.Printf("panic in AnalyzeHandler: %v\n%s", rec, debug.Stack())
-			jsonError(w, "internal server error", http.StatusInternalServerError)
+			WriteAPIErrorFromMsg(w, "internal server error", http.StatusInternalServerError)
 		}
 	}()
 
@@ -69,7 +76,7 @@ func (h *AnalyzeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	var req AnalyzeRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		jsonError(w, "invalid request body", http.StatusBadRequest)
+		WriteAPIErrorFromMsg(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 	req.Format = domain.NormalizeFormat(strings.TrimSpace(req.Format))
@@ -77,11 +84,11 @@ func (h *AnalyzeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	req.Locale = normalizeLocale(strings.TrimSpace(req.Locale), r.Header.Get("Accept-Language"))
 
 	if req.Decklist == "" {
-		jsonError(w, "decklist is required", http.StatusBadRequest)
+		WriteAPIErrorFromMsg(w, "decklist is required", http.StatusBadRequest)
 		return
 	}
 	if req.Format == "" {
-		jsonError(w, "format is required", http.StatusBadRequest)
+		WriteAPIErrorFromMsg(w, "format is required", http.StatusBadRequest)
 		return
 	}
 
@@ -90,11 +97,11 @@ func (h *AnalyzeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Format:   req.Format,
 	})
 	if err != nil {
-		jsonError(w, err.Error(), http.StatusUnprocessableEntity)
+		WriteAPIErrorFromMsg(w, err.Error(), http.StatusUnprocessableEntity)
 		return
 	}
 	if result == nil {
-		jsonError(w, "analysis unavailable", http.StatusInternalServerError)
+		WriteAPIErrorFromMsg(w, "analysis unavailable", http.StatusInternalServerError)
 		return
 	}
 
@@ -128,7 +135,7 @@ func (h *AnalyzeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"ai_fallback": strings.TrimSpace(aiError) != "",
 	})
 
-	legality := usecase.DetermineDeckLegalityAllFormats(result.RawCards, result.Quantities)
+	legality := h.legalityAllFormats(result.RawCards, result.Quantities)
 
 	// Override commander legality with proper singleton rule (excluding commander from counts).
 	if result.Commander != nil && len(result.Commander.Cards) > 0 {
@@ -157,17 +164,24 @@ func (h *AnalyzeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jsonOK(w, AnalyzeResponse{
-		Deterministic: result.Result,
-		AISuggestions: aiSuggestions,
-		AISource:      aiSource,
-		AIError:       aiError,
-		LatencyMs:     result.Result.LatencyMs,
-		Legality:      legality,
-		Warnings:      result.Warnings,
-		Commander:     result.Commander,
+		Deterministic:    result.Result,
+		AISuggestions:    aiSuggestions,
+		AISource:         aiSource,
+		AIError:          aiError,
+		LatencyMs:        result.Result.LatencyMs,
+		Legality:         legality,
+		Warnings:         result.Warnings,
+		Commander:        result.Commander,
 		CommanderBracket: commanderBracket,
-		Sideboard:     sb,
+		Sideboard:        sb,
 	})
+}
+
+func (h *AnalyzeHandler) legalityAllFormats(cards []*domain.Card, quantities map[string]int) map[string]usecase.DeckLegalityResult {
+	if h != nil && h.legality != nil {
+		return h.legality.AllFormats(cards, quantities)
+	}
+	return usecase.DetermineDeckLegalityAllFormats(cards, quantities)
 }
 
 func normalizeLocale(requestLocale, acceptLanguage string) string {

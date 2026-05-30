@@ -22,21 +22,21 @@ func NewEmbedBatchHandler(uc *usecase.EmbedBatchUseCase) *EmbedBatchHandler {
 // ServeHTTP runs the embedding pipeline on a batch of cards.
 func (h *EmbedBatchHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h.uc == nil {
-		jsonError(w, "embedding pipeline is not configured", http.StatusServiceUnavailable)
+		WriteAPIErrorFromMsg(w, "embedding pipeline is not configured", http.StatusServiceUnavailable)
 		return
 	}
 
 	var req usecase.EmbedBatchRequest
 	if r.Body != nil {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
-			jsonError(w, "invalid request body", http.StatusBadRequest)
+			WriteAPIErrorFromMsg(w, "invalid request body", http.StatusBadRequest)
 			return
 		}
 	}
 
 	result, err := h.uc.Execute(r.Context(), req)
 	if err != nil {
-		jsonError(w, err.Error(), http.StatusInternalServerError)
+		WriteAPIErrorFromMsg(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	jsonOK(w, result)

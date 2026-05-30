@@ -64,7 +64,7 @@ func NewNotificationHandler(deckRepo domain.DeckRepository, cardRepo domain.Card
 func (h *NotificationHandler) IngestScryfallWebhook(w http.ResponseWriter, r *http.Request) {
 	var req webhookScryfallRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		jsonError(w, "invalid request body", http.StatusBadRequest)
+		WriteAPIErrorFromMsg(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
@@ -122,17 +122,17 @@ func (h *NotificationHandler) IngestScryfallWebhook(w http.ResponseWriter, r *ht
 func (h *NotificationHandler) Feed(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.UserIDFromContext(r.Context())
 	if userID == "" {
-		jsonError(w, "unauthorized", http.StatusUnauthorized)
+		WriteAPIErrorFromMsg(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 	if h.deckRepo == nil || h.cardRepo == nil {
-		jsonError(w, "notification dependencies unavailable", http.StatusServiceUnavailable)
+		WriteAPIErrorFromMsg(w, "notification dependencies unavailable", http.StatusServiceUnavailable)
 		return
 	}
 
 	decks, err := h.deckRepo.FindByUserID(r.Context(), userID)
 	if err != nil {
-		jsonError(w, "failed to retrieve decks", http.StatusInternalServerError)
+		WriteAPIErrorFromMsg(w, "failed to retrieve decks", http.StatusInternalServerError)
 		return
 	}
 

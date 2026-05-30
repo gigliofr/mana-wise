@@ -33,7 +33,7 @@ func NewPublicShareHandler(repo domain.SharedAnalysisLinkRepository, deckRepo do
 func (h *PublicShareHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	bundle, status, message := h.loadSharedAnalysis(r.Context(), chi.URLParam(r, "token"))
 	if bundle == nil {
-		jsonError(w, message, status)
+		WriteAPIErrorFromMsg(w, message, status)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

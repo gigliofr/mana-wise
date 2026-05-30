@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/gigliofr/mana-wise/domain"
+	"github.com/gigliofr/mana-wise/infrastructure/circuitbreaker"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 )
@@ -12,11 +13,13 @@ import (
 // SharedAnalysisLinkRepositoryMongo implementa domain.SharedAnalysisLinkRepository su MongoDB.
 type SharedAnalysisLinkRepositoryMongo struct {
 	col *mongo.Collection
+	cb  *circuitbreaker.CircuitBreaker
 }
 
 func NewSharedAnalysisLinkRepositoryMongo(db *mongo.Database) *SharedAnalysisLinkRepositoryMongo {
 	return &SharedAnalysisLinkRepositoryMongo{
 		col: db.Collection("shared_analysis_links"),
+		cb:  defaultCircuitBreaker,
 	}
 }
 

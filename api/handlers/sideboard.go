@@ -29,13 +29,13 @@ func NewSideboardCoachHandler(uc *usecase.SideboardCoachUseCase) *SideboardCoach
 // ServeHTTP handles POST /sideboard/plan.
 func (h *SideboardCoachHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h.uc == nil {
-		jsonError(w, "sideboard coach unavailable", http.StatusServiceUnavailable)
+		WriteAPIErrorFromMsg(w, "sideboard coach unavailable", http.StatusServiceUnavailable)
 		return
 	}
 
 	var req SideboardCoachRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		jsonError(w, "invalid request body", http.StatusBadRequest)
+		WriteAPIErrorFromMsg(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
@@ -44,19 +44,19 @@ func (h *SideboardCoachHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 	req.OpponentArchetype = normalizeArchetypeInput(req.OpponentArchetype)
 
 	if req.MainDecklist == "" {
-		jsonError(w, "main_decklist is required", http.StatusBadRequest)
+		WriteAPIErrorFromMsg(w, "main_decklist is required", http.StatusBadRequest)
 		return
 	}
 	if req.SideboardDecklist == "" {
-		jsonError(w, "sideboard_decklist is required", http.StatusBadRequest)
+		WriteAPIErrorFromMsg(w, "sideboard_decklist is required", http.StatusBadRequest)
 		return
 	}
 	if req.OpponentArchetype == "" {
-		jsonError(w, "opponent_archetype is required", http.StatusBadRequest)
+		WriteAPIErrorFromMsg(w, "opponent_archetype is required", http.StatusBadRequest)
 		return
 	}
 	if !isValidSideboardOpponentArchetype(req.OpponentArchetype) {
-		jsonError(w, "invalid opponent_archetype: supported values are aggro, midrange, control, combo, ramp, graveyard, artifacts, enchantments", http.StatusBadRequest)
+		WriteAPIErrorFromMsg(w, "invalid opponent_archetype: supported values are aggro, midrange, control, combo, ramp, graveyard, artifacts, enchantments", http.StatusBadRequest)
 		return
 	}
 
@@ -67,7 +67,7 @@ func (h *SideboardCoachHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 		Format:            req.Format,
 	})
 	if err != nil {
-		jsonError(w, err.Error(), http.StatusUnprocessableEntity)
+		WriteAPIErrorFromMsg(w, err.Error(), http.StatusUnprocessableEntity)
 		return
 	}
 

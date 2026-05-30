@@ -32,32 +32,32 @@ func NewMatchupHandler(uc *usecase.MatchupSimulatorUseCase) *MatchupHandler {
 // ServeHTTP handles POST /matchup/simulate.
 func (h *MatchupHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h.uc == nil {
-		jsonError(w, "matchup simulator unavailable", http.StatusServiceUnavailable)
+		WriteAPIErrorFromMsg(w, "matchup simulator unavailable", http.StatusServiceUnavailable)
 		return
 	}
 
 	var req MatchupSimulationRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		jsonError(w, "invalid request body", http.StatusBadRequest)
+		WriteAPIErrorFromMsg(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
 	req.Decklist = strings.TrimSpace(req.Decklist)
 	if req.Decklist == "" {
-		jsonError(w, "decklist is required", http.StatusBadRequest)
+		WriteAPIErrorFromMsg(w, "decklist is required", http.StatusBadRequest)
 		return
 	}
 
 	req.PlayerArchetype = normalizeArchetypeInput(req.PlayerArchetype)
 	if req.PlayerArchetype != "" && !isPlayableArchetype(req.PlayerArchetype) {
-		jsonError(w, "invalid player_archetype: supported values are aggro, midrange, control, combo, ramp", http.StatusBadRequest)
+		WriteAPIErrorFromMsg(w, "invalid player_archetype: supported values are aggro, midrange, control, combo, ramp", http.StatusBadRequest)
 		return
 	}
 
 	req.Opponents = normalizeArchetypeList(req.Opponents)
 	for _, opponent := range req.Opponents {
 		if !isPlayableArchetype(opponent) {
-			jsonError(w, "invalid opponent archetype: supported values are aggro, midrange, control, combo, ramp", http.StatusBadRequest)
+			WriteAPIErrorFromMsg(w, "invalid opponent archetype: supported values are aggro, midrange, control, combo, ramp", http.StatusBadRequest)
 			return
 		}
 	}
@@ -72,7 +72,7 @@ func (h *MatchupHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		MetaShares:        req.MetaShares,
 	})
 	if err != nil {
-		jsonError(w, err.Error(), http.StatusUnprocessableEntity)
+		WriteAPIErrorFromMsg(w, err.Error(), http.StatusUnprocessableEntity)
 		return
 	}
 

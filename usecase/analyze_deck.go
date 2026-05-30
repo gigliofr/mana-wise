@@ -2,15 +2,22 @@ package usecase
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gigliofr/mana-wise/domain"
+	"github.com/gigliofr/mana-wise/infrastructure/cache"
 	"github.com/gigliofr/mana-wise/infrastructure/scryfall"
 )
+
+type collectionCardFetcher interface {
+	FetchCardsByCollection(ctx context.Context, identifiers []scryfall.CollectionIdentifier) ([]scryfall.ScryfallCard, error)
+}
 
 // CardFetcher can resolve cards by name (Scryfall or DB).
 type CardFetcher interface {
@@ -53,6 +60,8 @@ type AnalyzeDeckUseCase struct {
 	fetcher  CardFetcher
 	cardRepo domain.CardRepository
 	poolSize int
+	cache    *cache.Cache
+	cacheTTL time.Duration
 }
 
 // NewAnalyzeDeckUseCase creates a new AnalyzeDeckUseCase.
@@ -60,7 +69,19 @@ func NewAnalyzeDeckUseCase(fetcher CardFetcher, cardRepo domain.CardRepository, 
 	if poolSize <= 0 {
 		poolSize = 20
 	}
-	return &AnalyzeDeckUseCase{fetcher: fetcher, cardRepo: cardRepo, poolSize: poolSize}
+	return &AnalyzeDeckUseCase{fetcher: fetcher, cardRepo: cardRepo, poolSize: poolSize, cacheTTL: 30 * time.Minute}
+}
+
+// WithCache enables in-memory caching for repeated deck analyses.
+func (uc *AnalyzeDeckUseCase) WithCache(c *cache.Cache, ttl time.Duration) *AnalyzeDeckUseCase {
+	if uc == nil {
+		return uc
+	}
+	uc.cache = c
+	if ttl > 0 {
+		uc.cacheTTL = ttl
+	}
+	return uc
 }
 
 // Execute runs the full deterministic analysis pipeline and returns an AnalyzeDeckResponse.
@@ -80,7 +101,19 @@ func (uc *AnalyzeDeckUseCase) Execute(ctx context.Context, req AnalyzeDeckReques
 		return nil, fmt.Errorf("unsupported format: %s", req.Format)
 	}
 
+	if cached := uc.getCachedResponse(req); cached != nil {
+		slog.Info("analyze deck cache hit",
+			slog.String("format", req.Format),
+			slog.Int("decklist_bytes", len(req.Decklist)),
+		)
+		return cached, nil
+	}
+
 	start := time.Now()
+	slog.Info("analyze deck start",
+		slog.String("format", req.Format),
+		slog.Int("decklist_bytes", len(req.Decklist)),
+	)
 
 	entries, err := parseDecklist(req.Decklist)
 	if err != nil {
@@ -89,6 +122,10 @@ func (uc *AnalyzeDeckUseCase) Execute(ctx context.Context, req AnalyzeDeckReques
 	if len(entries) == 0 {
 		return nil, fmt.Errorf("decklist is empty")
 	}
+	slog.Info("analyze deck parsed",
+		slog.String("format", req.Format),
+		slog.Int("entries", len(entries)),
+	)
 
 	// Collect unique card names for DB prefetch.
 	names := make([]string, 0, len(entries))
@@ -124,10 +161,17 @@ func (uc *AnalyzeDeckUseCase) Execute(ctx context.Context, req AnalyzeDeckReques
 	}
 
 	// Step 1: Try to resolve from local DB first (batch).
+	dbStart := time.Now()
 	dbCards, err := uc.cardRepo.FindByNames(ctx, names)
 	if err != nil {
 		return nil, fmt.Errorf("DB lookup: %w", err)
 	}
+	slog.Info("analyze deck db prefetch done",
+		slog.String("format", req.Format),
+		slog.Int("requested_names", len(names)),
+		slog.Int("db_cards", len(dbCards)),
+		slog.Duration("elapsed", time.Since(dbStart)),
+	)
 
 	dbIndex := make(map[string]*domain.Card, len(dbCards))
 	for _, c := range dbCards {
@@ -175,8 +219,27 @@ func (uc *AnalyzeDeckUseCase) Execute(ctx context.Context, req AnalyzeDeckReques
 		missingEntries = append(missingEntries, e)
 	}
 
-	// Step 2: Fetch missing cards from Scryfall using Worker Pool.
+	// Step 2a: Batch-resolve missing named cards through the collection API when available.
 	if len(missingEntries) > 0 {
+		batchStart := time.Now()
+		resolvedByBatch, unresolved := uc.resolveMissingCardsBatch(ctx, missingEntries, warnings)
+		for key, card := range resolvedByBatch {
+			entryCardMap[key] = card
+			dbIndex[card.Name] = card
+			dbIndex[strings.ToLower(card.Name)] = card
+		}
+		missingEntries = unresolved
+		slog.Info("analyze deck batch resolution done",
+			slog.String("format", req.Format),
+			slog.Int("batch_resolved", len(resolvedByBatch)),
+			slog.Int("still_missing", len(missingEntries)),
+			slog.Duration("elapsed", time.Since(batchStart)),
+		)
+	}
+
+	// Step 2b: Resolve the remaining misses (set/collector lookups or batch misses) individually.
+	if len(missingEntries) > 0 {
+		fallbackStart := time.Now()
 		results := WorkerPool(ctx, uc.poolSize, missingEntries,
 			func(ctx context.Context, e deckEntry) (*domain.Card, error) {
 				var sc *scryfall.ScryfallCard
@@ -232,6 +295,12 @@ func (uc *AnalyzeDeckUseCase) Execute(ctx context.Context, req AnalyzeDeckReques
 			dbIndex[r.Output.Name] = r.Output
 			dbIndex[strings.ToLower(r.Output.Name)] = r.Output
 		}
+		slog.Info("analyze deck fallback resolution done",
+			slog.String("format", req.Format),
+			slog.Int("fallback_inputs", len(missingEntries)),
+			slog.Int("warnings", len(warnings)),
+			slog.Duration("elapsed", time.Since(fallbackStart)),
+		)
 	}
 
 	// Build ordered card slice + quantity map for analysis.
@@ -330,7 +399,166 @@ func (uc *AnalyzeDeckUseCase) Execute(ctx context.Context, req AnalyzeDeckReques
 		Commander:  commanderInfo,
 		Sideboard:  sideboardInfo,
 	}
+	uc.setCachedResponse(req, resp)
+	slog.Info("analyze deck finished",
+		slog.String("format", req.Format),
+		slog.Int("total_cards", resp.Result.Mana.TotalCards),
+		slog.Int("resolved_cards", len(mainCards)),
+		slog.Int("warnings", len(warnings)),
+		slog.Duration("elapsed", time.Since(start)),
+	)
 	return resp, nil
+}
+
+func (uc *AnalyzeDeckUseCase) cacheKey(req AnalyzeDeckRequest) string {
+	hash := sha256.Sum256([]byte(strings.TrimSpace(req.Format) + "|" + strings.TrimSpace(req.Decklist)))
+	return fmt.Sprintf("analysis:%x", hash[:])
+}
+
+func (uc *AnalyzeDeckUseCase) getCachedResponse(req AnalyzeDeckRequest) *AnalyzeDeckResponse {
+	if uc == nil || uc.cache == nil {
+		return nil
+	}
+	value, ok := uc.cache.Get(uc.cacheKey(req))
+	if !ok {
+		return nil
+	}
+	cached, ok := value.(*AnalyzeDeckResponse)
+	if !ok || cached == nil {
+		return nil
+	}
+	return cloneAnalyzeDeckResponse(cached)
+}
+
+func (uc *AnalyzeDeckUseCase) setCachedResponse(req AnalyzeDeckRequest, resp *AnalyzeDeckResponse) {
+	if uc == nil || uc.cache == nil || resp == nil || uc.cacheTTL <= 0 {
+		return
+	}
+	uc.cache.Set(uc.cacheKey(req), cloneAnalyzeDeckResponse(resp), uc.cacheTTL)
+}
+
+func cloneAnalyzeDeckResponse(resp *AnalyzeDeckResponse) *AnalyzeDeckResponse {
+	if resp == nil {
+		return nil
+	}
+	clone := &AnalyzeDeckResponse{
+		Result:     resp.Result,
+		Quantities: make(map[string]int, len(resp.Quantities)),
+		Warnings:   append([]string(nil), resp.Warnings...),
+		Commander:  cloneCommanderInfo(resp.Commander),
+		Sideboard:  cloneSideboardInfo(resp.Sideboard),
+	}
+	for k, v := range resp.Quantities {
+		clone.Quantities[k] = v
+	}
+	if len(resp.RawCards) > 0 {
+		clone.RawCards = append([]*domain.Card(nil), resp.RawCards...)
+	}
+	return clone
+}
+
+func cloneCommanderInfo(info *CommanderInfo) *CommanderInfo {
+	if info == nil {
+		return nil
+	}
+	clone := &CommanderInfo{Cards: make([]*domain.Card, len(info.Cards))}
+	copy(clone.Cards, info.Cards)
+	return clone
+}
+
+func cloneSideboardInfo(info *SideboardInfo) *SideboardInfo {
+	if info == nil {
+		return nil
+	}
+	clone := &SideboardInfo{Quantities: make(map[string]int, len(info.Quantities)), TotalCards: info.TotalCards}
+	for k, v := range info.Quantities {
+		clone.Quantities[k] = v
+	}
+	return clone
+}
+
+func (uc *AnalyzeDeckUseCase) resolveMissingCardsBatch(ctx context.Context, missingEntries []deckEntry, warnings []string) (map[string]*domain.Card, []deckEntry) {
+	resolved := make(map[string]*domain.Card)
+	if uc == nil || uc.fetcher == nil {
+		return resolved, missingEntries
+	}
+
+	batchFetcher, ok := uc.fetcher.(collectionCardFetcher)
+	if !ok || batchFetcher == nil {
+		return resolved, missingEntries
+	}
+
+	nameToEntries := make(map[string][]deckEntry)
+	identifiers := make([]scryfall.CollectionIdentifier, 0, len(missingEntries))
+	unresolved := make([]deckEntry, 0, len(missingEntries))
+	unresolvedSeen := make(map[string]bool)
+	appendUnresolved := func(e deckEntry) {
+		key := e.identityKey()
+		if unresolvedSeen[key] {
+			return
+		}
+		unresolvedSeen[key] = true
+		unresolved = append(unresolved, e)
+	}
+	for _, e := range missingEntries {
+		if e.hasSetCollector() {
+			appendUnresolved(e)
+			continue
+		}
+		key := strings.ToLower(strings.TrimSpace(e.name))
+		if key == "" {
+			continue
+		}
+		if _, seen := nameToEntries[key]; !seen {
+			identifiers = append(identifiers, scryfall.CollectionIdentifier{Name: e.name})
+		}
+		nameToEntries[key] = append(nameToEntries[key], e)
+	}
+
+	if len(identifiers) == 0 {
+		return resolved, missingEntries
+	}
+
+	const maxBatch = 75
+	for i := 0; i < len(identifiers); i += maxBatch {
+		end := i + maxBatch
+		if end > len(identifiers) {
+			end = len(identifiers)
+		}
+		cards, err := batchFetcher.FetchCardsByCollection(ctx, identifiers[i:end])
+		if err != nil {
+			for _, e := range missingEntries {
+				appendUnresolved(e)
+			}
+			return resolved, unresolved
+		}
+		for idx := range cards {
+			card := scryfall.ToDomainCard(&cards[idx])
+			if card == nil {
+				continue
+			}
+			nameKey := strings.ToLower(strings.TrimSpace(card.Name))
+			if nameKey == "" {
+				continue
+			}
+			for _, e := range nameToEntries[nameKey] {
+				resolved[e.identityKey()] = card
+			}
+		}
+	}
+
+	for _, e := range missingEntries {
+		if e.hasSetCollector() {
+			appendUnresolved(e)
+			continue
+		}
+		if _, ok := resolved[e.identityKey()]; !ok {
+			appendUnresolved(e)
+		}
+	}
+
+	_ = warnings
+	return resolved, unresolved
 }
 
 // deckEntry is one parsed line from a decklist.

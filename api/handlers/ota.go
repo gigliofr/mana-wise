@@ -21,7 +21,7 @@ func NewOTAHandler(uc *usecase.OTAUpdateUseCase) *OTAHandler {
 // PublishRelease handles POST /ota/release.
 func (h *OTAHandler) PublishRelease(w http.ResponseWriter, r *http.Request) {
 	if h.uc == nil {
-		jsonError(w, "ota use case not configured", http.StatusServiceUnavailable)
+		WriteAPIErrorFromMsg(w, "ota use case not configured", http.StatusServiceUnavailable)
 		return
 	}
 	var req struct {
@@ -31,7 +31,7 @@ func (h *OTAHandler) PublishRelease(w http.ResponseWriter, r *http.Request) {
 		SHA256       string `json:"sha256"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		jsonError(w, "invalid request body", http.StatusBadRequest)
+		WriteAPIErrorFromMsg(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 	result, err := h.uc.PublishRelease(r.Context(), domain.OTAReleaseRequest{
@@ -41,7 +41,7 @@ func (h *OTAHandler) PublishRelease(w http.ResponseWriter, r *http.Request) {
 		SHA256:       req.SHA256,
 	})
 	if err != nil {
-		jsonError(w, err.Error(), http.StatusUnprocessableEntity)
+		WriteAPIErrorFromMsg(w, err.Error(), http.StatusUnprocessableEntity)
 		return
 	}
 	jsonOK(w, result)
@@ -50,7 +50,7 @@ func (h *OTAHandler) PublishRelease(w http.ResponseWriter, r *http.Request) {
 // ReportBoot handles POST /ota/report-boot.
 func (h *OTAHandler) ReportBoot(w http.ResponseWriter, r *http.Request) {
 	if h.uc == nil {
-		jsonError(w, "ota use case not configured", http.StatusServiceUnavailable)
+		WriteAPIErrorFromMsg(w, "ota use case not configured", http.StatusServiceUnavailable)
 		return
 	}
 	var req struct {
@@ -59,7 +59,7 @@ func (h *OTAHandler) ReportBoot(w http.ResponseWriter, r *http.Request) {
 		Status   string `json:"status"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		jsonError(w, "invalid request body", http.StatusBadRequest)
+		WriteAPIErrorFromMsg(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 	result, err := h.uc.ReportBootResult(r.Context(), domain.OTABootReportRequest{
@@ -68,7 +68,7 @@ func (h *OTAHandler) ReportBoot(w http.ResponseWriter, r *http.Request) {
 		Status:   req.Status,
 	})
 	if err != nil {
-		jsonError(w, err.Error(), http.StatusUnprocessableEntity)
+		WriteAPIErrorFromMsg(w, err.Error(), http.StatusUnprocessableEntity)
 		return
 	}
 	jsonOK(w, result)
@@ -77,12 +77,12 @@ func (h *OTAHandler) ReportBoot(w http.ResponseWriter, r *http.Request) {
 // Manifest handles GET /ota/manifest.
 func (h *OTAHandler) Manifest(w http.ResponseWriter, r *http.Request) {
 	if h.uc == nil {
-		jsonError(w, "ota use case not configured", http.StatusServiceUnavailable)
+		WriteAPIErrorFromMsg(w, "ota use case not configured", http.StatusServiceUnavailable)
 		return
 	}
 	m, err := h.uc.GetManifest(r.Context())
 	if err != nil {
-		jsonError(w, err.Error(), http.StatusInternalServerError)
+		WriteAPIErrorFromMsg(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	jsonOK(w, m)

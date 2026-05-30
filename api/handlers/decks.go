@@ -20,15 +20,16 @@ import (
 
 // DeckHandler handles CRUD operations for saved decks.
 type DeckHandler struct {
-	repo     domain.DeckRepository
-	userRepo domain.UserRepository
-	cardRepo domain.CardRepository
-	analyze  *usecase.AnalyzeDeckUseCase
-	scoreUC  *usecase.ScoreUseCase
+	repo      domain.DeckRepository
+	userRepo  domain.UserRepository
+	cardRepo  domain.CardRepository
+	analyze   *usecase.AnalyzeDeckUseCase
+	legality  *usecase.LegalityEvaluator
+	scoreUC   *usecase.ScoreUseCase
 	bracketUC *usecase.CommanderBracketUseCase
-	classify *usecase.DeckClassifierUseCase
-	mulligan *usecase.MulliganAssistantUseCase
-	tracker  domain.AnalyticsTracker
+	classify  *usecase.DeckClassifierUseCase
+	mulligan  *usecase.MulliganAssistantUseCase
+	tracker   domain.AnalyticsTracker
 }
 
 type deckRepoPager interface {
@@ -42,11 +43,18 @@ func NewDeckHandler(repo domain.DeckRepository, userRepo domain.UserRepository, 
 		userRepo: userRepo,
 		cardRepo: cardRepo,
 		analyze:  analyze,
+		legality: nil,
 		scoreUC:  nil,
 		classify: classify,
 		mulligan: mulligan,
 		tracker:  domain.NoopAnalyticsTracker{},
 	}
+}
+
+// WithLegalityEvaluator sets the cached legality evaluator when available.
+func (h *DeckHandler) WithLegalityEvaluator(legality *usecase.LegalityEvaluator) *DeckHandler {
+	h.legality = legality
+	return h
 }
 
 // WithScoreUC sets the score use case for richer deck metadata when available.
@@ -270,7 +278,7 @@ type deckRestoreResponse struct {
 func (h *DeckHandler) List(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.UserIDFromContext(r.Context())
 	if userID == "" {
-		jsonError(w, "unauthorized", http.StatusUnauthorized)
+		WriteAPIErrorFromMsg(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -279,7 +287,7 @@ func (h *DeckHandler) List(w http.ResponseWriter, r *http.Request) {
 	if pageRaw == "" && limitRaw == "" {
 		decks, err := h.repo.FindByUserID(r.Context(), userID)
 		if err != nil {
-			jsonError(w, "failed to retrieve decks", http.StatusInternalServerError)
+			WriteAPIErrorFromMsg(w, "failed to retrieve decks", http.StatusInternalServerError)
 			return
 		}
 
@@ -293,14 +301,14 @@ func (h *DeckHandler) List(w http.ResponseWriter, r *http.Request) {
 	if pageRaw != "" {
 		page, err = strconv.Atoi(pageRaw)
 		if err != nil || page <= 0 {
-			jsonError(w, "page must be a positive integer", http.StatusBadRequest)
+			WriteAPIErrorFromMsg(w, "page must be a positive integer", http.StatusBadRequest)
 			return
 		}
 	}
 	if limitRaw != "" {
 		limit, err = strconv.Atoi(limitRaw)
 		if err != nil || limit <= 0 {
-			jsonError(w, "limit must be a positive integer", http.StatusBadRequest)
+			WriteAPIErrorFromMsg(w, "limit must be a positive integer", http.StatusBadRequest)
 			return
 		}
 	}
@@ -311,7 +319,7 @@ func (h *DeckHandler) List(w http.ResponseWriter, r *http.Request) {
 	if pager, ok := h.repo.(deckRepoPager); ok {
 		decks, total, pageErr := pager.FindByUserIDPage(r.Context(), userID, page, limit)
 		if pageErr != nil {
-			jsonError(w, "failed to retrieve decks", http.StatusInternalServerError)
+			WriteAPIErrorFromMsg(w, "failed to retrieve decks", http.StatusInternalServerError)
 			return
 		}
 		jsonOK(w, map[string]any{
@@ -325,7 +333,7 @@ func (h *DeckHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	decks, err := h.repo.FindByUserID(r.Context(), userID)
 	if err != nil {
-		jsonError(w, "failed to retrieve decks", http.StatusInternalServerError)
+		WriteAPIErrorFromMsg(w, "failed to retrieve decks", http.StatusInternalServerError)
 		return
 	}
 
@@ -354,16 +362,16 @@ func (h *DeckHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	deck, err := h.repo.FindByID(r.Context(), id)
 	if err != nil {
-		jsonError(w, "failed to retrieve deck", http.StatusInternalServerError)
+		WriteAPIErrorFromMsg(w, "failed to retrieve deck", http.StatusInternalServerError)
 		return
 	}
 	if deck == nil {
-		jsonError(w, "deck not found", http.StatusNotFound)
+		WriteAPIErrorFromMsg(w, "deck not found", http.StatusNotFound)
 		return
 	}
 	// Only the owner (or a public deck) can be viewed.
 	if deck.UserID != userID && !deck.IsPublic {
-		jsonError(w, "deck not found", http.StatusNotFound)
+		WriteAPIErrorFromMsg(w, "deck not found", http.StatusNotFound)
 		return
 	}
 
@@ -376,21 +384,21 @@ func (h *DeckHandler) Price(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
 	if h.cardRepo == nil {
-		jsonError(w, "card repository unavailable", http.StatusServiceUnavailable)
+		WriteAPIErrorFromMsg(w, "card repository unavailable", http.StatusServiceUnavailable)
 		return
 	}
 
 	deck, err := h.repo.FindByID(r.Context(), id)
 	if err != nil {
-		jsonError(w, "failed to retrieve deck", http.StatusInternalServerError)
+		WriteAPIErrorFromMsg(w, "failed to retrieve deck", http.StatusInternalServerError)
 		return
 	}
 	if deck == nil {
-		jsonError(w, "deck not found", http.StatusNotFound)
+		WriteAPIErrorFromMsg(w, "deck not found", http.StatusNotFound)
 		return
 	}
 	if deck.UserID != userID && !deck.IsPublic {
-		jsonError(w, "deck not found", http.StatusNotFound)
+		WriteAPIErrorFromMsg(w, "deck not found", http.StatusNotFound)
 		return
 	}
 
@@ -487,7 +495,7 @@ func (h *DeckHandler) Summary(w http.ResponseWriter, r *http.Request) {
 
 	cards, quantities, err := h.resolveDeckCards(r, deck)
 	if err != nil {
-		jsonError(w, err.Error(), http.StatusUnprocessableEntity)
+		WriteAPIErrorFromMsg(w, err.Error(), http.StatusUnprocessableEntity)
 		return
 	}
 
@@ -509,7 +517,7 @@ func (h *DeckHandler) Summary(w http.ResponseWriter, r *http.Request) {
 
 		card, resolveErr := h.resolveDeckCardEntry(r, entry)
 		if resolveErr != nil {
-			jsonError(w, resolveErr.Error(), http.StatusUnprocessableEntity)
+			WriteAPIErrorFromMsg(w, resolveErr.Error(), http.StatusUnprocessableEntity)
 			return
 		}
 		usd, eur, _ := extractCardUnitPrices(card)
@@ -530,10 +538,17 @@ func (h *DeckHandler) Summary(w http.ResponseWriter, r *http.Request) {
 		EstimatedUSD:   round4(totalUSD),
 		EstimatedEUR:   round4(totalEUR),
 		MissingPrices:  missingPrices,
-		Legality:       usecase.DetermineDeckLegalityAllFormats(cards, quantities),
+		Legality:       h.legalityAllFormats(cards, quantities),
 		CommanderScore: commanderBracketForDeck(h.scoreUC, h.bracketUC, deck.Format, cards, quantities),
 		CheckedAtUTC:   time.Now().UTC().Format(time.RFC3339),
 	})
+}
+
+func (h *DeckHandler) legalityAllFormats(cards []*domain.Card, quantities map[string]int) map[string]usecase.DeckLegalityResult {
+	if h != nil && h.legality != nil {
+		return h.legality.AllFormats(cards, quantities)
+	}
+	return usecase.DetermineDeckLegalityAllFormats(cards, quantities)
 }
 
 func commanderBracketForDeck(scoreUC *usecase.ScoreUseCase, bracketUC *usecase.CommanderBracketUseCase, format string, cards []*domain.Card, quantities map[string]int) *commanderBracketResponse {
@@ -574,7 +589,7 @@ func (h *DeckHandler) Budget(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
 	if h.cardRepo == nil {
-		jsonError(w, "card repository unavailable", http.StatusServiceUnavailable)
+		WriteAPIErrorFromMsg(w, "card repository unavailable", http.StatusServiceUnavailable)
 		return
 	}
 
@@ -742,7 +757,7 @@ func (h *DeckHandler) Legality(w http.ResponseWriter, r *http.Request) {
 
 	jsonOK(w, deckLegalityResponse{
 		DeckID:       deck.ID,
-		Formats:      usecase.DetermineDeckLegalityAllFormats(cards, quantities),
+		Formats:      h.legalityAllFormats(cards, quantities),
 		CheckedAtUTC: time.Now().UTC().Format(time.RFC3339),
 	})
 }
@@ -797,7 +812,7 @@ func (h *DeckHandler) Analysis(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	legality := usecase.DetermineDeckLegalityAllFormats(analysisResult.RawCards, analysisResult.Quantities)
+	legality := h.legalityAllFormats(analysisResult.RawCards, analysisResult.Quantities)
 	curveBreakdown := buildCurveTypeBreakdown(analysisResult.RawCards, analysisResult.Quantities)
 	deviation := deviationFromMeta(archetype, analysisResult.Result.Mana.AverageCMC)
 	metaFit := metaFitFromDeviation(deviation)
