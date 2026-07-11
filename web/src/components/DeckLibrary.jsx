@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import CardHoverPreview from './CardHoverPreview'
 import { apiRequest, throwIfNotOK } from '../lib/apiClient'
 
@@ -34,6 +34,7 @@ export default function DeckLibrary({
   const [deckLegality, setDeckLegality] = useState({})
   const [deckSummaries, setDeckSummaries] = useState({})
   const [cardMetadata, setCardMetadata] = useState({})
+  const deckSummariesRef = useRef({})
 
   const ITEMS_PER_PAGE = 3
   const paginatedDecks = decks
@@ -179,11 +180,15 @@ export default function DeckLibrary({
   }, [compactStorageKey, compactDeckView])
 
   useEffect(() => {
+    deckSummariesRef.current = deckSummaries
+  }, [deckSummaries])
+
+  useEffect(() => {
     let cancelled = false
 
     async function ensureDeckSummaries() {
       const pending = paginatedDecks
-        .filter(deck => deck?.id && !deckSummaries[deck.id])
+        .filter(deck => deck?.id && !deckSummariesRef.current[deck.id])
         .map(deck => deck.id)
 
       if (pending.length === 0) return
@@ -275,7 +280,7 @@ export default function DeckLibrary({
     return () => {
       cancelled = true
     }
-  }, [paginatedDecks, token, deckSummaries])
+  }, [paginatedDecks, token])
 
   useEffect(() => {
     let cancelled = false

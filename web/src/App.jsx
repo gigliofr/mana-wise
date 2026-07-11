@@ -197,7 +197,7 @@ function App() {
       onSessionUpdate: handleSessionUpdate,
       onUnauthorized: handleLogout,
     })
-  }, [token, user])
+  }, [])
 
   useEffect(() => {
     if (!token) return

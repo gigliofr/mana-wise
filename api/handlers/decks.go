@@ -539,7 +539,7 @@ func (h *DeckHandler) Summary(w http.ResponseWriter, r *http.Request) {
 		EstimatedEUR:   round4(totalEUR),
 		MissingPrices:  missingPrices,
 		Legality:       h.legalityAllFormats(cards, quantities),
-		CommanderScore: commanderBracketForDeck(h.scoreUC, h.bracketUC, deck.Format, cards, quantities),
+		CommanderScore: commanderBracketForDeck(r.Context(), h.scoreUC, h.bracketUC, deck.Format, cards, quantities),
 		CheckedAtUTC:   time.Now().UTC().Format(time.RFC3339),
 	})
 }
@@ -551,7 +551,7 @@ func (h *DeckHandler) legalityAllFormats(cards []*domain.Card, quantities map[st
 	return usecase.DetermineDeckLegalityAllFormats(cards, quantities)
 }
 
-func commanderBracketForDeck(scoreUC *usecase.ScoreUseCase, bracketUC *usecase.CommanderBracketUseCase, format string, cards []*domain.Card, quantities map[string]int) *commanderBracketResponse {
+func commanderBracketForDeck(ctx context.Context, scoreUC *usecase.ScoreUseCase, bracketUC *usecase.CommanderBracketUseCase, format string, cards []*domain.Card, quantities map[string]int) *commanderBracketResponse {
 	if !strings.EqualFold(strings.TrimSpace(format), "commander") {
 		return nil
 	}
@@ -564,7 +564,10 @@ func commanderBracketForDeck(scoreUC *usecase.ScoreUseCase, bracketUC *usecase.C
 	if scoreUC == nil {
 		return nil
 	}
-	result, err := scoreUC.Execute(context.Background(), cards, quantities)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	result, err := scoreUC.Execute(ctx, cards, quantities)
 	if err != nil {
 		return nil
 	}
