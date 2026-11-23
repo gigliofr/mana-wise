@@ -233,9 +233,15 @@ func main() {
 	// ── Rate limiter for expensive endpoints (single shared instance) ───────
 	rateLimiter := middleware.NewRateLimiter(10 * time.Minute)
 
+	// ── Cache for rendered share PDFs (keyed by token + deck version) ───────
+	sharePDFCache := cache.New()
+	sharePDFCacheDone := make(chan struct{})
+	sharePDFCache.StartJanitor(5*time.Minute, sharePDFCacheDone)
+
 	// ── Router ───────────────────────────────────────────────────────────────
 	router := api.NewRouter(api.RouterDeps{
 		RateLimiter:            rateLimiter,
+		SharePDFCache:          sharePDFCache,
 		SharedAnalysisLinkRepo: sharedAnalysisLinkRepo,
 		CardRepo:               cardRepo,
 		UserRepo:               userRepo,
@@ -288,6 +294,7 @@ func main() {
 	close(analysisCacheDone)
 	close(legalityCacheDone)
 	rateLimiter.Stop()
+	close(sharePDFCacheDone)
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer shutdownCancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {

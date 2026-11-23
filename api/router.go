@@ -13,6 +13,7 @@ import (
 	"github.com/gigliofr/mana-wise/api/handlers"
 	"github.com/gigliofr/mana-wise/api/middleware"
 	"github.com/gigliofr/mana-wise/domain"
+	"github.com/gigliofr/mana-wise/infrastructure/cache"
 	"github.com/gigliofr/mana-wise/usecase"
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
@@ -46,6 +47,8 @@ type RouterDeps struct {
 	RefreshTTLMinutes      int
 	// RateLimiter is optional; when nil the router creates its own.
 	RateLimiter *middleware.RateLimiter
+	// SharePDFCache is optional; when set, rendered share PDFs are cached.
+	SharePDFCache *cache.Cache
 }
 
 // NewRouter builds and returns the chi router with all routes registered.
@@ -77,7 +80,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 	contextDeadlineMW := middleware.ContextDeadlineMiddleware(30 * time.Second)
 
 	publicShareH := handlers.NewPublicShareHandler(deps.SharedAnalysisLinkRepo, deps.DeckRepo, deps.AnalyzeUC)
-	publicSharePDFH := handlers.NewPublicSharePDFHandler(deps.SharedAnalysisLinkRepo, deps.DeckRepo, deps.AnalyzeUC)
+	publicSharePDFH := handlers.NewPublicSharePDFHandler(deps.SharedAnalysisLinkRepo, deps.DeckRepo, deps.AnalyzeUC).WithPDFCache(deps.SharePDFCache)
 	shareAnalysisH := handlers.NewShareAnalysisHandler(deps.SharedAnalysisLinkRepo, deps.Mailer)
 
 	// Instantiate handlers.
