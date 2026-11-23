@@ -385,8 +385,8 @@ func allowedOriginsFromEnv() []string {
 func otaEnabledFromEnv() bool {
 	raw := strings.ToLower(strings.TrimSpace(os.Getenv("OTA_ENABLED")))
 	if raw == "" {
-		// Keep current behavior unless explicitly disabled.
-		return true
+		// OTA firmware routes are unrelated to deck analysis: off unless enabled.
+		return false
 	}
 	return raw == "1" || raw == "true" || raw == "yes" || raw == "on"
 }

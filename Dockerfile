@@ -2,6 +2,11 @@
 FROM node:20-alpine AS web-builder
 
 WORKDIR /app/web
+# Build-time frontend settings (Vite inlines VITE_* variables in the bundle).
+ARG VITE_SUPPORT_EMAIL=""
+ARG VITE_PAYPAL_DONATE_URL=""
+ENV VITE_SUPPORT_EMAIL=$VITE_SUPPORT_EMAIL \
+    VITE_PAYPAL_DONATE_URL=$VITE_PAYPAL_DONATE_URL
 COPY web/package*.json ./
 RUN npm ci
 COPY web/ ./

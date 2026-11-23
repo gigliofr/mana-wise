@@ -38,18 +38,20 @@ MONGODB_URI=mongodb+srv://USER:PASSWORD@cluster.mongodb.net/manawise
 JWT_SECRET=your-secure-random-secret-here
 ENVIRONMENT=production
 
+# Admin API (required to use /api/v1/admin/*; disabled when empty)
+ADMIN_SECRET=long-random-value
+
 # API Configuration
 PORT=8080
-CORS_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
+MANAWISE_ALLOWED_ORIGINS=https://yourdomain.com,https://www.yourdomain.com
+PUBLIC_BASE_URL=https://yourdomain.com
 
-# Scryfall API
+# Rate limit for /analyze and /score (requests per minute)
+RATE_LIMIT_FREE_PER_MIN=5
+RATE_LIMIT_PRO_PER_MIN=50
+
+# Scryfall API (requests per second, max 10)
 SCRYFALL_RATE_LIMIT=10
-
-# Impact Analysis
-EDH_IMPACT_CACHE_TTL_HOURS=24
-EDH_IMPACT_WEIGHTS_PRICE=0.4
-EDH_IMPACT_WEIGHTS_EDHREC=0.5
-EDH_IMPACT_WEIGHTS_REPRINT=0.1
 
 # Logging
 LOG_LEVEL=info
