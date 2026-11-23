@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -174,15 +175,20 @@ func (h *AdminHandler) UpdateCommanderBrackets(w http.ResponseWriter, r *http.Re
 }
 
 // AdminSecretMiddleware checks for a secret key header.
+//
+// When ADMIN_SECRET is not configured the admin API is disabled: there is no
+// built-in default secret, because a default published in the repository would
+// let anyone call the admin endpoints (including granting Pro).
 func AdminSecretMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		secret := os.Getenv("ADMIN_SECRET")
+		secret := strings.TrimSpace(os.Getenv("ADMIN_SECRET"))
 		if secret == "" {
-			secret = "change-me-in-production"
+			WriteAPIErrorFromMsg(w, "admin API disabled: ADMIN_SECRET is not configured", http.StatusServiceUnavailable)
+			return
 		}
 
 		authHeader := r.Header.Get("X-Admin-Secret")
-		if authHeader != secret {
+		if subtle.ConstantTimeCompare([]byte(authHeader), []byte(secret)) != 1 {
 			WriteAPIErrorFromMsg(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}

@@ -194,6 +194,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 
 		// Admin endpoints — protected by ADMIN_SECRET header.
 		r.Route("/admin", func(r chi.Router) {
+			r.Use(authRateMW) // brute-force protection on the admin secret
 			r.Use(handlers.AdminSecretMiddleware)
 			r.Post("/user/plan", adminH.UpdateUserPlan)
 			r.Get("/metrics/funnel", adminH.FunnelMetrics)

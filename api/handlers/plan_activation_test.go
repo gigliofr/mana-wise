@@ -113,3 +113,31 @@ func TestAdminUpdateUserPlan_DowngradeClearsExpiryAndValidatesDuration(t *testin
 		t.Fatalf("expected free without expiry, got plan=%s until=%v", repo.user.Plan, repo.user.ProUntil)
 	}
 }
+
+func TestAdminSecretMiddleware_DisabledWithoutSecretAndRejectsDefault(t *testing.T) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	h := AdminSecretMiddleware(next)
+
+	call := func(secretHeader string) int {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/metrics/funnel", nil)
+		if secretHeader != "" {
+			req.Header.Set("X-Admin-Secret", secretHeader)
+		}
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, req)
+		return rr.Code
+	}
+
+	t.Setenv("ADMIN_SECRET", "")
+	if code := call("change-me-in-production"); code != http.StatusServiceUnavailable {
+		t.Fatalf("unset secret: the old default must not work, got %d", code)
+	}
+
+	t.Setenv("ADMIN_SECRET", "s3cret-value")
+	if code := call("wrong"); code != http.StatusUnauthorized {
+		t.Fatalf("wrong secret: got %d, want 401", code)
+	}
+	if code := call("s3cret-value"); code != http.StatusOK {
+		t.Fatalf("right secret: got %d, want 200", code)
+	}
+}
