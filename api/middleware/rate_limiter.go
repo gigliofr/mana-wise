@@ -2,194 +2,209 @@ package middleware
 
 import (
 	"encoding/json"
-	"fmt"
+	"math"
 	"net"
 	"net/http"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
-
-	"github.com/gigliofr/mana-wise/domain"
 )
 
-// RateLimitBucket implements token bucket for rate limiting.
+// RateLimitBucket implements a token bucket.
+//
+// capacity is the maximum burst (number of requests that can be served back to
+// back) and refillRate is expressed in tokens per second.
 type RateLimitBucket struct {
 	tokens     float64
 	capacity   float64
-	refillRate float64 // tokens per second
+	refillRate float64
 	lastRefill time.Time
+	lastSeen   time.Time
 	mu         sync.Mutex
 }
 
-// NewRateLimitBucket creates a new token bucket.
+// NewRateLimitBucket creates a new, full token bucket.
+// A capacity below 1 would make the bucket unable to ever serve a request,
+// so it is clamped to 1.
 func NewRateLimitBucket(capacity float64, refillPerSecond float64) *RateLimitBucket {
+	if capacity < 1 {
+		capacity = 1
+	}
+	now := time.Now()
 	return &RateLimitBucket{
 		tokens:     capacity,
 		capacity:   capacity,
 		refillRate: refillPerSecond,
-		lastRefill: time.Now(),
+		lastRefill: now,
+		lastSeen:   now,
 	}
 }
 
 // Allow checks if a request is allowed and deducts a token if so.
+// resetAt is the unix time at which at least one token will be available again.
 func (b *RateLimitBucket) Allow() (allowed bool, remaining int, resetAt int64) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	return b.allowAt(time.Now())
+}
 
-	now := time.Now()
+func (b *RateLimitBucket) allowAt(now time.Time) (bool, int, int64) {
 	elapsed := now.Sub(b.lastRefill).Seconds()
-	b.tokens = min(b.capacity, b.tokens+elapsed*b.refillRate)
+	if elapsed > 0 {
+		b.tokens = math.Min(b.capacity, b.tokens+elapsed*b.refillRate)
+	}
 	b.lastRefill = now
+	b.lastSeen = now
 
 	if b.tokens >= 1.0 {
 		b.tokens--
-		remaining = int(b.tokens)
-		resetAt = now.Add(time.Duration(float64(time.Second) / b.refillRate)).Unix()
-		return true, remaining, resetAt
+		return true, int(b.tokens), b.nextTokenAt(now)
 	}
-
-	remaining = 0
-	resetAt = now.Add(time.Duration(float64(time.Second) / b.refillRate)).Unix()
-	return false, remaining, resetAt
+	return false, 0, b.nextTokenAt(now)
 }
 
-// RateLimiter manages per-key rate limiting.
+func (b *RateLimitBucket) nextTokenAt(now time.Time) int64 {
+	if b.refillRate <= 0 {
+		return now.Add(time.Hour).Unix()
+	}
+	missing := 1.0 - b.tokens
+	if missing <= 0 {
+		return now.Unix()
+	}
+	wait := time.Duration(missing / b.refillRate * float64(time.Second))
+	return now.Add(wait).Unix()
+}
+
+// RateLimiter keeps one token bucket per key. A single instance serves all keys;
+// buckets that stay idle longer than idleTTL are evicted by a background janitor.
 type RateLimiter struct {
-	buckets       map[string]*RateLimitBucket
-	mu            sync.RWMutex
-	capacity      float64 // tokens
-	refillPerSec  float64 // tokens per second
-	cleanupTicker *time.Ticker
-	done          chan struct{}
+	buckets  map[string]*RateLimitBucket
+	mu       sync.Mutex
+	idleTTL  time.Duration
+	done     chan struct{}
+	stopOnce sync.Once
 }
 
-// NewRateLimiter creates a rate limiter with given capacity and refill rate.
-func NewRateLimiter(capacity float64, refillPerSecond float64) *RateLimiter {
-	rl := &RateLimiter{
-		buckets:       make(map[string]*RateLimitBucket),
-		capacity:      capacity,
-		refillPerSec:  refillPerSecond,
-		cleanupTicker: time.NewTicker(5 * time.Minute),
-		done:          make(chan struct{}),
+// NewRateLimiter creates a limiter and starts its janitor goroutine.
+// Call Stop to release it.
+func NewRateLimiter(idleTTL time.Duration) *RateLimiter {
+	if idleTTL <= 0 {
+		idleTTL = 10 * time.Minute
 	}
-
-	// Start cleanup goroutine to remove stale buckets.
-	go rl.cleanupLoop()
-
+	rl := &RateLimiter{
+		buckets: make(map[string]*RateLimitBucket),
+		idleTTL: idleTTL,
+		done:    make(chan struct{}),
+	}
+	go rl.janitor(idleTTL / 2)
 	return rl
 }
 
-// Allow checks if a key is allowed to proceed.
-func (rl *RateLimiter) Allow(key string) (allowed bool, remaining int, resetAt int64) {
+// Allow consumes a token from the bucket identified by key, creating it with the
+// given capacity and refill rate if needed. If the limits for an existing key
+// changed (e.g. a plan upgrade), the bucket is recreated with the new limits.
+func (rl *RateLimiter) Allow(key string, capacity, refillPerSecond float64) (allowed bool, remaining int, resetAt int64) {
 	rl.mu.Lock()
-	bucket, exists := rl.buckets[key]
-	if !exists {
-		bucket = NewRateLimitBucket(rl.capacity, rl.refillPerSec)
+	bucket, ok := rl.buckets[key]
+	if !ok || bucket.capacity != math.Max(1, capacity) || bucket.refillRate != refillPerSecond {
+		bucket = NewRateLimitBucket(capacity, refillPerSecond)
 		rl.buckets[key] = bucket
 	}
 	rl.mu.Unlock()
-
 	return bucket.Allow()
 }
 
-// Stop stops the cleanup goroutine.
-func (rl *RateLimiter) Stop() {
-	close(rl.done)
-	rl.cleanupTicker.Stop()
+// Len returns the number of tracked buckets (useful for metrics and tests).
+func (rl *RateLimiter) Len() int {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	return len(rl.buckets)
 }
 
-func (rl *RateLimiter) cleanupLoop() {
+// Stop stops the janitor goroutine. It is safe to call more than once.
+func (rl *RateLimiter) Stop() {
+	rl.stopOnce.Do(func() { close(rl.done) })
+}
+
+func (rl *RateLimiter) janitor(every time.Duration) {
+	ticker := time.NewTicker(every)
+	defer ticker.Stop()
 	for {
 		select {
-		case <-rl.cleanupTicker.C:
-			rl.mu.Lock()
-			for key := range rl.buckets {
-				delete(rl.buckets, key)
-			}
-			rl.mu.Unlock()
+		case now := <-ticker.C:
+			rl.evictIdle(now)
 		case <-rl.done:
 			return
 		}
 	}
 }
 
-// RateLimitMiddleware creates a middleware that rate-limits based on (user_id, ip) pairs.
-// Different limits apply based on user plan.
-func RateLimitMiddleware(userRepo domain.UserRepository, requestsPerMinute func(plan string) float64) func(http.Handler) http.Handler {
-	limiters := make(map[string]*RateLimiter)
-	var mu sync.RWMutex
+func (rl *RateLimiter) evictIdle(now time.Time) {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	for key, b := range rl.buckets {
+		b.mu.Lock()
+		idle := now.Sub(b.lastSeen) > rl.idleTTL
+		b.mu.Unlock()
+		if idle {
+			delete(rl.buckets, key)
+		}
+	}
+}
 
+// RateLimitMiddleware limits requests per user (or per client IP for
+// unauthenticated requests). requestsPerMinute returns the allowed requests per
+// minute for a plan; the same value is used as burst capacity.
+//
+// It must run after JWTAuth (to read user and plan from the context) and before
+// any middleware that consumes quota, such as FreemiumGate.
+func RateLimitMiddleware(limiter *RateLimiter, requestsPerMinute func(plan string) int) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			userID := UserIDFromContext(r.Context())
-			ip := getClientIP(r)
 			plan := PlanFromContext(r.Context())
-
-			requestLimit := requestsPerMinute(plan) / 60.0 // convert to per-second
-
-			limitKey := fmt.Sprintf("%s:%s:%s", userID, ip, plan)
-
-			mu.RLock()
-			limiter, exists := limiters[limitKey]
-			mu.RUnlock()
-
-			if !exists {
-				limiter = NewRateLimiter(requestLimit, requestLimit)
-				mu.Lock()
-				limiters[limitKey] = limiter
-				mu.Unlock()
+			perMinute := requestsPerMinute(plan)
+			if perMinute < 1 {
+				perMinute = 1
 			}
 
-			allowed, remaining, resetAt := limiter.Allow(limitKey)
-			if !allowed {
-				w.Header().Set("X-RateLimit-Limit", fmt.Sprintf("%.0f", requestLimit*60))
-				w.Header().Set("X-RateLimit-Remaining", "0")
-				w.Header().Set("X-RateLimit-Reset", fmt.Sprintf("%d", resetAt))
-				w.Header().Set("Retry-After", fmt.Sprintf("%d", resetAt-time.Now().Unix()))
-				w.Header().Set("Content-Type", "application/json")
+			key := UserIDFromContext(r.Context())
+			if key == "" {
+				key = "ip:" + clientIP(r)
+			}
 
+			allowed, remaining, resetAt := limiter.Allow(key, float64(perMinute), float64(perMinute)/60.0)
+
+			w.Header().Set("X-RateLimit-Limit", strconv.Itoa(perMinute))
+			w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(remaining))
+			w.Header().Set("X-RateLimit-Reset", strconv.FormatInt(resetAt, 10))
+
+			if !allowed {
+				retryAfter := resetAt - time.Now().Unix()
+				if retryAfter < 1 {
+					retryAfter = 1
+				}
+				w.Header().Set("Retry-After", strconv.FormatInt(retryAfter, 10))
+				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusTooManyRequests)
-				json.NewEncoder(w).Encode(map[string]interface{}{
-					"error": "rate limit exceeded",
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{
+					"error":       "rate limit exceeded",
+					"code":        "ERR_RATE_LIMITED",
+					"retry_after": retryAfter,
 				})
 				return
 			}
-
-			w.Header().Set("X-RateLimit-Limit", fmt.Sprintf("%.0f", requestLimit*60))
-			w.Header().Set("X-RateLimit-Remaining", strconv.Itoa(remaining))
-			w.Header().Set("X-RateLimit-Reset", fmt.Sprintf("%d", resetAt))
 
 			next.ServeHTTP(w, r)
 		})
 	}
 }
 
-func getClientIP(r *http.Request) string {
-	// Check X-Forwarded-For (reverse proxy)
-	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
-		ips := strings.FieldsFunc(forwarded, func(r rune) bool { return r == ',' })
-		if len(ips) > 0 {
-			return strings.TrimSpace(ips[0])
-		}
-	}
-
-	// Check X-Real-IP
-	if realIP := r.Header.Get("X-Real-IP"); realIP != "" {
-		return realIP
-	}
-
-	// Fall back to RemoteAddr
+// clientIP returns the client address. Forwarded headers are already folded
+// into RemoteAddr by chi's RealIP middleware, so they are not trusted here.
+func clientIP(r *http.Request) string {
 	ip, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr
 	}
 	return ip
-}
-
-func min(a, b float64) float64 {
-	if a < b {
-		return a
-	}
-	return b
 }

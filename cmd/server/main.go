@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gigliofr/mana-wise/api"
+	"github.com/gigliofr/mana-wise/api/middleware"
 	"github.com/gigliofr/mana-wise/config"
 	"github.com/gigliofr/mana-wise/domain"
 	"github.com/gigliofr/mana-wise/infrastructure/analytics"
@@ -222,8 +223,12 @@ func main() {
 	}
 	otaUC = usecase.NewOTAUpdateUseCase(otaRepo)
 
+	// ── Rate limiter for expensive endpoints (single shared instance) ───────
+	rateLimiter := middleware.NewRateLimiter(10 * time.Minute)
+
 	// ── Router ───────────────────────────────────────────────────────────────
 	router := api.NewRouter(api.RouterDeps{
+		RateLimiter:            rateLimiter,
 		SharedAnalysisLinkRepo: sharedAnalysisLinkRepo,
 		CardRepo:               cardRepo,
 		UserRepo:               userRepo,
@@ -276,6 +281,7 @@ func main() {
 	// Stop cache janitors first.
 	close(analysisCacheDone)
 	close(legalityCacheDone)
+	rateLimiter.Stop()
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer shutdownCancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {

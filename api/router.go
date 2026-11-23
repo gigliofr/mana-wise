@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"time"
 
@@ -44,6 +45,8 @@ type RouterDeps struct {
 	JWTSecret              string
 	SessionTTLMinutes      int
 	RefreshTTLMinutes      int
+	// RateLimiter is optional; when nil the router creates its own.
+	RateLimiter *middleware.RateLimiter
 }
 
 // NewRouter builds and returns the chi router with all routes registered.
@@ -56,12 +59,19 @@ func NewRouter(deps RouterDeps) http.Handler {
 	r.Use(chimiddleware.RealIP)
 	r.Use(corsMiddleware)
 
-	// Create rate limiter for expensive endpoints (free: 5/min, pro: 50/min).
-	rateLimitMW := middleware.RateLimitMiddleware(deps.UserRepo, func(plan string) float64 {
-		if plan == "pro" {
-			return 50.0 / 60.0 // 50 requests per minute
+	// Rate limiter for expensive endpoints. Limits are requests per minute and
+	// double as burst capacity (defaults: free 5/min, pro 50/min).
+	limiter := deps.RateLimiter
+	if limiter == nil {
+		limiter = middleware.NewRateLimiter(10 * time.Minute)
+	}
+	freePerMin := envInt("RATE_LIMIT_FREE_PER_MIN", 5)
+	proPerMin := envInt("RATE_LIMIT_PRO_PER_MIN", 50)
+	rateLimitMW := middleware.RateLimitMiddleware(limiter, func(plan string) int {
+		if plan == string(domain.PlanPro) {
+			return proPerMin
 		}
-		return 5.0 / 60.0 // 5 requests per minute (default for free)
+		return freePerMin
 	})
 
 	// Context deadline for expensive operations (30 second timeout).
@@ -127,9 +137,10 @@ func NewRouter(deps RouterDeps) http.Handler {
 		r.Group(func(r chi.Router) {
 			r.Use(jwtMW)
 
-			// Analyze — also gate by freemium quota, with rate limit and context deadline.
-			r.With(freemiumMW, rateLimitMW, contextDeadlineMW).Post("/analyze", analyzeH.ServeHTTP)
-			r.With(freemiumMW, rateLimitMW, contextDeadlineMW).Post("/score", scoreH.Score)
+			// Analyze/score: rate limit first, so a rejected request never consumes the
+			// daily freemium quota; then the freemium gate and the context deadline.
+			r.With(rateLimitMW, freemiumMW, contextDeadlineMW).Post("/analyze", analyzeH.ServeHTTP)
+			r.With(rateLimitMW, freemiumMW, contextDeadlineMW).Post("/score", scoreH.Score)
 			r.Get("/users/me/notifications", notificationH.Feed)
 			r.Post("/sideboard/plan", sideboardH.ServeHTTP)
 			r.Post("/mulligan/simulate", mulliganH.ServeHTTP)
@@ -374,4 +385,17 @@ func otaEnabledFromEnv() bool {
 		return true
 	}
 	return raw == "1" || raw == "true" || raw == "yes" || raw == "on"
+}
+
+// envInt reads a positive integer from the environment, falling back to def.
+func envInt(key string, def int) int {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return def
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 1 {
+		return def
+	}
+	return n
 }
