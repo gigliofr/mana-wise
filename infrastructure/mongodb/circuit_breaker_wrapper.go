@@ -17,8 +17,8 @@ type CircuitBreakerConfig struct {
 // DefaultCircuitBreakerConfig returns standard MongoDB circuit breaker settings.
 func DefaultCircuitBreakerConfig() CircuitBreakerConfig {
 	return CircuitBreakerConfig{
-		FailureThreshold: 5,        // Open after 5 failures
-		SuccessThreshold: 1,        // Close after 1 success in half-open
+		FailureThreshold: 5,                // Open after 5 failures
+		SuccessThreshold: 1,                // Close after 1 success in half-open
 		Timeout:          30 * time.Second, // Wait 30s before trying half-open
 	}
 }
@@ -32,5 +32,6 @@ func NewCircuitBreakerForMongoDB(logger *slog.Logger) *circuitbreaker.CircuitBre
 		config.SuccessThreshold,
 		config.Timeout,
 	)
+	cb.SetFailurePredicate(isMongoFailure)
 	return cb
 }

@@ -63,7 +63,10 @@ func main() {
 	// ── Repositories ─────────────────────────────────────────────────────────
 	setupCtx := context.Background()
 
-	// circuit breaker will be initialized after runtime metrics are available
+	// MongoDB circuit breaker: must be set before the repositories are built,
+	// because each repository captures it at construction time.
+	mongoCB := mongodb.NewCircuitBreakerForMongoDB(logger)
+	mongodb.SetDefaultCircuitBreaker(mongoCB)
 
 	cardRepo, err := mongodb.NewCardRepository(setupCtx, mongoClient)
 	if err != nil {
@@ -189,10 +192,7 @@ func main() {
 	runtimeMetrics := analytics.NewRuntimeMetricsTracker(baseTracker)
 	var tracker domain.AnalyticsTracker = runtimeMetrics
 
-	// Attach MongoDB circuit breaker for repository protection.
-	mongoCB := mongodb.NewCircuitBreakerForMongoDB(logger)
-	mongodb.SetDefaultCircuitBreaker(mongoCB)
-
+	// Observe the MongoDB circuit breaker (created before the repositories).
 	// Register a combined state-change callback: log + runtime metrics.
 	mongoCB.AddStateChangeCallback(func(from, to circuitbreaker.State) {
 		// Logging
