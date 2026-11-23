@@ -53,6 +53,7 @@ type Card struct {
 	CollectorNumber string             `bson:"collector_number" json:"collector_number"`
 	EdhrecRank      int                `bson:"edhrec_rank"      json:"edhrec_rank"`
 	ReservedList    bool               `bson:"reserved_list"    json:"reserved_list"`
+	GameChanger     bool               `bson:"game_changer,omitempty" json:"game_changer,omitempty"`
 	Layout          string             `bson:"layout"           json:"layout"`
 	Faces           []CardFace         `bson:"faces,omitempty"  json:"faces,omitempty"`
 	PriceHistory    []PriceSnapshot    `bson:"price_history"    json:"price_history"`

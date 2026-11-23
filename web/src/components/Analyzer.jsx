@@ -539,13 +539,14 @@ function scoreColor(score) {
 
 function commanderBracketForScore(score) {
   if (typeof score === 'number' && Number.isInteger(score) && score >= 1 && score <= 5) {
-    return { bracket: score, label: ['Casual', 'Upgraded', 'Tuned', 'Optimized', 'cEDH'][score - 1] || 'Casual' }
+    // Official Commander Brackets names.
+    return { bracket: score, label: ['Exhibition', 'Core', 'Upgraded', 'Optimized', 'cEDH'][score - 1] || 'Core' }
   }
   if (score >= 8.5) return { bracket: 5, label: 'cEDH' }
   if (score >= 6.5) return { bracket: 4, label: 'Optimized' }
-  if (score >= 4.5) return { bracket: 3, label: 'Tuned' }
-  if (score >= 2.5) return { bracket: 2, label: 'Upgraded' }
-  return { bracket: 1, label: 'Casual' }
+  if (score >= 4.5) return { bracket: 3, label: 'Upgraded' }
+  if (score >= 2.5) return { bracket: 2, label: 'Core' }
+  return { bracket: 1, label: 'Exhibition' }
 }
 
 function renderManaSymbolsInText(text, size = 14) {

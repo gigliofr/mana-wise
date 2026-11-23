@@ -40,6 +40,7 @@ type ScryfallCard struct {
 	CollectorNumber string            `json:"collector_number"`
 	EdhrecRank      int               `json:"edhrec_rank"`
 	ReservedList    bool              `json:"reserved_list"`
+	GameChanger     bool              `json:"game_changer"`
 	Layout          string            `json:"layout"`
 	Prices          struct {
 		USD     *string `json:"usd"`
@@ -163,6 +164,47 @@ func (c *Client) SearchCards(ctx context.Context, query string) (*SearchResponse
 		return nil, fmt.Errorf("SearchCards unmarshal: %w", err)
 	}
 	return &result, nil
+}
+
+// SearchAllCardNames runs a search and follows pagination, returning the
+// distinct card names. maxPages bounds the number of requests.
+func (c *Client) SearchAllCardNames(ctx context.Context, query string, maxPages int) ([]string, error) {
+	if maxPages <= 0 {
+		maxPages = 5
+	}
+	endpoint := fmt.Sprintf("%s/cards/search?q=%s&unique=cards&order=name", c.baseURL, url.QueryEscape(query))
+	seen := map[string]bool{}
+	var names []string
+	for page := 0; page < maxPages && endpoint != ""; page++ {
+		if err := c.limiter.Wait(ctx); err != nil {
+			return nil, fmt.Errorf("rate limiter: %w", err)
+		}
+		body, err := c.doWithRetry(ctx, endpoint)
+		if err != nil {
+			return nil, err
+		}
+		var result SearchResponse
+		if err := json.Unmarshal(body, &result); err != nil {
+			return nil, fmt.Errorf("SearchAllCardNames unmarshal: %w", err)
+		}
+		for _, card := range result.Data {
+			if card.Name != "" && !seen[card.Name] {
+				seen[card.Name] = true
+				names = append(names, card.Name)
+			}
+		}
+		endpoint = ""
+		if result.HasMore && result.NextPage != "" {
+			endpoint = result.NextPage
+		}
+	}
+	return names, nil
+}
+
+// GameChangerNames returns the current official Game Changers list
+// (Scryfall query is:gamechanger).
+func (c *Client) GameChangerNames(ctx context.Context) ([]string, error) {
+	return c.SearchAllCardNames(ctx, "is:gamechanger", 3)
 }
 
 // CollectionIdentifier represents a card to fetch by ID or name.
@@ -412,6 +454,7 @@ func ToDomainCard(sc *ScryfallCard) *domain.Card {
 		CollectorNumber: sc.CollectorNumber,
 		EdhrecRank:      sc.EdhrecRank,
 		ReservedList:    sc.ReservedList,
+		GameChanger:     sc.GameChanger,
 		Layout:          sc.Layout,
 		UpdatedAt:       time.Now().UTC(),
 	}

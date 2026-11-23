@@ -86,7 +86,7 @@ export default function AdminCommanderBrackets({ token, user, messages }) {
     <div className="card">
       <h2>{messages.adminCommanderTitle || 'Commander Brackets Admin'}</h2>
       <p style={{ color: 'var(--muted)', marginTop: 0 }}>
-        {messages.adminCommanderBody || 'Update bracket rules, decisive cards and keyword lists without redeploying.'}
+        {messages.adminCommanderBody || 'Update bracket rules, Game Changers, combos and keyword lists without redeploying.'}
       </p>
 
       <div className="form-row">

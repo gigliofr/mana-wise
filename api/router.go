@@ -33,7 +33,6 @@ type RouterDeps struct {
 	MatchupUC              *usecase.MatchupSimulatorUseCase
 	DeckClassifyUC         *usecase.DeckClassifierUseCase
 	CommanderBracketUC     *usecase.CommanderBracketUseCase
-	CommanderBracketConfig *domain.CommanderBracketConfig
 	LegalityEvaluator      *usecase.LegalityEvaluator
 	OTAUC                  *usecase.OTAUpdateUseCase
 	ScoreUC                *usecase.ScoreUseCase
@@ -94,7 +93,11 @@ func NewRouter(deps RouterDeps) http.Handler {
 	embedH := handlers.NewEmbedBatchHandler(deps.EmbedBatchUC)
 	otaH := handlers.NewOTAHandler(deps.OTAUC)
 	analyticsH := handlers.NewAnalyticsHandler(deps.Analytics)
-	adminH := handlers.NewAdminHandler(deps.UserRepo, deps.AnalyticsMetrics, deps.CommanderBracketConfig)
+	var bracketStore handlers.CommanderBracketStore
+	if deps.CommanderBracketUC != nil {
+		bracketStore = deps.CommanderBracketUC
+	}
+	adminH := handlers.NewAdminHandler(deps.UserRepo, deps.AnalyticsMetrics, bracketStore)
 	scoreH := handlers.NewScoreHandler(deps.AnalyzeUC, deps.ScoreUC, deps.ImpactScoreUC, deps.CommanderBracketUC, deps.UserRepo)
 	metaH := handlers.NewMetaHandler()
 	notificationH := handlers.NewNotificationHandler(deps.DeckRepo, deps.CardRepo)

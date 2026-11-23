@@ -1,108 +1,114 @@
 package usecase
 
 import (
+	"fmt"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/gigliofr/mana-wise/domain"
 )
 
-// CommanderBracketUseCase evaluates Commander decks against configurable bracket rules.
+// CommanderBracketUseCase evaluates Commander decks against the bracket rules.
+// The configuration can be read and replaced at runtime (admin API, Scryfall
+// sync); all access goes through an RWMutex.
 type CommanderBracketUseCase struct {
-	cfg *domain.CommanderBracketConfig
+	mu  sync.RWMutex
+	cfg domain.CommanderBracketConfig
 }
 
-// NewCommanderBracketUseCase builds a bracket evaluator from the supplied configuration.
-
+// NewCommanderBracketUseCase builds a bracket evaluator from the supplied
+// configuration (copied). A nil or disabled configuration falls back to the
+// defaults.
 func NewCommanderBracketUseCase(cfg *domain.CommanderBracketConfig) *CommanderBracketUseCase {
-	if cfg == nil {
-		defaultCfg := domain.DefaultCommanderBracketConfig()
-		cfg = &defaultCfg
+	if cfg == nil || !cfg.Enabled {
+		def := domain.DefaultCommanderBracketConfig()
+		cfg = &def
 	}
-	if !cfg.Enabled {
-		defaultCfg := domain.DefaultCommanderBracketConfig()
-		cfg = &defaultCfg
-	}
-	return &CommanderBracketUseCase{cfg: cfg}
+	return &CommanderBracketUseCase{cfg: *cfg}
 }
 
-// Evaluate derives the bracket classification for a Commander deck.
+// Config returns a copy of the live configuration.
+func (uc *CommanderBracketUseCase) Config() domain.CommanderBracketConfig {
+	uc.mu.RLock()
+	defer uc.mu.RUnlock()
+	return uc.cfg
+}
+
+// SetConfig replaces the live configuration.
+func (uc *CommanderBracketUseCase) SetConfig(cfg domain.CommanderBracketConfig) {
+	uc.mu.Lock()
+	defer uc.mu.Unlock()
+	uc.cfg = cfg
+}
+
+// SetGameChangers replaces only the Game Changers list (used by the Scryfall sync).
+func (uc *CommanderBracketUseCase) SetGameChangers(names []string) {
+	uc.mu.Lock()
+	defer uc.mu.Unlock()
+	uc.cfg.GameChangers = append([]string(nil), names...)
+}
+
+// Evaluate derives the minimum bracket for a Commander deck.
 func (uc *CommanderBracketUseCase) Evaluate(cards []*domain.Card, quantities map[string]int) *domain.CommanderBracketAssessment {
-	if uc == nil || uc.cfg == nil || !uc.cfg.Enabled || len(cards) == 0 {
+	if uc == nil || len(cards) == 0 {
+		return nil
+	}
+	cfg := uc.Config()
+	if !cfg.Enabled {
 		return nil
 	}
 
-	signals := collectCommanderSignals(cards, quantities, uc.cfg)
-	bracket, reason, notes := classifyCommanderBracket(*uc.cfg, signals)
+	signals := collectCommanderSignals(cards, quantities, &cfg)
+	bracket, reason, notes := classifyCommanderBracket(cfg, signals)
 	return &domain.CommanderBracketAssessment{
 		Bracket: bracket,
-		Label:   bracketLabel(bracket),
+		Label:   domain.CommanderBracketLabel(bracket),
 		Reason:  reason,
 		Signals: signals,
 		Notes:   notes,
+		Legal:   len(signals.BannedCards) == 0,
 	}
 }
 
-// Config returns the live commander bracket configuration.
-func (uc *CommanderBracketUseCase) Config() *domain.CommanderBracketConfig {
-	if uc == nil {
-		return nil
+func nameSet(names []string) map[string]struct{} {
+	set := make(map[string]struct{}, len(names))
+	for _, n := range names {
+		set[domain.NormalizeCommanderCardName(n)] = struct{}{}
 	}
-	return uc.cfg
+	return set
+}
+
+func appendUniqueName(dst []string, name string) []string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return dst
+	}
+	for _, existing := range dst {
+		if strings.EqualFold(existing, name) {
+			return dst
+		}
+	}
+	return append(dst, name)
 }
 
 func collectCommanderSignals(cards []*domain.Card, quantities map[string]int, cfg *domain.CommanderBracketConfig) domain.CommanderBracketSignals {
 	if cfg == nil {
 		return domain.CommanderBracketSignals{}
 	}
-	decisiveSet := make(map[string]struct{}, len(cfg.DecisiveCards))
-	for _, name := range cfg.DecisiveCards {
-		decisiveSet[domain.NormalizeCommanderCardName(name)] = struct{}{}
-	}
-	comboSet := make(map[string]struct{}, len(cfg.ComboCards))
-	for _, name := range cfg.ComboCards {
-		comboSet[domain.NormalizeCommanderCardName(name)] = struct{}{}
-	}
-	extraTurnSet := make(map[string]struct{}, len(cfg.ExtraTurnCards))
-	for _, name := range cfg.ExtraTurnCards {
-		extraTurnSet[domain.NormalizeCommanderCardName(name)] = struct{}{}
-	}
-	massLandSet := make(map[string]struct{}, len(cfg.MassLandDenialCards))
-	for _, name := range cfg.MassLandDenialCards {
-		massLandSet[domain.NormalizeCommanderCardName(name)] = struct{}{}
-	}
+	gameChangers := nameSet(cfg.GameChangers)
+	extraTurnSet := nameSet(cfg.ExtraTurnCards)
+	massLandSet := nameSet(cfg.MassLandDenialCards)
 
-	tutorMatchers := normalizeTerms(append([]string{
-		"search your library for a card",
-		"search your library for a creature card",
-		"search your library for an artifact card",
-		"search your library for an enchantment card",
-		"search your library for an instant card",
-		"search your library for a sorcery card",
-		"search your library for a planeswalker card",
-		"search your library for a land card",
-		"put it into your hand",
-		"tutor",
-	}, cfg.TutorKeywords...))
+	tutorMatchers := normalizeTerms(cfg.TutorKeywords)
 	extraTurnMatchers := normalizeTerms(cfg.ExtraTurnKeywords)
 	massLandMatchers := normalizeTerms(cfg.MassLandDenialKeywords)
 	fastManaMatchers := normalizeTerms(cfg.FastManaKeywords)
 
-	appendUnique := func(dst []string, name string) []string {
-		name = strings.TrimSpace(name)
-		if name == "" {
-			return dst
-		}
-		for _, existing := range dst {
-			if strings.EqualFold(existing, name) {
-				return dst
-			}
-		}
-		return append(dst, name)
-	}
-
 	var signals domain.CommanderBracketSignals
 	var totalCMC float64
+	byName := make(map[string]*domain.Card, len(cards))
+
 	for _, card := range cards {
 		if card == nil {
 			continue
@@ -111,6 +117,18 @@ func collectCommanderSignals(cards []*domain.Card, quantities map[string]int, cf
 		if qty <= 0 {
 			qty = 1
 		}
+		name := strings.TrimSpace(card.Name)
+		nameKey := domain.NormalizeCommanderCardName(name)
+		byName[nameKey] = card
+
+		// Checks that also apply to lands (several Game Changers are lands).
+		if _, ok := gameChangers[nameKey]; ok || card.GameChanger {
+			signals.GameChangerCards = appendUniqueName(signals.GameChangerCards, name)
+		}
+		if status, ok := card.Legalities["commander"]; ok && status == "banned" {
+			signals.BannedCards = appendUniqueName(signals.BannedCards, name)
+		}
+
 		if card.IsLand() {
 			signals.LandCount += qty
 			continue
@@ -119,96 +137,132 @@ func collectCommanderSignals(cards []*domain.Card, quantities map[string]int, cf
 		signals.NonLandCount += qty
 		totalCMC += card.CMC * float64(qty)
 
-		name := strings.TrimSpace(card.Name)
-		nameKey := domain.NormalizeCommanderCardName(name)
 		text := strings.ToLower(strings.TrimSpace(card.OracleText + " " + card.TypeLine + " " + strings.Join(card.Keywords, " ")))
 
-		if _, ok := decisiveSet[nameKey]; ok {
-			signals.DecisiveCards = appendUnique(signals.DecisiveCards, name)
-		}
 		if matchesAny(text, tutorMatchers) {
-			signals.TutorCards = appendUnique(signals.TutorCards, name)
+			signals.TutorCards = appendUniqueName(signals.TutorCards, name)
 		}
 		if _, ok := extraTurnSet[nameKey]; ok || matchesAny(text, extraTurnMatchers) {
-			signals.ExtraTurnCards = appendUnique(signals.ExtraTurnCards, name)
+			signals.ExtraTurnCards = appendUniqueName(signals.ExtraTurnCards, name)
 		}
 		if _, ok := massLandSet[nameKey]; ok || matchesAny(text, massLandMatchers) {
-			signals.MassLandDenialCards = appendUnique(signals.MassLandDenialCards, name)
-		}
-		if _, ok := comboSet[nameKey]; ok {
-			signals.ComboCards = appendUnique(signals.ComboCards, name)
+			signals.MassLandDenialCards = appendUniqueName(signals.MassLandDenialCards, name)
 		}
 		if matchesAny(text, fastManaMatchers) {
-			signals.FastManaCards = appendUnique(signals.FastManaCards, name)
+			signals.FastManaCards = appendUniqueName(signals.FastManaCards, name)
 		}
 	}
+
+	signals.TwoCardCombos = detectTwoCardCombos(byName, cfg.TwoCardCombos, cfg.EarlyComboMaxManaValue)
 
 	if signals.NonLandCount > 0 {
 		signals.AverageCMC = totalCMC / float64(signals.NonLandCount)
 	}
-	sort.Strings(signals.DecisiveCards)
+	sort.Strings(signals.GameChangerCards)
 	sort.Strings(signals.TutorCards)
 	sort.Strings(signals.ExtraTurnCards)
 	sort.Strings(signals.MassLandDenialCards)
-	sort.Strings(signals.ComboCards)
 	sort.Strings(signals.FastManaCards)
+	sort.Strings(signals.BannedCards)
 	return signals
 }
 
-func classifyCommanderBracket(cfg domain.CommanderBracketConfig, signals domain.CommanderBracketSignals) (int, string, []string) {
-	decisiveCount := len(signals.DecisiveCards)
-	tutorCount := len(signals.TutorCards)
-	extraTurns := len(signals.ExtraTurnCards)
-	massDenial := len(signals.MassLandDenialCards)
-	comboCount := len(signals.ComboCards)
-	fastManaCount := len(signals.FastManaCards)
-	forbiddenSignals := extraTurns + massDenial
-	competitiveSignals := comboCount + fastManaCount + tutorCount
-
-	if forbiddenSignals == 0 && decisiveCount == 0 && fastManaCount == 0 && tutorCount == 0 {
-		if signals.AverageCMC >= 3.2 || signals.LandCount >= 37 {
-			return 1, "Casual", []string{"no advanced commander signals and a slower mana profile"}
+// detectTwoCardCombos returns the known combos fully present in the deck.
+// A combo is "early" when the mana values of its pieces add up to at most
+// earlyMaxMV, a proxy for "can be assembled before turn 6".
+func detectTwoCardCombos(byName map[string]*domain.Card, combos []domain.TwoCardCombo, earlyMaxMV float64) []domain.DetectedCombo {
+	if earlyMaxMV <= 0 {
+		earlyMaxMV = 6
+	}
+	var out []domain.DetectedCombo
+	for _, combo := range combos {
+		a, okA := byName[domain.NormalizeCommanderCardName(combo.Cards[0])]
+		b, okB := byName[domain.NormalizeCommanderCardName(combo.Cards[1])]
+		if !okA || !okB {
+			continue
 		}
-		return 2, "Upgraded", []string{"no advanced commander signals, but the shell is tighter than a raw precon"}
+		mv := a.CMC + b.CMC
+		out = append(out, domain.DetectedCombo{
+			Cards:     []string{a.Name, b.Name},
+			Result:    combo.Result,
+			ManaValue: mv,
+			Early:     mv <= earlyMaxMV,
+		})
 	}
-
-	if forbiddenSignals == 0 && decisiveCount == 0 && fastManaCount <= cfg.Bracket2MaxSignals {
-		return 2, "Upgraded", []string{"no game changers and no forbidden patterns, with modest optimization"}
-	}
-
-	if forbiddenSignals == 0 && decisiveCount > 0 && decisiveCount <= cfg.Bracket3MaxDecisive {
-		return 3, "Tuned", []string{"up to three game changer cards without forbidden patterns"}
-	}
-
-	if comboCount >= cfg.CedhComboThreshold &&
-		fastManaCount >= cfg.CedhFastManaThreshold &&
-		tutorCount >= cfg.CedhTutorThreshold &&
-		decisiveCount >= cfg.CedhDecisiveThreshold {
-		return 5, "cEDH", []string{"competitive-density signals exceeded the cEDH thresholds"}
-	}
-
-	if decisiveCount > cfg.Bracket3MaxDecisive || competitiveSignals > cfg.Bracket4MaxSignals || forbiddenSignals > 0 {
-		return 4, "Optimized", []string{"deck includes high-power patterns beyond bracket 1-3 constraints"}
-	}
-
-	return 3, "Tuned", []string{"deck has some commander pressure but not enough to justify bracket 4 or 5"}
+	sort.Slice(out, func(i, j int) bool { return strings.Join(out[i].Cards, "+") < strings.Join(out[j].Cards, "+") })
+	return out
 }
 
-func bracketLabel(bracket int) string {
-	switch bracket {
-	case 1:
-		return "Casual"
-	case 2:
-		return "Upgraded"
-	case 3:
-		return "Tuned"
-	case 4:
-		return "Optimized"
-	case 5:
-		return "cEDH"
-	default:
-		return "Unknown"
+func classifyCommanderBracket(cfg domain.CommanderBracketConfig, s domain.CommanderBracketSignals) (int, string, []string) {
+	gc := len(s.GameChangerCards)
+	extraTurns := len(s.ExtraTurnCards)
+	mld := len(s.MassLandDenialCards)
+	earlyCombos, lateCombos := 0, 0
+	for _, c := range s.TwoCardCombos {
+		if c.Early {
+			earlyCombos++
+		} else {
+			lateCombos++
+		}
 	}
+
+	maxGC := cfg.Bracket3MaxGameChangers
+	if maxGC <= 0 {
+		maxGC = 3
+	}
+	maxExtraTurns := cfg.Bracket3MaxExtraTurns
+	if maxExtraTurns <= 0 {
+		maxExtraTurns = 2
+	}
+
+	var notes []string
+	if len(s.BannedCards) > 0 {
+		notes = append(notes, fmt.Sprintf("banned in Commander: %s", strings.Join(s.BannedCards, ", ")))
+	}
+	if len(s.TutorCards) > 0 {
+		notes = append(notes, "tutors are reported for information: since October 2025 they no longer raise the bracket")
+	}
+
+	// Bracket 4 triggers.
+	var b4 []string
+	if gc > maxGC {
+		b4 = append(b4, fmt.Sprintf("%d Game Changers (Bracket 3 allows up to %d)", gc, maxGC))
+	}
+	if mld > 0 {
+		b4 = append(b4, "mass land denial")
+	}
+	if extraTurns > maxExtraTurns {
+		b4 = append(b4, fmt.Sprintf("%d extra-turn cards (likely turn chains)", extraTurns))
+	}
+	if earlyCombos > 0 {
+		b4 = append(b4, "two-card combo that can fire in the early game")
+	}
+
+	if len(b4) > 0 {
+		if gc >= cfg.CedhGameChangerThreshold &&
+			earlyCombos >= cfg.CedhEarlyComboThreshold &&
+			len(s.FastManaCards) >= cfg.CedhFastManaThreshold &&
+			len(s.TutorCards) >= cfg.CedhTutorThreshold {
+			notes = append(notes, "cEDH is about tournament intent: confirm it with your table")
+			return 5, "competitive density (Game Changers, early combos, fast mana and tutors) matches cEDH", notes
+		}
+		return 4, strings.Join(b4, "; "), notes
+	}
+
+	// Bracket 3 triggers.
+	var b3 []string
+	if gc > 0 {
+		b3 = append(b3, fmt.Sprintf("%d Game Changer(s)", gc))
+	}
+	if lateCombos > 0 {
+		b3 = append(b3, "late-game two-card combo")
+	}
+	if len(b3) > 0 {
+		return 3, strings.Join(b3, "; "), notes
+	}
+
+	notes = append(notes, "Bracket 1 (Exhibition) depends on the deck's theme and intent, which a list alone cannot show")
+	return 2, "no Game Changers, mass land denial, extra-turn chains or two-card combos", notes
 }
 
 func normalizeTerms(terms []string) []string {

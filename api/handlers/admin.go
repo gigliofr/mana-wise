@@ -15,11 +15,18 @@ import (
 type AdminHandler struct {
 	userRepo           domain.UserRepository
 	metrics            domain.AnalyticsMetricsProvider
-	commanderBrackets  *domain.CommanderBracketConfig
+	commanderBrackets  CommanderBracketStore
+}
+
+// CommanderBracketStore gives concurrency-safe access to the live bracket
+// configuration (implemented by usecase.CommanderBracketUseCase).
+type CommanderBracketStore interface {
+	Config() domain.CommanderBracketConfig
+	SetConfig(domain.CommanderBracketConfig)
 }
 
 // NewAdminHandler creates an AdminHandler.
-func NewAdminHandler(userRepo domain.UserRepository, metrics domain.AnalyticsMetricsProvider, commanderBrackets *domain.CommanderBracketConfig) *AdminHandler {
+func NewAdminHandler(userRepo domain.UserRepository, metrics domain.AnalyticsMetricsProvider, commanderBrackets CommanderBracketStore) *AdminHandler {
 	return &AdminHandler{userRepo: userRepo, metrics: metrics, commanderBrackets: commanderBrackets}
 }
 
@@ -146,7 +153,7 @@ func (h *AdminHandler) CommanderBrackets(w http.ResponseWriter, r *http.Request)
 		WriteAPIErrorFromMsg(w, "commander bracket config unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	jsonOK(w, CommanderBracketsResponse{Config: *h.commanderBrackets})
+	jsonOK(w, CommanderBracketsResponse{Config: h.commanderBrackets.Config()})
 }
 
 // UpdateCommanderBrackets updates the in-memory bracket configuration.
@@ -162,16 +169,17 @@ func (h *AdminHandler) UpdateCommanderBrackets(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	req.Config.DecisiveCards = normalizeStringSlice(req.Config.DecisiveCards)
+	req.Config.GameChangers = normalizeStringSlice(req.Config.GameChangers)
+	req.Config.ExtraTurnCards = normalizeStringSlice(req.Config.ExtraTurnCards)
+	req.Config.MassLandDenialCards = normalizeStringSlice(req.Config.MassLandDenialCards)
 	req.Config.TutorKeywords = normalizeStringSlice(req.Config.TutorKeywords)
 	req.Config.ExtraTurnKeywords = normalizeStringSlice(req.Config.ExtraTurnKeywords)
 	req.Config.MassLandDenialKeywords = normalizeStringSlice(req.Config.MassLandDenialKeywords)
-	req.Config.ComboKeywords = normalizeStringSlice(req.Config.ComboKeywords)
 	req.Config.FastManaKeywords = normalizeStringSlice(req.Config.FastManaKeywords)
 	req.Config.Enabled = true
 
-	*h.commanderBrackets = req.Config
-	jsonOK(w, CommanderBracketsResponse{Config: *h.commanderBrackets})
+	h.commanderBrackets.SetConfig(req.Config)
+	jsonOK(w, CommanderBracketsResponse{Config: h.commanderBrackets.Config()})
 }
 
 // AdminSecretMiddleware checks for a secret key header.

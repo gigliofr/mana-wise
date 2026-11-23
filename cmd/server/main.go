@@ -108,6 +108,13 @@ func main() {
 	matchupUC := usecase.NewMatchupSimulatorUseCase(cardRepo)
 	deckClassifyUC := usecase.NewDeckClassifierUseCase(cardRepo)
 	commanderBracketUC := usecase.NewCommanderBracketUseCase(&cfg.CommanderBrackets)
+	// Keep the Game Changers list in sync with Scryfall (is:gamechanger); the
+	// built-in February 2026 list is used until the first successful sync.
+	gcSyncCtx, stopGCSync := context.WithCancel(context.Background())
+	defer stopGCSync()
+	if !strings.EqualFold(strings.TrimSpace(os.Getenv("GAME_CHANGERS_SYNC")), "false") {
+		go usecase.RunGameChangerSync(gcSyncCtx, scryfallClient, commanderBracketUC, 24*time.Hour, log.Printf)
+	}
 	legalityEvaluator := usecase.NewLegalityEvaluator(legalityCache, 30*time.Minute)
 
 	// EDH Power Level Scoring
@@ -240,7 +247,6 @@ func main() {
 		MatchupUC:              matchupUC,
 		DeckClassifyUC:         deckClassifyUC,
 		CommanderBracketUC:     commanderBracketUC,
-		CommanderBracketConfig: &cfg.CommanderBrackets,
 		ScoreUC:                scoreUC,
 		ImpactScoreUC:          impactScoreUC,
 		AISuggester:            aiSuggester,
