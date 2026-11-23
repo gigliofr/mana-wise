@@ -31,6 +31,8 @@ const messages = {
   planActivateMonth: 'Activate month',
   planActivateYear: 'Activate year',
   planActiveUntil: date => `Active until ${date}`,
+  planActivationManualNote: 'Pro is activated manually after verification',
+  planRequestActivation: 'Request activation',
   donateTitle: 'Support the project',
   donateBody: 'Donate here',
   donateButton: 'Donate',
@@ -101,5 +103,19 @@ describe('PlansSupport metrics panel', () => {
         'X-Admin-Secret': 'admin-secret',
       }),
     }))
+  })
+})
+
+describe('PlansSupport Pro activation', () => {
+  it('does not offer self-service activation with a free-text reference', () => {
+    vi.stubGlobal('fetch', vi.fn())
+    render(<PlansSupport token="t" user={{ plan: 'free', email: 'u@example.com' }} messages={messages} />)
+
+    expect(screen.getByText('Pro is activated manually after verification')).toBeInTheDocument()
+    expect(screen.queryByPlaceholderText('Enter reference')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Activate month' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Activate year' })).not.toBeInTheDocument()
+    expect(fetch).not.toHaveBeenCalled()
+    vi.restoreAllMocks()
   })
 })

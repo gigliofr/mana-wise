@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/gigliofr/mana-wise/domain"
 )
 
 // RateLimitBucket implements a token bucket.
@@ -186,9 +188,12 @@ func RateLimitMiddleware(limiter *RateLimiter, requestsPerMinute func(plan strin
 				w.Header().Set("Retry-After", strconv.FormatInt(retryAfter, 10))
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusTooManyRequests)
+				// Same shape as handlers.WriteAPIError.
 				_ = json.NewEncoder(w).Encode(map[string]interface{}{
 					"error":       "rate limit exceeded",
-					"code":        "ERR_RATE_LIMITED",
+					"code":        "too_many_requests",
+					"status":      http.StatusTooManyRequests,
+					"error_code":  domain.ErrRateLimited,
 					"retry_after": retryAfter,
 				})
 				return

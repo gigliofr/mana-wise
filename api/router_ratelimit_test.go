@@ -142,8 +142,8 @@ func TestRouter_Analyze_RateLimitAllowsWithinLimitThenRejects(t *testing.T) {
 	}
 	var body map[string]any
 	_ = json.Unmarshal(rr.Body.Bytes(), &body)
-	if body["code"] != "ERR_RATE_LIMITED" {
-		t.Fatalf("4th request: code=%v, want ERR_RATE_LIMITED", body["code"])
+	if body["error_code"] != string(domain.ErrRateLimited) {
+		t.Fatalf("4th request: error_code=%v, want %s", body["error_code"], domain.ErrRateLimited)
 	}
 }
 

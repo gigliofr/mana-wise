@@ -26,6 +26,9 @@ func NewAdminHandler(userRepo domain.UserRepository, metrics domain.AnalyticsMet
 type UpdateUserPlanRequest struct {
 	Email string `json:"email"`
 	Plan  string `json:"plan"`
+	// DurationDays grants Pro for the given number of days, extending any
+	// active entitlement. 0 grants Pro without expiry.
+	DurationDays int `json:"duration_days,omitempty"`
 }
 
 // CommanderBracketsResponse wraps the current commander bracket configuration.
@@ -60,12 +63,29 @@ func (h *AdminHandler) UpdateUserPlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Update plan.
-	plan := domain.PlanFree
-	if req.Plan == "pro" {
-		plan = domain.PlanPro
+	if req.DurationDays < 0 || req.DurationDays > 3660 {
+		WriteAPIErrorFromMsg(w, "duration_days must be between 0 and 3660", http.StatusBadRequest)
+		return
 	}
-	user.Plan = plan
+
+	now := time.Now().UTC()
+	if req.Plan == "pro" {
+		user.Plan = domain.PlanPro
+		if req.DurationDays > 0 {
+			base := now
+			if user.ProUntil != nil && user.ProUntil.After(base) {
+				base = *user.ProUntil
+			}
+			until := base.AddDate(0, 0, req.DurationDays)
+			user.ProUntil = &until
+		} else {
+			user.ProUntil = nil
+		}
+	} else {
+		user.Plan = domain.PlanFree
+		user.ProUntil = nil
+	}
+	user.UpdatedAt = now
 
 	if err := h.userRepo.Update(r.Context(), user); err != nil {
 		WriteAPIErrorFromMsg(w, "failed to update user", http.StatusInternalServerError)
@@ -73,8 +93,9 @@ func (h *AdminHandler) UpdateUserPlan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jsonOK(w, map[string]interface{}{
-		"email": user.Email,
-		"plan":  user.Plan,
+		"email":     user.Email,
+		"plan":      user.Plan,
+		"pro_until": user.ProUntil,
 	})
 }
 
