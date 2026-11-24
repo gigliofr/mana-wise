@@ -9,6 +9,7 @@ const (
 	ErrDeckNotFound       ErrorCode = "ERR_DECK_NOT_FOUND"
 	ErrUnauthorized       ErrorCode = "ERR_UNAUTHORIZED"
 	ErrRateLimited        ErrorCode = "ERR_RATE_LIMITED"
+	ErrPaymentRequired    ErrorCode = "ERR_PAYMENT_REQUIRED"
 	ErrInternalError      ErrorCode = "ERR_INTERNAL_ERROR"
 	ErrTimeout            ErrorCode = "ERR_TIMEOUT"
 	ErrValidation         ErrorCode = "ERR_VALIDATION"

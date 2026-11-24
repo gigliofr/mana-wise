@@ -143,7 +143,11 @@ func Load() (*Config, error) {
 	// Scryfall
 	cfg.Scryfall.BaseURL = getEnv("SCRYFALL_BASE_URL", "https://api.scryfall.com")
 	cfg.Scryfall.Timeout = 5 * time.Second
+	// Scryfall asks clients to stay at or below 10 requests per second.
 	cfg.Scryfall.RateLimit = 10
+	if n, err := strconv.Atoi(strings.TrimSpace(os.Getenv("SCRYFALL_RATE_LIMIT"))); err == nil && n > 0 && n <= 10 {
+		cfg.Scryfall.RateLimit = n
+	}
 
 	// LLM primary provider
 	cfg.LLM.Provider = normalizeProvider(getEnv("LLM_PROVIDER", "openai"))

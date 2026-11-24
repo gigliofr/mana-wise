@@ -6,12 +6,14 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gigliofr/mana-wise/api/handlers"
 	"github.com/gigliofr/mana-wise/api/middleware"
 	"github.com/gigliofr/mana-wise/domain"
+	"github.com/gigliofr/mana-wise/infrastructure/cache"
 	"github.com/gigliofr/mana-wise/usecase"
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
@@ -32,7 +34,6 @@ type RouterDeps struct {
 	MatchupUC              *usecase.MatchupSimulatorUseCase
 	DeckClassifyUC         *usecase.DeckClassifierUseCase
 	CommanderBracketUC     *usecase.CommanderBracketUseCase
-	CommanderBracketConfig *domain.CommanderBracketConfig
 	LegalityEvaluator      *usecase.LegalityEvaluator
 	OTAUC                  *usecase.OTAUpdateUseCase
 	ScoreUC                *usecase.ScoreUseCase
@@ -44,6 +45,10 @@ type RouterDeps struct {
 	JWTSecret              string
 	SessionTTLMinutes      int
 	RefreshTTLMinutes      int
+	// RateLimiter is optional; when nil the router creates its own.
+	RateLimiter *middleware.RateLimiter
+	// SharePDFCache is optional; when set, rendered share PDFs are cached.
+	SharePDFCache *cache.Cache
 }
 
 // NewRouter builds and returns the chi router with all routes registered.
@@ -56,19 +61,26 @@ func NewRouter(deps RouterDeps) http.Handler {
 	r.Use(chimiddleware.RealIP)
 	r.Use(corsMiddleware)
 
-	// Create rate limiter for expensive endpoints (free: 5/min, pro: 50/min).
-	rateLimitMW := middleware.RateLimitMiddleware(deps.UserRepo, func(plan string) float64 {
-		if plan == "pro" {
-			return 50.0 / 60.0 // 50 requests per minute
+	// Rate limiter for expensive endpoints. Limits are requests per minute and
+	// double as burst capacity (defaults: free 5/min, pro 50/min).
+	limiter := deps.RateLimiter
+	if limiter == nil {
+		limiter = middleware.NewRateLimiter(10 * time.Minute)
+	}
+	freePerMin := envInt("RATE_LIMIT_FREE_PER_MIN", 5)
+	proPerMin := envInt("RATE_LIMIT_PRO_PER_MIN", 50)
+	rateLimitMW := middleware.RateLimitMiddleware(limiter, func(plan string) int {
+		if plan == string(domain.PlanPro) {
+			return proPerMin
 		}
-		return 5.0 / 60.0 // 5 requests per minute (default for free)
+		return freePerMin
 	})
 
 	// Context deadline for expensive operations (30 second timeout).
 	contextDeadlineMW := middleware.ContextDeadlineMiddleware(30 * time.Second)
 
 	publicShareH := handlers.NewPublicShareHandler(deps.SharedAnalysisLinkRepo, deps.DeckRepo, deps.AnalyzeUC)
-	publicSharePDFH := handlers.NewPublicSharePDFHandler(deps.SharedAnalysisLinkRepo, deps.DeckRepo, deps.AnalyzeUC)
+	publicSharePDFH := handlers.NewPublicSharePDFHandler(deps.SharedAnalysisLinkRepo, deps.DeckRepo, deps.AnalyzeUC).WithPDFCache(deps.SharePDFCache)
 	shareAnalysisH := handlers.NewShareAnalysisHandler(deps.SharedAnalysisLinkRepo, deps.Mailer)
 
 	// Instantiate handlers.
@@ -84,7 +96,11 @@ func NewRouter(deps RouterDeps) http.Handler {
 	embedH := handlers.NewEmbedBatchHandler(deps.EmbedBatchUC)
 	otaH := handlers.NewOTAHandler(deps.OTAUC)
 	analyticsH := handlers.NewAnalyticsHandler(deps.Analytics)
-	adminH := handlers.NewAdminHandler(deps.UserRepo, deps.AnalyticsMetrics, deps.CommanderBracketConfig)
+	var bracketStore handlers.CommanderBracketStore
+	if deps.CommanderBracketUC != nil {
+		bracketStore = deps.CommanderBracketUC
+	}
+	adminH := handlers.NewAdminHandler(deps.UserRepo, deps.AnalyticsMetrics, bracketStore)
 	scoreH := handlers.NewScoreHandler(deps.AnalyzeUC, deps.ScoreUC, deps.ImpactScoreUC, deps.CommanderBracketUC, deps.UserRepo)
 	metaH := handlers.NewMetaHandler()
 	notificationH := handlers.NewNotificationHandler(deps.DeckRepo, deps.CardRepo)
@@ -127,9 +143,10 @@ func NewRouter(deps RouterDeps) http.Handler {
 		r.Group(func(r chi.Router) {
 			r.Use(jwtMW)
 
-			// Analyze — also gate by freemium quota, with rate limit and context deadline.
-			r.With(freemiumMW, rateLimitMW, contextDeadlineMW).Post("/analyze", analyzeH.ServeHTTP)
-			r.With(freemiumMW, rateLimitMW, contextDeadlineMW).Post("/score", scoreH.Score)
+			// Analyze/score: rate limit first, so a rejected request never consumes the
+			// daily freemium quota; then the freemium gate and the context deadline.
+			r.With(rateLimitMW, freemiumMW, contextDeadlineMW).Post("/analyze", analyzeH.ServeHTTP)
+			r.With(rateLimitMW, freemiumMW, contextDeadlineMW).Post("/score", scoreH.Score)
 			r.Get("/users/me/notifications", notificationH.Feed)
 			r.Post("/sideboard/plan", sideboardH.ServeHTTP)
 			r.Post("/mulligan/simulate", mulliganH.ServeHTTP)
@@ -183,6 +200,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 
 		// Admin endpoints — protected by ADMIN_SECRET header.
 		r.Route("/admin", func(r chi.Router) {
+			r.Use(authRateMW) // brute-force protection on the admin secret
 			r.Use(handlers.AdminSecretMiddleware)
 			r.Post("/user/plan", adminH.UpdateUserPlan)
 			r.Get("/metrics/funnel", adminH.FunnelMetrics)
@@ -370,8 +388,21 @@ func allowedOriginsFromEnv() []string {
 func otaEnabledFromEnv() bool {
 	raw := strings.ToLower(strings.TrimSpace(os.Getenv("OTA_ENABLED")))
 	if raw == "" {
-		// Keep current behavior unless explicitly disabled.
-		return true
+		// OTA firmware routes are unrelated to deck analysis: off unless enabled.
+		return false
 	}
 	return raw == "1" || raw == "true" || raw == "yes" || raw == "on"
+}
+
+// envInt reads a positive integer from the environment, falling back to def.
+func envInt(key string, def int) int {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return def
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 1 {
+		return def
+	}
+	return n
 }

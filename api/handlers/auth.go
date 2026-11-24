@@ -500,42 +500,36 @@ func (h *AuthHandler) UpdatePlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Pro can only be granted by an admin (POST /admin/user/plan) or, later, by
+	// a verified payment webhook. Self-service activation used to accept any
+	// donation_reference without verification and could be repeated to extend
+	// pro_until indefinitely.
+	if plan == domain.PlanPro {
+		if user.HasActivePro() {
+			user.Remaining = user.RemainingAnalyses(domain.CurrentBusinessDay())
+			resp, err := h.issueTokens(user)
+			if err != nil {
+				WriteAPIErrorFromMsg(w, "could not generate token", http.StatusInternalServerError)
+				return
+			}
+			jsonOK(w, resp)
+			return
+		}
+		WriteAPIError(w, domain.NewAPIError(
+			"pro activation requires a verified payment: contact support to activate your plan",
+			domain.ErrPaymentRequired,
+		), http.StatusPaymentRequired)
+		return
+	}
+
+	// Downgrade to free.
 	if user.Plan != plan {
-		if plan == domain.PlanFree && user.Plan == domain.PlanPro && user.ProUntil != nil && user.ProUntil.After(time.Now().UTC()) {
+		if user.Plan == domain.PlanPro && user.ProUntil != nil && user.ProUntil.After(time.Now().UTC()) {
 			WriteAPIErrorFromMsg(w, fmt.Sprintf("active pro entitlement until %s", user.ProUntil.UTC().Format(time.RFC3339)), http.StatusConflict)
 			return
 		}
-		user.Plan = plan
-		if plan == domain.PlanFree {
-			user.ProUntil = nil
-		}
-		user.UpdatedAt = time.Now().UTC()
-	}
-
-	if plan == domain.PlanPro {
-		tier := strings.ToLower(strings.TrimSpace(req.DonationTier))
-		ref := strings.TrimSpace(req.DonationReference)
-		if ref == "" {
-			WriteAPIErrorFromMsg(w, "donation_reference is required to activate pro", http.StatusBadRequest)
-			return
-		}
-		base := time.Now().UTC()
-		if user.ProUntil != nil && user.ProUntil.After(base) {
-			base = *user.ProUntil
-		}
-
-		switch tier {
-		case "beta_month_1eur":
-			expires := base.AddDate(0, 1, 0)
-			user.ProUntil = &expires
-		case "beta_year_190eur":
-			expires := base.AddDate(1, 0, 0)
-			user.ProUntil = &expires
-		default:
-			WriteAPIErrorFromMsg(w, "invalid donation_tier: use beta_month_1eur or beta_year_190eur", http.StatusBadRequest)
-			return
-		}
-
+		user.Plan = domain.PlanFree
+		user.ProUntil = nil
 		user.UpdatedAt = time.Now().UTC()
 	}
 

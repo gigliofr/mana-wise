@@ -3,6 +3,14 @@
 **Last Updated:** May 12, 2026  
 **Status:** Planning (Phase 1 partially complete)
 
+> **Update — 23 November 2026.** Since this plan was written, the following
+> items have been implemented and fixed: circuit breaker (now non-blocking,
+> wired before the repositories and applied to every MongoDB repository),
+> uniform DB read/write/index timeouts, structured `slog` logging, token-bucket
+> rate limiting on `/analyze` and `/score` (requests per minute per plan, run
+> before the freemium gate). Still open: snapshot/contract tests on analyze,
+> score and PDF, PDF/share caching, the validation layer.
+
 ---
 
 ## Executive Summary

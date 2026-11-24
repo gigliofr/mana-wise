@@ -94,10 +94,26 @@ Query options for synergies:
 
 ## Freemium limits
 
-| Plan | Analyses/day |
-|------|-------------|
-| Free | 3 |
-| Pro  | Unlimited |
+| Plan | Analyses/day | Rate limit on `/analyze` and `/score` |
+|------|-------------|------|
+| Free | 3 | 5 requests/minute (`RATE_LIMIT_FREE_PER_MIN`) |
+| Pro  | Unlimited | 50 requests/minute (`RATE_LIMIT_PRO_PER_MIN`) |
+
+A request rejected by the rate limit (429, `error_code: ERR_RATE_LIMITED`, `Retry-After` header) does not consume the daily quota.
+
+### Activating Pro
+
+Users cannot activate Pro themselves: `POST /api/v1/auth/plan` only downgrades to free and answers `402 ERR_PAYMENT_REQUIRED` to a Pro request. After verifying the donation, an admin grants Pro:
+
+```bash
+curl -X POST "$API/api/v1/admin/user/plan" \
+  -H "X-Admin-Secret: $ADMIN_SECRET" -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com","plan":"pro","duration_days":30}'
+```
+
+`duration_days` extends any active Pro period; `0` grants Pro without expiry. Set `VITE_SUPPORT_EMAIL` at frontend build time to show a prefilled "request activation" email on the Plans page.
+
+The admin API (`/api/v1/admin/*`) is disabled until `ADMIN_SECRET` is set; there is no default secret.
 
 For local testing you can switch a user plan quickly:
 
@@ -122,6 +138,17 @@ Generate timestamped rollout evidence file:
 ```powershell
 ./scripts/create_ai_rollout_evidence.ps1 -Owner "your-name"
 ```
+
+## Commander Brackets
+
+For Commander decks `/analyze` and the saved-deck endpoints return `commander_bracket`: the minimum official bracket (Exhibition, Core, Upgraded, Optimized, cEDH) the list qualifies for, the reason and the signals found.
+
+- Game Changers: the official list (53 cards, 9 February 2026 update), refreshed daily from Scryfall; none in Brackets 1-2, up to 3 in Bracket 3
+- two-card combos: early ones (pieces' mana value up to 6) mean Bracket 4, late ones Bracket 3
+- mass land denial and extra-turn chains mean Bracket 4
+- tutors and fast mana are reported but do not raise the bracket (October 2025 update); they only feed the cEDH heuristic
+- cards banned in Commander are listed in `signals.banned_cards` and set `legal: false`
+- Bracket 1 depends on the deck's intent and is never assigned automatically
 
 ## AI pipeline
 
@@ -232,7 +259,12 @@ MAIL_FROM=your-email@gmail.com
 | `MAIL_FROM` | — | Sender email address (fallback) |
 | `FRONTEND_RESET_PASSWORD_URL` | `/reset-password` fallback | Optional absolute frontend URL used in reset email links |
 | `PASSWORD_RESET_TOKEN_TTL_MINUTES` | `30` | Password reset token expiry in minutes |
-| `OTA_ENABLED` | `true` | Enable OTA firmware endpoints (`/ota/release`, `/ota/report-boot`, `/ota/manifest`). Set `false` for pure MTG deployments. |
+| `OTA_ENABLED` | `false` | Enable OTA firmware endpoints (`/ota/release`, `/ota/report-boot`, `/ota/manifest`). Only needed for firmware deployments. |
+| `ADMIN_SECRET` | — | Secret for the `X-Admin-Secret` header. The admin API is disabled when empty. |
+| `RATE_LIMIT_FREE_PER_MIN` | `5` | Requests per minute (and burst) on `/analyze` and `/score` for free users. |
+| `RATE_LIMIT_PRO_PER_MIN` | `50` | Same, for Pro users. |
+| `GAME_CHANGERS_SYNC` | `true` | Daily sync of the Commander Game Changers list from Scryfall (`is:gamechanger`). |
+| `SCRYFALL_RATE_LIMIT` | `10` | Requests per second towards Scryfall (1-10). |
 
 ### Key AI variables
 

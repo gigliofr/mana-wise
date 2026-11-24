@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -21,9 +22,12 @@ type fakeCardFetcher struct {
 	fuzzyCalls int
 	bySetCalls int
 	collectionCalls int
+	mu              sync.Mutex // the use case calls the fetcher from a worker pool
 }
 
 func (f *fakeCardFetcher) GetCardByName(ctx context.Context, name string) (*scryfall.ScryfallCard, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.exactCalls++
 	if c, ok := f.exact[name]; ok {
 		return c, nil
@@ -32,6 +36,8 @@ func (f *fakeCardFetcher) GetCardByName(ctx context.Context, name string) (*scry
 }
 
 func (f *fakeCardFetcher) GetCardByFuzzyName(ctx context.Context, name string) (*scryfall.ScryfallCard, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.fuzzyCalls++
 	if c, ok := f.fuzzy[name]; ok {
 		return c, nil
@@ -40,6 +46,8 @@ func (f *fakeCardFetcher) GetCardByFuzzyName(ctx context.Context, name string) (
 }
 
 func (f *fakeCardFetcher) GetCardBySetCollector(ctx context.Context, setCode, collectorNumber string) (*scryfall.ScryfallCard, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.bySetCalls++
 	key := setCode + "#" + collectorNumber
 	if c, ok := f.bySet[key]; ok {
@@ -49,6 +57,8 @@ func (f *fakeCardFetcher) GetCardBySetCollector(ctx context.Context, setCode, co
 }
 
 func (f *fakeCardFetcher) FetchCardsByCollection(ctx context.Context, identifiers []scryfall.CollectionIdentifier) ([]scryfall.ScryfallCard, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.collectionCalls++
 	out := make([]scryfall.ScryfallCard, 0, len(identifiers))
 	for _, id := range identifiers {

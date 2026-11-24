@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gigliofr/mana-wise/api"
+	"github.com/gigliofr/mana-wise/api/middleware"
 	"github.com/gigliofr/mana-wise/config"
 	"github.com/gigliofr/mana-wise/domain"
 	"github.com/gigliofr/mana-wise/infrastructure/analytics"
@@ -62,7 +63,10 @@ func main() {
 	// ── Repositories ─────────────────────────────────────────────────────────
 	setupCtx := context.Background()
 
-	// circuit breaker will be initialized after runtime metrics are available
+	// MongoDB circuit breaker: must be set before the repositories are built,
+	// because each repository captures it at construction time.
+	mongoCB := mongodb.NewCircuitBreakerForMongoDB(logger)
+	mongodb.SetDefaultCircuitBreaker(mongoCB)
 
 	cardRepo, err := mongodb.NewCardRepository(setupCtx, mongoClient)
 	if err != nil {
@@ -107,6 +111,13 @@ func main() {
 	matchupUC := usecase.NewMatchupSimulatorUseCase(cardRepo)
 	deckClassifyUC := usecase.NewDeckClassifierUseCase(cardRepo)
 	commanderBracketUC := usecase.NewCommanderBracketUseCase(&cfg.CommanderBrackets)
+	// Keep the Game Changers list in sync with Scryfall (is:gamechanger); the
+	// built-in February 2026 list is used until the first successful sync.
+	gcSyncCtx, stopGCSync := context.WithCancel(context.Background())
+	defer stopGCSync()
+	if !strings.EqualFold(strings.TrimSpace(os.Getenv("GAME_CHANGERS_SYNC")), "false") {
+		go usecase.RunGameChangerSync(gcSyncCtx, scryfallClient, commanderBracketUC, 24*time.Hour, log.Printf)
+	}
 	legalityEvaluator := usecase.NewLegalityEvaluator(legalityCache, 30*time.Minute)
 
 	// EDH Power Level Scoring
@@ -181,10 +192,7 @@ func main() {
 	runtimeMetrics := analytics.NewRuntimeMetricsTracker(baseTracker)
 	var tracker domain.AnalyticsTracker = runtimeMetrics
 
-	// Attach MongoDB circuit breaker for repository protection.
-	mongoCB := mongodb.NewCircuitBreakerForMongoDB(logger)
-	mongodb.SetDefaultCircuitBreaker(mongoCB)
-
+	// Observe the MongoDB circuit breaker (created before the repositories).
 	// Register a combined state-change callback: log + runtime metrics.
 	mongoCB.AddStateChangeCallback(func(from, to circuitbreaker.State) {
 		// Logging
@@ -222,8 +230,18 @@ func main() {
 	}
 	otaUC = usecase.NewOTAUpdateUseCase(otaRepo)
 
+	// ── Rate limiter for expensive endpoints (single shared instance) ───────
+	rateLimiter := middleware.NewRateLimiter(10 * time.Minute)
+
+	// ── Cache for rendered share PDFs (keyed by token + deck version) ───────
+	sharePDFCache := cache.New()
+	sharePDFCacheDone := make(chan struct{})
+	sharePDFCache.StartJanitor(5*time.Minute, sharePDFCacheDone)
+
 	// ── Router ───────────────────────────────────────────────────────────────
 	router := api.NewRouter(api.RouterDeps{
+		RateLimiter:            rateLimiter,
+		SharePDFCache:          sharePDFCache,
 		SharedAnalysisLinkRepo: sharedAnalysisLinkRepo,
 		CardRepo:               cardRepo,
 		UserRepo:               userRepo,
@@ -235,7 +253,6 @@ func main() {
 		MatchupUC:              matchupUC,
 		DeckClassifyUC:         deckClassifyUC,
 		CommanderBracketUC:     commanderBracketUC,
-		CommanderBracketConfig: &cfg.CommanderBrackets,
 		ScoreUC:                scoreUC,
 		ImpactScoreUC:          impactScoreUC,
 		AISuggester:            aiSuggester,
@@ -276,6 +293,8 @@ func main() {
 	// Stop cache janitors first.
 	close(analysisCacheDone)
 	close(legalityCacheDone)
+	rateLimiter.Stop()
+	close(sharePDFCacheDone)
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer shutdownCancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {

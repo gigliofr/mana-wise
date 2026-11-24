@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/gigliofr/mana-wise/domain"
-	"github.com/gigliofr/mana-wise/infrastructure/circuitbreaker"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -17,14 +16,13 @@ const passwordResetTokensCollection = "password_reset_tokens"
 // PasswordResetTokenRepository implements domain.PasswordResetTokenRepository against MongoDB.
 type PasswordResetTokenRepository struct {
 	col *mongo.Collection
-	cb  *circuitbreaker.CircuitBreaker
+	g   guard
 }
 
 // NewPasswordResetTokenRepository creates a repository and ensures indexes.
 func NewPasswordResetTokenRepository(ctx context.Context, client *Client) (*PasswordResetTokenRepository, error) {
 	col := client.Collection(passwordResetTokensCollection)
-	repo := &PasswordResetTokenRepository{col: col}
-	repo.cb = defaultCircuitBreaker
+	repo := &PasswordResetTokenRepository{col: col, g: newGuard()}
 	if err := repo.ensureIndexes(ctx); err != nil {
 		return nil, fmt.Errorf("password reset token repo indexes: %w", err)
 	}
@@ -32,6 +30,8 @@ func NewPasswordResetTokenRepository(ctx context.Context, client *Client) (*Pass
 }
 
 func (r *PasswordResetTokenRepository) ensureIndexes(ctx context.Context) error {
+	ctx, cancel := WithIndexTimeout(ctx)
+	defer cancel()
 	indexes := []mongo.IndexModel{
 		{
 			Keys:    bson.D{{Key: "expires_at", Value: 1}},
@@ -49,7 +49,10 @@ func (r *PasswordResetTokenRepository) Create(ctx context.Context, token *domain
 	if token.CreatedAt.IsZero() {
 		token.CreatedAt = time.Now().UTC()
 	}
-	_, err := r.col.InsertOne(ctx, token)
+	err := r.g.write(ctx, func(ctx context.Context) error {
+		_, err := r.col.InsertOne(ctx, token)
+		return err
+	})
 	if err != nil {
 		return fmt.Errorf("PasswordResetTokenRepo.Create: %w", err)
 	}
@@ -64,12 +67,20 @@ func (r *PasswordResetTokenRepository) Consume(ctx context.Context, token string
 	}
 
 	var out domain.PasswordResetToken
-	err := r.col.FindOneAndDelete(ctx, filter).Decode(&out)
-	if err == mongo.ErrNoDocuments {
-		return nil, nil
-	}
+	found := true
+	err := r.g.write(ctx, func(ctx context.Context) error {
+		err := r.col.FindOneAndDelete(ctx, filter).Decode(&out)
+		if err == mongo.ErrNoDocuments {
+			found = false
+			return nil
+		}
+		return err
+	})
 	if err != nil {
 		return nil, fmt.Errorf("PasswordResetTokenRepo.Consume: %w", err)
+	}
+	if !found {
+		return nil, nil
 	}
 
 	usedAt := now

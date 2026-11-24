@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -14,11 +15,18 @@ import (
 type AdminHandler struct {
 	userRepo           domain.UserRepository
 	metrics            domain.AnalyticsMetricsProvider
-	commanderBrackets  *domain.CommanderBracketConfig
+	commanderBrackets  CommanderBracketStore
+}
+
+// CommanderBracketStore gives concurrency-safe access to the live bracket
+// configuration (implemented by usecase.CommanderBracketUseCase).
+type CommanderBracketStore interface {
+	Config() domain.CommanderBracketConfig
+	SetConfig(domain.CommanderBracketConfig)
 }
 
 // NewAdminHandler creates an AdminHandler.
-func NewAdminHandler(userRepo domain.UserRepository, metrics domain.AnalyticsMetricsProvider, commanderBrackets *domain.CommanderBracketConfig) *AdminHandler {
+func NewAdminHandler(userRepo domain.UserRepository, metrics domain.AnalyticsMetricsProvider, commanderBrackets CommanderBracketStore) *AdminHandler {
 	return &AdminHandler{userRepo: userRepo, metrics: metrics, commanderBrackets: commanderBrackets}
 }
 
@@ -26,6 +34,9 @@ func NewAdminHandler(userRepo domain.UserRepository, metrics domain.AnalyticsMet
 type UpdateUserPlanRequest struct {
 	Email string `json:"email"`
 	Plan  string `json:"plan"`
+	// DurationDays grants Pro for the given number of days, extending any
+	// active entitlement. 0 grants Pro without expiry.
+	DurationDays int `json:"duration_days,omitempty"`
 }
 
 // CommanderBracketsResponse wraps the current commander bracket configuration.
@@ -60,12 +71,29 @@ func (h *AdminHandler) UpdateUserPlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Update plan.
-	plan := domain.PlanFree
-	if req.Plan == "pro" {
-		plan = domain.PlanPro
+	if req.DurationDays < 0 || req.DurationDays > 3660 {
+		WriteAPIErrorFromMsg(w, "duration_days must be between 0 and 3660", http.StatusBadRequest)
+		return
 	}
-	user.Plan = plan
+
+	now := time.Now().UTC()
+	if req.Plan == "pro" {
+		user.Plan = domain.PlanPro
+		if req.DurationDays > 0 {
+			base := now
+			if user.ProUntil != nil && user.ProUntil.After(base) {
+				base = *user.ProUntil
+			}
+			until := base.AddDate(0, 0, req.DurationDays)
+			user.ProUntil = &until
+		} else {
+			user.ProUntil = nil
+		}
+	} else {
+		user.Plan = domain.PlanFree
+		user.ProUntil = nil
+	}
+	user.UpdatedAt = now
 
 	if err := h.userRepo.Update(r.Context(), user); err != nil {
 		WriteAPIErrorFromMsg(w, "failed to update user", http.StatusInternalServerError)
@@ -73,8 +101,9 @@ func (h *AdminHandler) UpdateUserPlan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jsonOK(w, map[string]interface{}{
-		"email": user.Email,
-		"plan":  user.Plan,
+		"email":     user.Email,
+		"plan":      user.Plan,
+		"pro_until": user.ProUntil,
 	})
 }
 
@@ -124,7 +153,7 @@ func (h *AdminHandler) CommanderBrackets(w http.ResponseWriter, r *http.Request)
 		WriteAPIErrorFromMsg(w, "commander bracket config unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	jsonOK(w, CommanderBracketsResponse{Config: *h.commanderBrackets})
+	jsonOK(w, CommanderBracketsResponse{Config: h.commanderBrackets.Config()})
 }
 
 // UpdateCommanderBrackets updates the in-memory bracket configuration.
@@ -140,28 +169,34 @@ func (h *AdminHandler) UpdateCommanderBrackets(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	req.Config.DecisiveCards = normalizeStringSlice(req.Config.DecisiveCards)
+	req.Config.GameChangers = normalizeStringSlice(req.Config.GameChangers)
+	req.Config.ExtraTurnCards = normalizeStringSlice(req.Config.ExtraTurnCards)
+	req.Config.MassLandDenialCards = normalizeStringSlice(req.Config.MassLandDenialCards)
 	req.Config.TutorKeywords = normalizeStringSlice(req.Config.TutorKeywords)
 	req.Config.ExtraTurnKeywords = normalizeStringSlice(req.Config.ExtraTurnKeywords)
 	req.Config.MassLandDenialKeywords = normalizeStringSlice(req.Config.MassLandDenialKeywords)
-	req.Config.ComboKeywords = normalizeStringSlice(req.Config.ComboKeywords)
 	req.Config.FastManaKeywords = normalizeStringSlice(req.Config.FastManaKeywords)
 	req.Config.Enabled = true
 
-	*h.commanderBrackets = req.Config
-	jsonOK(w, CommanderBracketsResponse{Config: *h.commanderBrackets})
+	h.commanderBrackets.SetConfig(req.Config)
+	jsonOK(w, CommanderBracketsResponse{Config: h.commanderBrackets.Config()})
 }
 
 // AdminSecretMiddleware checks for a secret key header.
+//
+// When ADMIN_SECRET is not configured the admin API is disabled: there is no
+// built-in default secret, because a default published in the repository would
+// let anyone call the admin endpoints (including granting Pro).
 func AdminSecretMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		secret := os.Getenv("ADMIN_SECRET")
+		secret := strings.TrimSpace(os.Getenv("ADMIN_SECRET"))
 		if secret == "" {
-			secret = "change-me-in-production"
+			WriteAPIErrorFromMsg(w, "admin API disabled: ADMIN_SECRET is not configured", http.StatusServiceUnavailable)
+			return
 		}
 
 		authHeader := r.Header.Get("X-Admin-Secret")
-		if authHeader != secret {
+		if subtle.ConstantTimeCompare([]byte(authHeader), []byte(secret)) != 1 {
 			WriteAPIErrorFromMsg(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}

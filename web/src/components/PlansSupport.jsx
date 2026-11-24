@@ -2,16 +2,16 @@ import { useEffect, useRef, useState } from 'react'
 import { apiRequest, throwIfNotOK } from '../lib/apiClient'
 
 const PAYPAL_DONATE_URL = import.meta.env.VITE_PAYPAL_DONATE_URL || 'https://paypal.me/gigliofr'
+const SUPPORT_EMAIL = import.meta.env.VITE_SUPPORT_EMAIL || ''
 
 export default function PlansSupport({ token, user, messages, onSessionUpdate, focusProActivationKey = 0 }) {
   const [planError, setPlanError] = useState('')
-  const [donationReference, setDonationReference] = useState('')
   const [adminSecret, setAdminSecret] = useState('')
   const [metricsLoading, setMetricsLoading] = useState(false)
   const [metricsError, setMetricsError] = useState('')
   const [metricsSnapshot, setMetricsSnapshot] = useState(null)
   const [previousMetricsSnapshot, setPreviousMetricsSnapshot] = useState(null)
-  const donationReferenceInputRef = useRef(null)
+  const proActivationRef = useRef(null)
 
   const planRows = [
     {
@@ -53,33 +53,22 @@ export default function PlansSupport({ token, user, messages, onSessionUpdate, f
     onSessionUpdate?.(data.token, data.refresh_token || '', data.user)
   }
 
-  async function activatePro(tier) {
-    setPlanError('')
-    if (!token) return
-    if (!donationReference.trim()) {
-      setPlanError(messages.planDonationReferenceRequired)
-      return
-    }
-    const { res, data } = await apiRequest('/auth/plan', {
-      token,
-      method: 'POST',
-      body: {
-        plan: 'pro',
-        donation_tier: tier,
-        donation_reference: donationReference.trim(),
-      },
-    })
-    throwIfNotOK(res, data, messages.planSwitchError)
-    onSessionUpdate?.(data.token, data.refresh_token || '', data.user)
-  }
+  // Pro is activated by an admin after the donation has been verified
+  // (self-service activation without payment verification was removed).
+  const activationMailBody = typeof messages.planActivationMailBody === 'function'
+    ? messages.planActivationMailBody(user?.email || '')
+    : ''
+  const activationMailto = SUPPORT_EMAIL
+    ? `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(messages.planActivationMailSubject || 'ManaWise Pro')}&body=${encodeURIComponent(activationMailBody)}`
+    : ''
 
-    useEffect(() => {
-      if (!focusProActivationKey) return
-      const inputEl = donationReferenceInputRef.current
-      if (!inputEl) return
-      inputEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      inputEl.focus()
-    }, [focusProActivationKey])
+  useEffect(() => {
+    if (!focusProActivationKey) return
+    const el = proActivationRef.current
+    if (!el) return
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    el.focus?.()
+  }, [focusProActivationKey])
 
   function donateWithAmount(amount) {
     const normalized = String(amount).replace(',', '.')
@@ -238,31 +227,13 @@ export default function PlansSupport({ token, user, messages, onSessionUpdate, f
             </button>
           </div>
 
-          <div className="form-row" style={{ marginTop: 10 }}>
-            <label>{messages.planDonationReferenceLabel}</label>
-            <input
-              ref={donationReferenceInputRef}
-              value={donationReference}
-              onChange={e => setDonationReference(e.target.value)}
-              placeholder={messages.planDonationReferencePlaceholder}
-            />
-          </div>
-
-          <div className="plan-donation-tiers">
-            <button
-              type="button"
-              className="btn-primary"
-              onClick={() => activatePro('beta_month_1eur').catch(err => setPlanError(err.message))}
-            >
-              {messages.planActivateMonth}
-            </button>
-            <button
-              type="button"
-              className="btn-primary"
-              onClick={() => activatePro('beta_year_190eur').catch(err => setPlanError(err.message))}
-            >
-              {messages.planActivateYear}
-            </button>
+          <div ref={proActivationRef} tabIndex={-1} className="plan-activation-note" style={{ marginTop: 10 }}>
+            <p style={{ margin: 0, fontSize: '.85rem' }}>{messages.planActivationManualNote}</p>
+            {activationMailto && (
+              <a className="btn-primary" href={activationMailto} style={{ display: 'inline-block', marginTop: 8 }}>
+                {messages.planRequestActivation}
+              </a>
+            )}
           </div>
         </div>
       </div>

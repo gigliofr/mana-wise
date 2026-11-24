@@ -573,17 +573,16 @@ func commanderBracketForDeck(ctx context.Context, scoreUC *usecase.ScoreUseCase,
 	}
 	score := result.Score
 	bracket := 1
-	label := "Casual"
 	if score >= 8.5 {
-		bracket, label = 5, "cEDH"
+		bracket = 5
 	} else if score >= 6.5 {
-		bracket, label = 4, "Optimized"
+		bracket = 4
 	} else if score >= 4.5 {
-		bracket, label = 3, "Tuned"
+		bracket = 3
 	} else if score >= 2.5 {
-		bracket, label = 2, "Upgraded"
+		bracket = 2
 	}
-	return &commanderBracketResponse{Score: score, Bracket: bracket, Label: label}
+	return &commanderBracketResponse{Score: score, Bracket: bracket, Label: domain.CommanderBracketLabel(bracket)}
 }
 
 // Budget handles GET /api/v1/decks/{id}/budget?target=200.

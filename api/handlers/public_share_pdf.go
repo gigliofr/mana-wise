@@ -7,8 +7,10 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/gigliofr/mana-wise/domain"
+	"github.com/gigliofr/mana-wise/infrastructure/cache"
 	"github.com/gigliofr/mana-wise/usecase"
 	"github.com/go-chi/chi/v5"
 	"github.com/phpdave11/gofpdf"
@@ -30,6 +32,29 @@ type PublicSharePDFHandler struct {
 	Repo      domain.SharedAnalysisLinkRepository
 	DeckRepo  domain.DeckRepository
 	AnalyzeUC *usecase.AnalyzeDeckUseCase
+	// PDFCache, when set, stores rendered PDFs per share token and deck
+	// version, so repeated opens of a popular link do not re-render it.
+	PDFCache *cache.Cache
+}
+
+// sharePDFCacheTTL bounds how long a rendered PDF is reused; any change to the
+// deck changes the cache key, so the TTL only limits memory use.
+const sharePDFCacheTTL = 30 * time.Minute
+
+// renderSharePDF is a variable so tests can observe how often rendering happens.
+var renderSharePDF = renderSharedAnalysisPDF
+
+// WithPDFCache enables caching of rendered PDFs.
+func (h *PublicSharePDFHandler) WithPDFCache(c *cache.Cache) *PublicSharePDFHandler {
+	h.PDFCache = c
+	return h
+}
+
+func sharePDFCacheKey(token string, deck *domain.Deck, shareURL string) string {
+	if deck == nil {
+		return ""
+	}
+	return fmt.Sprintf("share-pdf:%s:%s:v%d:%d:%s", token, deck.ID, deck.Version, deck.UpdatedAt.UnixNano(), shareURL)
 }
 
 func NewPublicSharePDFHandler(repo domain.SharedAnalysisLinkRepository, deckRepo domain.DeckRepository, analyzeUC *usecase.AnalyzeDeckUseCase) *PublicSharePDFHandler {
@@ -50,10 +75,23 @@ func (h *PublicSharePDFHandler) ServeHTTP(w http.ResponseWriter, r *http.Request
 	}
 	shareURL := strings.TrimRight(baseURL, "/") + "/share/" + token
 
-	pdfBytes, err := renderSharedAnalysisPDF(bundle, shareURL)
-	if err != nil {
-		WriteAPIErrorFromMsg(w, "pdf generation failed", http.StatusInternalServerError)
-		return
+	var pdfBytes []byte
+	cacheKey := sharePDFCacheKey(token, bundle.Deck, shareURL)
+	if h.PDFCache != nil && cacheKey != "" {
+		if cached, ok := h.PDFCache.Get(cacheKey); ok {
+			pdfBytes, _ = cached.([]byte)
+		}
+	}
+	if pdfBytes == nil {
+		rendered, err := renderSharePDF(bundle, shareURL)
+		if err != nil {
+			WriteAPIErrorFromMsg(w, "pdf generation failed", http.StatusInternalServerError)
+			return
+		}
+		pdfBytes = rendered
+		if h.PDFCache != nil && cacheKey != "" {
+			h.PDFCache.Set(cacheKey, pdfBytes, sharePDFCacheTTL)
+		}
 	}
 
 	filename := fmt.Sprintf("mana-wise-share-%s.pdf", token)

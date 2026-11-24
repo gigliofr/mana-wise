@@ -32,11 +32,13 @@ JWT_SECRET=your-secure-random-string-here
 PORT=8080
 ENVIRONMENT=production
 LOG_LEVEL=info
-EDH_IMPACT_CACHE_TTL_HOURS=24
-EDH_IMPACT_WEIGHTS_PRICE=0.4
-EDH_IMPACT_WEIGHTS_EDHREC=0.5
-EDH_IMPACT_WEIGHTS_REPRINT=0.1
+ADMIN_SECRET=long-random-value   # required to use /api/v1/admin/*
+MANAWISE_ALLOWED_ORIGINS=https://yourdomain.com
+RATE_LIMIT_FREE_PER_MIN=5
+RATE_LIMIT_PRO_PER_MIN=50
 ```
+
+Railway builds with the repository `Dockerfile` (frontend + backend), as set in `railway.json`.
 
 ### Get MongoDB Connection String
 1. Go to https://www.mongodb.com/cloud/atlas
