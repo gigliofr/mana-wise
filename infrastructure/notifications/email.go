@@ -1,193 +1,30 @@
 package notifications
 
 import (
-	"bytes"
-	"errors"
-	"fmt"
-	"mime"
-	"mime/quotedprintable"
-	"mime/multipart"
-	"net/smtp"
-	"net/textproto"
-	"os"
-	"strconv"
 	"strings"
-	"time"
 
+	"github.com/gigliofr/gokit/mailx"
 	"github.com/gigliofr/mana-wise/domain"
 )
 
-type smtpSender struct {
-	host string
-	port int
-	user string
-	key  string
-	from string
-}
+// mailOptions sono le opzioni comuni di ManaWise per gokit/mailx.
+var mailOptions = mailx.Options{DefaultSubject: "ManaWise notification"}
 
-type smtpConfig struct {
-	host string
-	port string
-	user string
-	key  string
-	from string
-}
-
-func smtpConfigFromEnv() smtpConfig {
-	return smtpConfig{
-		host: strings.TrimSpace(os.Getenv("SMTP_HOST")),
-		port: strings.TrimSpace(os.Getenv("SMTP_PORT")),
-		user: strings.TrimSpace(os.Getenv("SMTP_USER")),
-		key:  strings.TrimSpace(os.Getenv("SMTP_KEY")),
-		from: strings.TrimSpace(os.Getenv("MAIL_FROM")),
-	}
-}
-
-// EmailSenderConfigStatus returns whether email sending is configured and a short diagnostic reason.
-// Prefers Resend over SMTP if both are configured.
+// EmailSenderConfigStatus indica se l'invio email è configurato e perché.
+// Resend (RESEND_API_KEY + RESEND_FROM_EMAIL) ha la precedenza su SMTP
+// (SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_KEY, MAIL_FROM).
 func EmailSenderConfigStatus() (bool, string) {
-	// Check Resend first (preferred)
-	if ok, reason := ResendEmailSenderConfigStatus(); ok {
-		return true, reason
-	}
-	// Fall back to SMTP
-	cfg := smtpConfigFromEnv()
-	missing := make([]string, 0, 5)
-	if cfg.host == "" {
-		missing = append(missing, "SMTP_HOST")
-	}
-	if cfg.port == "" {
-		missing = append(missing, "SMTP_PORT")
-	}
-	if cfg.user == "" {
-		missing = append(missing, "SMTP_USER")
-	}
-	if cfg.key == "" {
-		missing = append(missing, "SMTP_KEY")
-	}
-	if cfg.from == "" {
-		missing = append(missing, "MAIL_FROM")
-	}
-	if len(missing) > 0 {
-		return false, "missing env vars: " + strings.Join(missing, ",")
-	}
-
-	port, err := strconv.Atoi(cfg.port)
-	if err != nil || port <= 0 {
-		return false, "invalid SMTP_PORT"
-	}
-
-	return true, "smtp sender configured"
+	s, why := mailx.FromEnv(mailOptions)
+	_, noop := s.(mailx.Noop)
+	return !noop, why
 }
 
-// NewEmailSenderFromEnv builds an email sender from environment variables.
-// Prefers Resend over SMTP. Falls back to noop if neither is configured.
+// NewEmailSenderFromEnv costruisce il mittente email da gokit/mailx;
+// senza configurazione restituisce un sender che non invia nulla.
 func NewEmailSenderFromEnv() domain.EmailSender {
-	// Try Resend first (preferred)
-	if ok, _ := ResendEmailSenderConfigStatus(); ok {
-		return NewResendEmailSender()
-	}
-
-	// Fall back to SMTP
-	cfg := smtpConfigFromEnv()
-	if cfg.host == "" || cfg.port == "" || cfg.user == "" || cfg.key == "" || cfg.from == "" {
-		return domain.NoopEmailSender{}
-	}
-
-	port, err := strconv.Atoi(cfg.port)
-	if err != nil || port <= 0 {
-		return domain.NoopEmailSender{}
-	}
-
-	return &smtpSender{
-		host: cfg.host,
-		port: port,
-		user: cfg.user,
-		key:  cfg.key,
-		from: cfg.from,
-	}
+	s, _ := mailx.FromEnv(mailOptions)
+	return s
 }
 
-func (s *smtpSender) Send(to, subject, textBody, htmlBody string) error {
-	to = strings.TrimSpace(to)
-	if to == "" {
-		return errors.New("recipient email required")
-	}
-	if strings.TrimSpace(subject) == "" {
-		subject = "ManaWise notification"
-	}
-	if strings.TrimSpace(textBody) == "" && strings.TrimSpace(htmlBody) == "" {
-		return errors.New("email body is empty")
-	}
-	if strings.TrimSpace(textBody) == "" {
-		textBody = stripHTMLBasic(htmlBody)
-	}
-	if strings.TrimSpace(htmlBody) == "" {
-		htmlBody = "<p>" + textBody + "</p>"
-	}
-
-	var body bytes.Buffer
-	boundary := "manawise-alt-" + strconv.FormatInt(time.Now().UnixNano(), 10)
-	body.WriteString("From: " + s.from + "\r\n")
-	body.WriteString("To: " + to + "\r\n")
-	body.WriteString("Subject: " + mime.QEncoding.Encode("UTF-8", subject) + "\r\n")
-	body.WriteString("MIME-Version: 1.0\r\n")
-	body.WriteString("Content-Type: multipart/alternative; boundary=" + boundary + "\r\n")
-	body.WriteString("\r\n")
-
-	writer := multipart.NewWriter(&body)
-	if err := writer.SetBoundary(boundary); err != nil {
-		return err
-	}
-
-	plainHeader := textproto.MIMEHeader{}
-	plainHeader.Set("Content-Type", "text/plain; charset=UTF-8")
-	plainHeader.Set("Content-Transfer-Encoding", "quoted-printable")
-	plainPart, err := writer.CreatePart(plainHeader)
-	if err != nil {
-		return err
-	}
-	plainQP := quotedprintable.NewWriter(plainPart)
-	if _, err := plainQP.Write([]byte(textBody)); err != nil {
-		_ = plainQP.Close()
-		return err
-	}
-	if err := plainQP.Close(); err != nil {
-		return err
-	}
-
-	htmlHeader := textproto.MIMEHeader{}
-	htmlHeader.Set("Content-Type", "text/html; charset=UTF-8")
-	htmlHeader.Set("Content-Transfer-Encoding", "quoted-printable")
-	htmlPart, err := writer.CreatePart(htmlHeader)
-	if err != nil {
-		return err
-	}
-	htmlQP := quotedprintable.NewWriter(htmlPart)
-	if _, err := htmlQP.Write([]byte(htmlBody)); err != nil {
-		_ = htmlQP.Close()
-		return err
-	}
-	if err := htmlQP.Close(); err != nil {
-		return err
-	}
-
-	if err := writer.Close(); err != nil {
-		return err
-	}
-
-	addr := fmt.Sprintf("%s:%d", s.host, s.port)
-	auth := smtp.PlainAuth("", s.user, s.key, s.host)
-	if err := smtp.SendMail(addr, auth, s.from, []string{to}, body.Bytes()); err != nil {
-		return fmt.Errorf("smtp send failed: %w", err)
-	}
-	return nil
-}
-
-func stripHTMLBasic(v string) string {
-	repl := strings.NewReplacer("<br>", "\n", "<br/>", "\n", "<br />", "\n", "<p>", "", "</p>", "\n")
-	out := repl.Replace(v)
-	out = strings.ReplaceAll(out, "<", "")
-	out = strings.ReplaceAll(out, ">", "")
-	return strings.TrimSpace(out)
-}
+// stripHTMLBasic resta per i template esistenti.
+func stripHTMLBasic(v string) string { return strings.TrimSpace(mailx.HTMLToText(v)) }

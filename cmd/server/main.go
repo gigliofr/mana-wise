@@ -27,6 +27,8 @@ import (
 	"github.com/gigliofr/mana-wise/infrastructure/ota"
 	"github.com/gigliofr/mana-wise/infrastructure/scryfall"
 	"github.com/gigliofr/mana-wise/usecase"
+
+	"github.com/gigliofr/gokit/notifyx"
 )
 
 func main() {
@@ -43,14 +45,23 @@ func main() {
 	log.Printf("🔎 Mongo target: %s", sanitizeMongoURI(cfg.MongoDB.URI))
 	logConfigChecklist(cfg)
 
+	// Avvisi operativi su Telegram (OPS_TELEGRAM_BOT_TOKEN / OPS_TELEGRAM_CHAT_ID).
+	ops := notifyx.OpsFromEnv("mana-wise")
+	api.PanicHook = ops.PanicHook()
+	watchCtx, stopWatch := context.WithCancel(context.Background())
+	defer stopWatch()
+
 	// ── MongoDB ──────────────────────────────────────────────────────────────
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
 	defer cancel()
 
 	mongoClient, connectedAttempt, retryCount, err := connectMongoWithRetry(ctx, cfg.MongoDB, 3, 2*time.Second)
 	if err != nil {
+		ops.Error("mongo-init", "avvio fallito: MongoDB non raggiungibile", err)
+		ops.Flush()
 		log.Fatalf("MongoDB connection failed: %v", err)
 	}
+	ops.Watch(watchCtx, "MongoDB", time.Minute, mongoClient.Ping)
 	defer func() {
 		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer shutdownCancel()
@@ -284,12 +295,17 @@ func main() {
 	go func() {
 		log.Printf("🚀 ManaWise API listening on :%s", cfg.Server.Port)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			ops.Error("server", "server HTTP arrestato per errore", err)
+			ops.Flush()
 			log.Fatalf("server error: %v", err)
 		}
 	}()
+	ops.Started(os.Getenv("APP_VERSION"))
 
 	<-quit
 	log.Println("🛑 Shutting down...")
+	stopWatch()
+	ops.Stopping("arresto richiesto (SIGTERM)")
 	// Stop cache janitors first.
 	close(analysisCacheDone)
 	close(legalityCacheDone)
