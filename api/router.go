@@ -17,6 +17,8 @@ import (
 	"github.com/gigliofr/mana-wise/usecase"
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
+
+	"github.com/gigliofr/gokit/mw"
 )
 
 // RouterDeps groups all handler dependencies.
@@ -58,7 +60,9 @@ func NewRouter(deps RouterDeps) http.Handler {
 	r.Use(panicShieldMiddleware)
 	r.Use(chimiddleware.RequestID)
 	r.Use(chimiddleware.Logger)
-	r.Use(chimiddleware.RealIP)
+	// IP reale: CF-Connecting-IP o ultimo X-Forwarded-For (gokit). Il RealIP di chi
+	// usava il primo valore di X-Forwarded-For, scelto dal client: aggirava il rate limit.
+	r.Use(mw.RealIP)
 	r.Use(corsMiddleware)
 
 	// Rate limiter for expensive endpoints. Limits are requests per minute and
@@ -218,6 +222,10 @@ func NewRouter(deps RouterDeps) http.Handler {
 	return r
 }
 
+// PanicHook, se impostato, riceve i panic recuperati dagli handler
+// (es. notifyx.Ops.PanicHook() per l'avviso su Telegram).
+var PanicHook mw.PanicHook
+
 func panicShieldMiddleware(next http.Handler) http.Handler {
 	if next == nil {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -241,6 +249,9 @@ func safeServeHTTP(next http.Handler, w http.ResponseWriter, r *http.Request, sc
 				log.Printf("panic in %s req_id=%s: %v\n%s", scope, reqID, rec, debug.Stack())
 			} else {
 				log.Printf("panic in %s: %v\n%s", scope, rec, debug.Stack())
+			}
+			if PanicHook != nil {
+				PanicHook(r, rec, debug.Stack())
 			}
 			safeWriteInternalError(w)
 		}
