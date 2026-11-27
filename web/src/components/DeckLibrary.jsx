@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import CardHoverPreview from './CardHoverPreview'
 import { apiRequest, throwIfNotOK } from '../lib/apiClient'
+import { cleanCardName } from '../lib/deck'
 
 const FORMATS = ['standard', 'pioneer', 'modern', 'legacy', 'vintage', 'commander', 'pauper']
 
@@ -425,23 +426,7 @@ export default function DeckLibrary({
   }
 
   function parseDecklistToCards(decklist) {
-    function stripTrailingTags(value) {
-      let cleaned = String(value || '').trim()
-      while (cleaned) {
-        const next = cleaned.replace(/\s*\[[^\]]+\]\s*$/g, '').trim()
-        if (next === cleaned) break
-        cleaned = next
-      }
-      return cleaned
-    }
-
-    function sanitizeCardName(value) {
-      let name = stripTrailingTags(value)
-      if (!name) return ''
-      name = name.replace(/\s*\([A-Za-z0-9]{2,10}\)\s*[A-Za-z0-9-]+\s*$/i, '').trim()
-      name = name.replace(/\s*\([A-Za-z0-9]{2,10}\)\s*$/i, '').trim()
-      return name.replace(/\s+/g, ' ').trim()
-    }
+    const sanitizeCardName = cleanCardName
 
     const rows = []
     const lines = (decklist || '').split('\n')

@@ -93,7 +93,14 @@ func (h *DeckImportExportHandler) Import(w http.ResponseWriter, r *http.Request)
 	mainCount := 0
 	sideCount := 0
 
+	hasCommander := false
+	total := 0
 	for _, entry := range entries {
+		hasCommander = hasCommander || entry.IsCommander
+		total += entry.Quantity
+	}
+
+	for i, entry := range entries {
 		card, err := h.resolveCardUC.Execute(r.Context(), entry.CardName)
 		if err != nil || card == nil {
 			warnings = append(warnings, fmt.Sprintf("Could not resolve card '%s'; skipping", entry.CardName))
@@ -105,7 +112,12 @@ func (h *DeckImportExportHandler) Import(w http.ResponseWriter, r *http.Request)
 			CardName:    card.Name,
 			Quantity:    entry.Quantity,
 			IsSideboard: entry.IsSideboard,
-			IsCommander: false,
+			IsCommander: entry.IsCommander,
+		}
+		// Moxfield-style Commander exports have no "Commander" section: the
+		// commander is the first line of a ~100-card list.
+		if i == 0 && !hasCommander && entry.Quantity == 1 && total >= 98 && total <= 101 && usecase.CanBeCommander(card) {
+			deckCard.IsCommander = true
 		}
 		deckCards = append(deckCards, deckCard)
 

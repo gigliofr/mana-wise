@@ -5,13 +5,45 @@ const SECTION_MAIN = /^(deck|main|mainboard|maindeck)\s*:?\s*$/i
 const SECTION_COMMANDER = /^(commander|comandante)\s*:?\s*$/i
 const SECTION_IGNORED = /^(companion|about|name\s.*)$/i
 
-function cleanName(value) {
+// Suffissi che gli export aggiungono dopo il nome, tolti in qualsiasi ordine:
+// tag "[Commander]", marcatori foil/etched "*F*", set e numero di collezione
+// "(MH3) 123", anche con numeri come "247p", "D25" o "M15-7" (The List).
+const TRAILING_TAG = /\s*\[[^\]]+\]\s*$/
+const TRAILING_FOIL = /\s*\*(?:f|e|foil|etched)\*\s*$/i
+const TRAILING_SET = /\s*\([A-Za-z0-9]{2,10}\)(?:\s+[A-Za-z0-9][A-Za-z0-9★†-]*)?\s*$/
+
+// cleanCardName toglie dal nome tag, marcatori foil, set e numero di collezione.
+export function cleanCardName(value) {
   let name = String(value || '').trim()
-  // Toglie tag finali tipo [Commander] e set/numero stile Arena: "(MH3) 123".
-  while (/\s*\[[^\]]+\]\s*$/.test(name)) name = name.replace(/\s*\[[^\]]+\]\s*$/, '').trim()
-  name = name.replace(/\s*\([A-Za-z0-9]{2,10}\)\s*[A-Za-z0-9-]*\s*$/, '').trim()
-  name = name.replace(/\s*\*[A-Z]+\*\s*$/, '').trim()
-  return name.replace(/\s+/g, ' ')
+  for (;;) {
+    const next = name.replace(TRAILING_TAG, '').replace(TRAILING_FOIL, '').replace(TRAILING_SET, '').trim()
+    if (next === name) break
+    name = next
+  }
+  name = name.replace(/\s+/g, ' ')
+  // Carte doppie: Moxfield scrive "Ready / Willing", Scryfall "Ready // Willing".
+  if (!name.includes('//')) name = name.replace(/\s+\/\s+/g, ' // ')
+  return name
+}
+
+const collator = new Intl.Collator('en', { sensitivity: 'base', ignorePunctuation: true })
+
+// Moxfield e Archidekt esportano i mazzi Commander senza intestazioni, con il
+// comandante sulla prima riga e il resto in ordine alfabetico: se la prima
+// carta rompe quell'ordine, è il comandante.
+function inferCommanderFromOrder(out) {
+  if (out.commander.length || out.side.length || out.main.length < 3) return
+  const [first, ...rest] = out.main
+  if (first.qty !== 1) return
+  const total = sum(out.main)
+  const singleton = rest.every(c => c.qty === 1 || isBasicLand(c.name))
+  if (total < 98 || total > 101 || !singleton) return
+  for (let i = 1; i < rest.length; i++) {
+    if (collator.compare(rest[i - 1].name, rest[i].name) > 0) return
+  }
+  if (collator.compare(first.name, rest[0].name) <= 0) return
+  out.commander.push(first)
+  out.main = rest
 }
 
 // parseDecklist riconosce le liste di Arena, Moxfield e testo semplice.
@@ -20,6 +52,7 @@ export function parseDecklist(text) {
   const out = { main: [], side: [], commander: [] }
   let section = 'main'
   let sawCards = false
+  let sawHeader = false
   const lines = String(text || '').replace(/\r/g, '').split('\n')
   for (const raw of lines) {
     const line = raw.trim()
@@ -29,9 +62,9 @@ export function parseDecklist(text) {
       continue
     }
     if (line.startsWith('//') || line.startsWith('#')) continue
-    if (SECTION_SIDEBOARD.test(line)) { section = 'side'; continue }
-    if (SECTION_MAIN.test(line)) { section = 'main'; continue }
-    if (SECTION_COMMANDER.test(line)) { section = 'commander'; continue }
+    if (SECTION_SIDEBOARD.test(line)) { section = 'side'; sawHeader = true; continue }
+    if (SECTION_MAIN.test(line)) { section = 'main'; sawHeader = true; continue }
+    if (SECTION_COMMANDER.test(line)) { section = 'commander'; sawHeader = true; continue }
     if (SECTION_IGNORED.test(line)) continue
     let target = section === 'pending-side' ? 'side' : section
     let body = line
@@ -40,7 +73,7 @@ export function parseDecklist(text) {
     const qty = m ? Math.max(1, Number(m[1]) || 1) : 1
     const rawName = m ? m[2] : body
     const isCommanderTag = /\[[^\]]*commander[^\]]*\]/i.test(rawName)
-    const name = cleanName(rawName)
+    const name = cleanCardName(rawName)
     if (!name) continue
     if (isCommanderTag) target = 'commander'
     const list = out[target]
@@ -54,6 +87,7 @@ export function parseDecklist(text) {
     out.main.push(...out.side)
     out.side = []
   }
+  if (!sawHeader) inferCommanderFromOrder(out)
   return out
 }
 
