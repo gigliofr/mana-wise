@@ -113,3 +113,19 @@ func TestAnalyzeDeckExecute_DoesNotInferNonLegendaryCommander(t *testing.T) {
 		t.Fatalf("an instant must not become the commander, got %+v", resp.Commander.Cards)
 	}
 }
+
+func TestParseDecklist_SkipsMaybeboard(t *testing.T) {
+	raw := "Commander\n1 The First Sliver\n\nDeck\n1 Sol Ring\n\nSideboard\n1 Path to Exile\n\nMaybeboard\n1 Sliver Legion\n1 Sliver Queen"
+	entries, err := parseDecklist(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if e.name == "Sliver Legion" || e.name == "Sliver Queen" {
+			t.Fatalf("maybeboard card %q must not be part of the deck", e.name)
+		}
+	}
+	if len(entries) != 3 {
+		t.Fatalf("expected 3 entries, got %d: %+v", len(entries), entries)
+	}
+}

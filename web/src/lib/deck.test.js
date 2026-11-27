@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseDecklist, cleanCardName, sum, guessFormat, deckToText, apiCardsFromParsed, parsedFromApiDeck, SAMPLE_DECK } from './deck'
+import { parseDecklist, cleanCardName, sum, guessFormat, deckToText, apiCardsFromParsed, parsedFromApiDeck, SAMPLE_DECK, apiMaybeboardFromParsed } from './deck'
 
 describe('parseDecklist', () => {
   it('legge il mazzo di esempio con la sideboard', () => {
@@ -154,5 +154,15 @@ describe('import da Moxfield', () => {
     expect(parseDecklist(sorted.join('\n')).commander).toEqual([])
     const sixty = ['4 Zzz', '4 Aaa', '4 Bbb', '48 Mountain']
     expect(parseDecklist(sixty.join('\n')).commander).toEqual([])
+  })
+})
+
+describe('maybeboard', () => {
+  it('legge la sezione Maybeboard e la tiene fuori dal mazzo', () => {
+    const parsed = parseDecklist('Commander\n1 The First Sliver\n\nDeck\n1 Sol Ring\n\nMaybeboard\n1 Sliver Hive\n')
+    expect(parsed.maybe.map(e => e.name)).toEqual(['Sliver Hive'])
+    expect(parsed.main.map(e => e.name)).not.toContain('Sliver Hive')
+    expect(apiMaybeboardFromParsed(parsed)).toEqual([{ card_id: '', card_name: 'Sliver Hive', quantity: 1, is_sideboard: false, is_commander: false }])
+    expect(deckToText(parsed)).toContain('Maybeboard\n1 Sliver Hive')
   })
 })

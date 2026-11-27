@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { apiRequest } from '../lib/apiClient'
 import {
-  parseDecklist, sum, guessFormat, apiCardsFromParsed, parsedFromApiDeck, deckToText,
+  parseDecklist, sum, guessFormat, apiCardsFromParsed, apiMaybeboardFromParsed, parsedFromApiDeck, deckToText,
   defaultDeckName, loadInsights, relativeTime, SAMPLE_DECK,
 } from '../lib/deck'
 import { ColorDots } from './ManaPips'
@@ -74,7 +74,7 @@ export default function MyDecks({ token, user, messages: m, locale, onOpenDeck }
       const { res, data } = await apiRequest('/decks', {
         token,
         method: 'POST',
-        body: { name: deckName, format: effectiveFormat, cards: apiCardsFromParsed(parsed), is_public: false },
+        body: { name: deckName, format: effectiveFormat, cards: apiCardsFromParsed(parsed), maybeboard: apiMaybeboardFromParsed(parsed), is_public: false },
       })
       if (res.ok) saved = data
       else setError(`${m.wNotSaved} ${data?.error || ''}`.trim())

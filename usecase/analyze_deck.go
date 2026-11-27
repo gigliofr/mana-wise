@@ -690,6 +690,15 @@ func parseDecklist(raw string) ([]deckEntry, error) {
 			section = "sideboard"
 			continue
 		}
+		// Cards being considered are not part of the deck.
+		switch lower {
+		case "maybeboard", "maybeboard:", "maybe", "maybe:", "considering", "considering:", "forse", "forse:":
+			section = "maybe"
+			continue
+		}
+		if section == "maybe" {
+			continue
+		}
 		// Skip any other header-style lines (e.g. "About", "Land:")
 		if strings.HasSuffix(lower, ":") {
 			continue

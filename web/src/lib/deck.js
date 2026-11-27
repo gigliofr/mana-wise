@@ -3,6 +3,7 @@
 const SECTION_SIDEBOARD = /^(sideboard|side|sb)\s*:?\s*$/i
 const SECTION_MAIN = /^(deck|main|mainboard|maindeck)\s*:?\s*$/i
 const SECTION_COMMANDER = /^(commander|comandante)\s*:?\s*$/i
+const SECTION_MAYBE = /^(maybeboard|maybe|considering|forse)\s*:?\s*$/i
 const SECTION_IGNORED = /^(companion|about|name\s.*)$/i
 
 // Suffissi che gli export aggiungono dopo il nome, tolti in qualsiasi ordine:
@@ -47,9 +48,10 @@ function inferCommanderFromOrder(out) {
 }
 
 // parseDecklist riconosce le liste di Arena, Moxfield e testo semplice.
-// Restituisce { main, side, commander } con elementi { name, qty }.
+// Restituisce { main, side, commander, maybe } con elementi { name, qty }.
+// "maybe" sono le carte in valutazione: non fanno parte del mazzo.
 export function parseDecklist(text) {
-  const out = { main: [], side: [], commander: [] }
+  const out = { main: [], side: [], commander: [], maybe: [] }
   let section = 'main'
   let sawCards = false
   let sawHeader = false
@@ -65,6 +67,7 @@ export function parseDecklist(text) {
     if (SECTION_SIDEBOARD.test(line)) { section = 'side'; sawHeader = true; continue }
     if (SECTION_MAIN.test(line)) { section = 'main'; sawHeader = true; continue }
     if (SECTION_COMMANDER.test(line)) { section = 'commander'; sawHeader = true; continue }
+    if (SECTION_MAYBE.test(line)) { section = 'maybe'; sawHeader = true; continue }
     if (SECTION_IGNORED.test(line)) continue
     let target = section === 'pending-side' ? 'side' : section
     let body = line
@@ -105,6 +108,7 @@ export function deckToText(parsed) {
   if (parsed.commander?.length) parts.push(`Commander\n${listToText(parsed.commander)}`)
   parts.push(`${parsed.commander?.length ? 'Deck\n' : ''}${listToText(parsed.main)}`)
   if (parsed.side?.length) parts.push(`Sideboard\n${listToText(parsed.side)}`)
+  if (parsed.maybe?.length) parts.push(`Maybeboard\n${listToText(parsed.maybe)}`)
   return parts.join('\n\n')
 }
 
@@ -134,8 +138,17 @@ export function apiCardsFromParsed(parsed) {
   ]
 }
 
+// Carte "forse" nel formato delle API /decks (campo maybeboard).
+export function apiMaybeboardFromParsed(parsed) {
+  return (parsed.maybe || []).map(c => ({ card_id: '', card_name: c.name, quantity: c.qty, is_sideboard: false, is_commander: false }))
+}
+
 export function parsedFromApiDeck(deck) {
-  const out = { main: [], side: [], commander: [] }
+  const out = { main: [], side: [], commander: [], maybe: [] }
+  for (const c of Array.isArray(deck?.maybeboard) ? deck.maybeboard : []) {
+    const name = c.card_name || c.name || ''
+    if (name) out.maybe.push({ name, qty: Math.max(1, Number(c.quantity) || 1) })
+  }
   for (const c of Array.isArray(deck?.cards) ? deck.cards : []) {
     const name = c.card_name || c.name || ''
     if (!name) continue
