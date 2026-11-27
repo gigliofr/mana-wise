@@ -4,6 +4,14 @@ import InteractionPanel from './InteractionPanel'
 import CardHoverPreview from './CardHoverPreview'
 import { ManaSymbol, ManaSymbolGroup, isManaColorCode } from './ManaSymbol'
 import { apiRequest } from '../lib/apiClient'
+import AnalysisDashboard from './AnalysisDashboard'
+
+// Risultati per mazzo già analizzati nella sessione: cambiare strumento
+// non ripete l'analisi (che per il piano free consuma la quota).
+const analysisCache = new Map()
+function cacheKey(format, decklist) {
+  return `${format}::${String(decklist || '').trim()}`
+}
 
 const FORMATS = ['standard', 'pioneer', 'modern', 'legacy', 'vintage', 'commander', 'pauper']
 
@@ -114,9 +122,10 @@ const SAMPLE_DECK_COMMANDER = `// Sample Commander: Meren of Clan Nel Toth
 
 const SAMPLE_DECK = SAMPLE_DECK_STANDARD
 
-export default function Analyzer({ token, user, locale, messages, decklist: decklistProp, format: formatProp, onDeckChange, onFormatChange, onUpgradeRequest }) {
-  const [decklist, setDecklist] = useState('')
-  const [format,   setFormat]   = useState('standard')
+export default function Analyzer({ token, user, locale, messages, decklist: decklistProp, format: formatProp, onDeckChange, onFormatChange, onUpgradeRequest, deckName, autoRun = false, onAnalyzed, onEditList }) {
+  const [decklist, setDecklist] = useState(decklistProp || '')
+  const [format,   setFormat]   = useState(formatProp || 'standard')
+  const workspace = Boolean(deckName)
   const [savedDecks, setSavedDecks] = useState([])
   const [loadingSavedDecks, setLoadingSavedDecks] = useState(false)
   const [currentDeckId, setCurrentDeckId] = useState("");
@@ -185,6 +194,9 @@ export default function Analyzer({ token, user, locale, messages, decklist: deck
     }
   }, [user?.remaining])
 
+  function decklistRef() { return decklist }
+  function formatRef() { return format }
+
   async function onUpgradeClick(e) {
     e.preventDefault()
     try {
@@ -203,8 +215,25 @@ export default function Analyzer({ token, user, locale, messages, decklist: deck
     window.location.href = '/?tool=plans'
   }
 
+  // In modalità mazzo corrente: riusa l'analisi già fatta o la avvia se richiesto.
+  useEffect(() => {
+    if (!workspace) return
+    const cached = analysisCache.get(cacheKey(formatProp || format, decklistProp))
+    if (cached) {
+      setResult(cached.result)
+      setFingerprint(cached.fingerprint)
+      setCommanderScore(cached.commanderScore)
+      return
+    }
+    setResult(null)
+    setFingerprint(null)
+    if (autoRun && String(decklistProp || '').trim()) analyze()
+  }, [workspace, decklistProp, formatProp, autoRun])
+
   async function analyze(e) {
-    e.preventDefault()
+    if (e?.preventDefault) e.preventDefault()
+    const decklist = workspace ? (decklistProp || '') : decklistRef()
+    const format = workspace ? (formatProp || 'standard') : formatRef()
     setError('')
     setResult(null)
     setFingerprint(null)
@@ -262,10 +291,12 @@ export default function Analyzer({ token, user, locale, messages, decklist: deck
       setResult(resultWithDeckId)
       setTab('mana')
 
+      let fingerprintData = null
       if (fingerprintOutcome.status === 'fulfilled') {
-        const { res: fingerprintRes, data: fingerprintData } = fingerprintOutcome.value
+        const { res: fingerprintRes, data: fpData } = fingerprintOutcome.value
         if (fingerprintRes.ok) {
-          setFingerprint(fingerprintData)
+          fingerprintData = fpData
+          setFingerprint(fpData)
         }
       }
 
@@ -284,6 +315,9 @@ export default function Analyzer({ token, user, locale, messages, decklist: deck
       if (isFree) {
         setRemaining(prev => Math.max(0, (typeof prev === 'number' ? prev : 3) - 1))
       }
+      const bracket = typeof commanderBracketData?.bracket === 'number' ? commanderBracketData.bracket : null
+      analysisCache.set(cacheKey(format, decklist), { result: resultWithDeckId, fingerprint: fingerprintData, commanderScore: bracket })
+      onAnalyzed?.(resultWithDeckId, fingerprintData)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -295,7 +329,26 @@ export default function Analyzer({ token, user, locale, messages, decklist: deck
 
   return (
     <>
+      {workspace && (
+        <div className="mw-runbar">
+          <div>
+            {isFree && <p className="mw-muted mw-small">{messages.freePlanBanner(remaining)} <a href="/upgrade" onClick={onUpgradeClick}>{messages.upgradeToPro}</a></p>}
+            {!result && !loading && <p>{messages.wNotAnalyzedYet}</p>}
+            {result && !loading && <p className="mw-muted mw-small">{messages.wAnalysisReady}</p>}
+            {loading && <p role="status">⚙️ {messages.analyzing}</p>}
+          </div>
+          <button type="button" className="mw-btn mw-btn--primary" onClick={() => analyze()} disabled={loading || !String(decklistProp || '').trim()}>
+            {result ? messages.wReanalyzeShort : messages.analyzeDeck}
+          </button>
+        </div>
+      )}
+
+      {workspace && result && (
+        <AnalysisDashboard result={result} fingerprint={fingerprint} messages={messages} locale={locale} onEditList={onEditList} />
+      )}
+
       {/* Input panel */}
+      {!workspace && (
       <div className="card">
         <h2>🃏 {messages.deckAnalyzer}</h2>
 
@@ -353,6 +406,7 @@ export default function Analyzer({ token, user, locale, messages, decklist: deck
           </div>
         </form>
       </div>
+      )}
 
       {/* Error */}
       {error && <div className="banner banner-error">{error}</div>}
@@ -367,7 +421,7 @@ export default function Analyzer({ token, user, locale, messages, decklist: deck
       {result && (
         <div className="card">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, gap: 8 }}>
-            <h2 style={{ marginBottom: 0 }}>📊 {messages.analysisResults}</h2>
+            <h2 style={{ marginBottom: 0 }}>📊 {workspace ? messages.wAnalysisDetails : messages.analysisResults}</h2>
             <span className="latency" style={{ marginTop: 0 }}>{messages.analyzedIn(result.latency_ms)}</span>
             <button
               type="button"
@@ -477,7 +531,7 @@ export default function Analyzer({ token, user, locale, messages, decklist: deck
           </div>
 
           <AnalysisLegend result={result} messages={messages} />
-          <LegalityLegend legality={result.legality} messages={messages} />
+          <LegalityLegend legality={result.legality} messages={messages} token={token} />
 
           {result.commander?.cards?.length > 0 && (
             <div className="card" style={{ marginTop: 24 }}>
@@ -1303,7 +1357,7 @@ function AnalysisLegend({ result, messages }) {
   )
 }
 
-function LegalityLegend({ legality, messages }) {
+function LegalityLegend({ legality, messages, token }) {
   const [expandedFormat, setExpandedFormat] = useState(null)
   const rows = ['standard', 'pioneer', 'modern', 'legacy', 'vintage', 'commander', 'pauper']
     .map(format => ({ format, data: legality?.[format] }))

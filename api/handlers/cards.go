@@ -9,9 +9,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/gigliofr/mana-wise/domain"
 	"github.com/gigliofr/mana-wise/usecase"
+	"github.com/go-chi/chi/v5"
 )
 
 // CardsHandler handles card-related endpoints.
@@ -25,11 +25,15 @@ type cardMetadataBatchRequest struct {
 }
 
 type cardMetadataItem struct {
-	CardID          string `json:"card_id,omitempty"`
-	Name            string `json:"name"`
-	Rarity          string `json:"rarity,omitempty"`
-	SetCode         string `json:"set_code,omitempty"`
-	CollectorNumber string `json:"collector_number,omitempty"`
+	CardID          string   `json:"card_id,omitempty"`
+	Name            string   `json:"name"`
+	Rarity          string   `json:"rarity,omitempty"`
+	SetCode         string   `json:"set_code,omitempty"`
+	CollectorNumber string   `json:"collector_number,omitempty"`
+	TypeLine        string   `json:"type_line,omitempty"`
+	ManaCost        string   `json:"mana_cost,omitempty"`
+	CMC             float64  `json:"cmc"`
+	ColorIdentity   []string `json:"color_identity,omitempty"`
 }
 
 type cardMetadataBatchResponse struct {
@@ -124,6 +128,10 @@ func (h *CardsHandler) MetadataBatch(w http.ResponseWriter, r *http.Request) {
 			Rarity:          strings.ToLower(strings.TrimSpace(card.Rarity)),
 			SetCode:         strings.ToLower(strings.TrimSpace(card.SetCode)),
 			CollectorNumber: strings.TrimSpace(card.CollectorNumber),
+			TypeLine:        card.TypeLine,
+			ManaCost:        card.ManaCost,
+			CMC:             card.CMC,
+			ColorIdentity:   card.ColorIdentity,
 		})
 	}
 
@@ -402,4 +410,3 @@ func jsonOK(w http.ResponseWriter, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(v)
 }
-
