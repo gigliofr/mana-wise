@@ -381,6 +381,7 @@ function App() {
               deck={currentDeck}
               colors={deckColors}
               messages={messages}
+              locale={locale}
               onChange={text => updateDeck({ text, dirty: true })}
               onSaved={id => updateDeck({ id, dirty: false })}
               onReanalyze={() => { setAutoRun(true); selectTool('analysis') }}

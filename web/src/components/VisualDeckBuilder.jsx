@@ -1,447 +1,355 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+// Vista visuale del mazzo (Pro): immagini delle carte in pile o in griglia,
+// raggruppate e ordinate a scelta, con trascinamento tra Main, Sideboard e Forse.
+import { useEffect, useMemo, useState } from 'react'
 import {
   DndContext,
   DragOverlay,
   PointerSensor,
+  KeyboardSensor,
+  useDraggable,
   useDroppable,
   useSensor,
   useSensors,
-  closestCenter,
 } from '@dnd-kit/core'
-import {
-  SortableContext,
-  useSortable,
-  rectSortingStrategy,
-  arrayMove,
-} from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
-import CardHoverPreview from './CardHoverPreview'
-import { apiRequest, throwIfNotOK } from '../lib/apiClient'
-import { cleanCardName } from '../lib/deck'
+import { ManaCost } from './ManaPips'
+import { fetchCardInfos } from '../lib/scryfallCards'
+import { groupEntries, totalPrice, formatEur } from '../lib/deckView'
 
-const BOARD_MAIN = 'main'
-const BOARD_SIDE = 'side'
-const BOARD_MAYBE = 'maybe'
-const BOARD_ORDER = [BOARD_MAIN, BOARD_SIDE, BOARD_MAYBE]
+const BOARDS = ['main', 'side', 'maybe']
+const PREFS_KEY = 'manawise_visual_prefs'
 
-function boardTitle(board, messages) {
-  if (board === BOARD_MAIN) return messages?.builderMainboard || 'Mainboard'
-  if (board === BOARD_SIDE) return messages?.builderSideboard || 'Sideboard'
-  return messages?.builderMaybeboard || 'Maybeboard'
-}
-
-function boardMarker(board) {
-  if (board === BOARD_SIDE) return 'Sideboard'
-  if (board === BOARD_MAYBE) return 'Maybeboard'
-  return ''
-}
-
-function badgeClassName(value) {
-  return String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-}
-
-function parseDecklist(decklist) {
-  const rows = []
-  const lines = String(decklist || '').split(/\r?\n/)
-  let activeBoard = BOARD_MAIN
-
-  for (const raw of lines) {
-    const line = raw.trim()
-    if (!line || line.startsWith('//')) continue
-    const low = line.toLowerCase()
-
-    if (low === 'sideboard' || low === 'sideboard:' || low === 'sb:' || low === 'sb') {
-      activeBoard = BOARD_SIDE
-      continue
-    }
-    if (low === 'maybeboard' || low === 'maybeboard:' || low === 'mb:' || low === 'maybe:') {
-      activeBoard = BOARD_MAYBE
-      continue
-    }
-
-    const m = line.match(/^(\d+)x?\s+(.+)$/i)
-    if (!m) continue
-
-    rows.push({
-      quantity: Math.max(1, Number.parseInt(m[1], 10) || 1),
-      name: cleanCardName(m[2]),
-      board: activeBoard,
-    })
+function loadPrefs() {
+  try {
+    return { view: 'stacks', groupBy: 'type', sortBy: 'name', ...JSON.parse(localStorage.getItem(PREFS_KEY) || '{}') }
+  } catch {
+    return { view: 'stacks', groupBy: 'type', sortBy: 'name' }
   }
-
-  return rows
 }
 
-function serializeDecklist(cards) {
-  const byBoard = {
-    [BOARD_MAIN]: cards.filter(c => c.board === BOARD_MAIN),
-    [BOARD_SIDE]: cards.filter(c => c.board === BOARD_SIDE),
-    [BOARD_MAYBE]: cards.filter(c => c.board === BOARD_MAYBE),
-  }
-
-  const lines = []
-  for (const board of BOARD_ORDER) {
-    const entries = byBoard[board]
-    if (!entries.length) continue
-    const marker = boardMarker(board)
-    if (marker) {
-      if (lines.length) lines.push('')
-      lines.push(marker)
-    }
-    for (const c of entries) {
-      lines.push(`${c.quantity} ${c.name}`)
-    }
-  }
-
-  return lines.join('\n')
+function savePrefs(prefs) {
+  try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)) } catch { /* ignore */ }
 }
 
-function SortableCard({ item, token, messages }) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: item.id, data: { board: item.board } })
-  const meta = item.meta || {}
-  const rarity = String(meta.rarity || '').trim().toUpperCase()
-  const setCode = String(meta.set_code || '').trim().toUpperCase()
-  const rarityClass = badgeClassName(rarity)
+const keyOf = name => String(name || '').trim().toLowerCase()
 
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
+// zoneOfBoard: nel main il comandante ha una zona sua.
+function entriesOf(parsed, board) {
+  if (board === 'main') {
+    return [
+      ...(parsed.commander || []).map(c => ({ ...c, zone: 'commander' })),
+      ...(parsed.main || []).map(c => ({ ...c, zone: 'main' })),
+    ]
   }
+  return (parsed[board] || []).map(c => ({ ...c, zone: board }))
+}
 
+const sumQty = list => list.reduce((acc, c) => acc + (Number(c.qty) || 0), 0)
+
+function CardFace({ entry, info, m }) {
+  if (info?.image) {
+    return (
+      <img
+        className="vb-card__img"
+        src={info.image}
+        alt={entry.name}
+        loading="lazy"
+        decoding="async"
+        draggable={false}
+      />
+    )
+  }
+  // Senza immagine: una carta testuale leggibile, con costo e tipo.
   return (
-    <div ref={setNodeRef} style={style} className="builder-card" {...attributes} {...listeners}>
-      <div className="builder-card-qty">{item.quantity}x</div>
-      <div className="builder-card-name">
-        <CardHoverPreview cardName={item.name} token={token} messages={messages} metadata={meta}>
-          {item.name}
-        </CardHoverPreview>
-      </div>
-      {(rarity || setCode) && (
-        <div className="builder-card-badges">
-          {rarity && <span className={`builder-badge rarity-${rarityClass}`}>{rarity}</span>}
-          {setCode && <span className="builder-badge builder-badge-set">{setCode}</span>}
-        </div>
-      )}
+    <div className="vb-card__text">
+      <span className="vb-card__text-name">{entry.name}</span>
+      {info?.manaCost ? <ManaCost cost={info.manaCost} /> : null}
+      {info?.typeLine ? <span className="vb-card__text-type">{info.typeLine}</span> : null}
+      {info === null ? <span className="vb-card__text-type">{m.vbNotFound?.(1) || 'Not found'}</span> : null}
     </div>
   )
 }
 
-function DroppableBoard({ board, children }) {
-  const { setNodeRef, isOver } = useDroppable({
-    id: `drop-${board}`,
-    data: { board },
-  })
-
+function DraggableCard({ entry, info, m, onQty }) {
+  const id = `${entry.zone}|${entry.name}`
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id, data: { entry } })
+  const price = info?.priceEur
   return (
     <div
       ref={setNodeRef}
-      className="builder-dropzone"
-      style={isOver ? { borderColor: 'var(--primary-h)', background: 'rgba(124,92,191,.08)' } : undefined}
+      className={`vb-card${isDragging ? ' is-dragging' : ''}`}
+      title={entry.name}
+      {...attributes}
+      {...listeners}
     >
-      {children}
+      <CardFace entry={entry} info={info} m={m} />
+      {entry.qty > 1 && <span className="vb-card__qty" aria-label={m.vbCopies?.(entry.qty)}>{entry.qty}×</span>}
+      <div className="vb-card__bar">
+        {price != null && <span className="vb-card__price">{formatEur(price)}</span>}
+        <span className="vb-card__btns">
+          <button
+            type="button"
+            className="vb-card__btn"
+            onPointerDown={e => e.stopPropagation()}
+            onKeyDown={e => e.stopPropagation()}
+            onClick={() => onQty(entry, -1)}
+            aria-label={m.vbRemoveOne?.(entry.name)}
+          >−</button>
+          <button
+            type="button"
+            className="vb-card__btn"
+            onPointerDown={e => e.stopPropagation()}
+            onKeyDown={e => e.stopPropagation()}
+            onClick={() => onQty(entry, 1)}
+            aria-label={m.vbAddOne?.(entry.name)}
+          >+</button>
+        </span>
+      </div>
     </div>
   )
 }
 
-export default function VisualDeckBuilder({ token, messages, decklist, onDeckChange }) {
-  const uidRef = useRef(1)
-  const [cards, setCards] = useState([])
-  const [activeId, setActiveId] = useState(null)
-  const [metaByName, setMetaByName] = useState({})
-  const [metaLoading, setMetaLoading] = useState(false)
-  const [metaError, setMetaError] = useState('')
-  const [rarityFilters, setRarityFilters] = useState([])
-  const [setFilters, setSetFilters] = useState([])
+function BoardTab({ board, label, count, active, onSelect, dragging, hint }) {
+  const { setNodeRef, isOver } = useDroppable({ id: `board-${board}`, data: { board } })
+  return (
+    <button
+      ref={setNodeRef}
+      type="button"
+      role="tab"
+      aria-selected={active}
+      className={`vb-tab${active ? ' is-active' : ''}${isOver ? ' is-over' : ''}${dragging ? ' is-target' : ''}`}
+      onClick={() => onSelect(board)}
+      title={dragging ? hint : undefined}
+    >
+      <span>{label}</span>
+      <strong>{count}</strong>
+    </button>
+  )
+}
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }))
+function groupLabel(key, groupBy, m) {
+  if (key === 'commander') return m.wType?.commander || 'Commander'
+  if (groupBy === 'cost') return key === 'land' ? m.vbLands : m.vbCost?.(Number(key))
+  if (groupBy === 'color') return m.vbColors?.[key] || key
+  if (groupBy === 'none') return m.vbAllInGroup
+  return m.wType?.[key] || key
+}
+
+export default function VisualDeckBuilder({ messages: m, parsed, locale = 'it', onChange }) {
+  const [prefs, setPrefs] = useState(loadPrefs)
+  const [board, setBoard] = useState('main')
+  const [query, setQuery] = useState('')
+  const [rarities, setRarities] = useState([])
+  const [sets, setSets] = useState([])
+  const [infos, setInfos] = useState({})
+  const [loading, setLoading] = useState(false)
+  const [loadError, setLoadError] = useState('')
+  const [dragged, setDragged] = useState(null)
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor),
+  )
+
+  useEffect(() => { savePrefs(prefs) }, [prefs])
+
+  const allNames = useMemo(() => {
+    const names = ['commander', 'main', 'side', 'maybe'].flatMap(z => (parsed[z] || []).map(c => c.name))
+    return Array.from(new Set(names))
+  }, [parsed])
 
   useEffect(() => {
-    const parsed = parseDecklist(decklist)
-    const next = parsed.map(item => ({
-      id: `c-${uidRef.current++}`,
-      ...item,
-    }))
-    setCards(next)
-  }, [decklist])
+    if (!allNames.length) return undefined
+    const ctrl = new AbortController()
+    setLoading(true)
+    setLoadError('')
+    fetchCardInfos(allNames, { signal: ctrl.signal })
+      .then(map => setInfos(prev => ({ ...prev, ...map })))
+      .catch(err => { if (err?.name !== 'AbortError') setLoadError(m.vbLoadError) })
+      .finally(() => { if (!ctrl.signal.aborted) setLoading(false) })
+    return () => ctrl.abort()
+  }, [allNames.join('\n')])
 
-  useEffect(() => {
-    let cancelled = false
-    const names = Array.from(new Set(cards.map(c => String(c.name || '').trim()).filter(Boolean)))
-    if (!token || names.length === 0) {
-      setMetaByName({})
-      setMetaError('')
-      setMetaLoading(false)
-      return
-    }
+  const infoOf = entry => infos[keyOf(entry.name)]
+  const notFound = allNames.filter(n => infos[keyOf(n)] === null).length
 
-    async function loadMetadata() {
-      setMetaLoading(true)
-      setMetaError('')
-      try {
-        const { res, data } = await apiRequest('/cards/metadata/batch', {
-          token,
-          method: 'POST',
-          body: { names },
-        })
-        throwIfNotOK(res, data, messages?.builderMetadataLoadFailed || 'Metadata load failed')
-        const nextMap = {}
-        for (const item of (data?.items || [])) {
-          const key = String(item?.name || '').trim().toLowerCase()
-          if (!key) continue
-          nextMap[key] = item
-        }
-        if (!cancelled) {
-          setMetaByName(nextMap)
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setMetaError(err?.message || messages?.builderMetadataLoadFailed || 'Metadata load failed')
-          setMetaByName({})
-        }
-      } finally {
-        if (!cancelled) setMetaLoading(false)
-      }
-    }
+  const counts = {
+    main: sumQty(entriesOf(parsed, 'main')),
+    side: sumQty(entriesOf(parsed, 'side')),
+    maybe: sumQty(entriesOf(parsed, 'maybe')),
+  }
 
-    loadMetadata()
-    return () => {
-      cancelled = true
-    }
-  }, [cards, token, messages?.builderMetadataLoadFailed])
+  const boardEntries = entriesOf(parsed, board)
+  const rarityOptions = Array.from(new Set(boardEntries.map(e => infoOf(e)?.rarity).filter(Boolean))).sort()
+  const setOptions = Array.from(new Set(boardEntries.map(e => infoOf(e)?.set).filter(Boolean))).sort()
 
-  const boardItems = useMemo(() => ({
-    [BOARD_MAIN]: cards.filter(c => c.board === BOARD_MAIN),
-    [BOARD_SIDE]: cards.filter(c => c.board === BOARD_SIDE),
-    [BOARD_MAYBE]: cards.filter(c => c.board === BOARD_MAYBE),
-  }), [cards])
-
-  const rarityOptions = useMemo(() => {
-    const values = new Set()
-    for (const key of Object.keys(metaByName)) {
-      const r = String(metaByName[key]?.rarity || '').trim().toLowerCase()
-      if (r) values.add(r)
-    }
-    return Array.from(values).sort()
-  }, [metaByName])
-
-  const setOptions = useMemo(() => {
-    const values = new Set()
-    for (const key of Object.keys(metaByName)) {
-      const s = String(metaByName[key]?.set_code || '').trim().toLowerCase()
-      if (s) values.add(s)
-    }
-    return Array.from(values).sort()
-  }, [metaByName])
-
-  const matchesFilters = (card) => {
-    const key = String(card?.name || '').trim().toLowerCase()
-    const meta = metaByName[key]
-    if (rarityFilters.length > 0) {
-      const rarity = String(meta?.rarity || '').trim().toLowerCase()
-      if (!rarityFilters.includes(rarity)) return false
-    }
-    if (setFilters.length > 0) {
-      const setCode = String(meta?.set_code || '').trim().toLowerCase()
-      if (!setFilters.includes(setCode)) return false
-    }
+  const q = query.trim().toLowerCase()
+  const visible = boardEntries.filter(e => {
+    const info = infoOf(e)
+    if (q && !e.name.toLowerCase().includes(q) && !String(info?.typeLine || '').toLowerCase().includes(q)) return false
+    if (rarities.length && !rarities.includes(info?.rarity)) return false
+    if (sets.length && !sets.includes(info?.set)) return false
     return true
+  })
+  const groups = groupEntries(visible, infoOf, prefs.groupBy, prefs.sortBy)
+  const price = totalPrice(boardEntries, infoOf)
+
+  function commit(next) {
+    onChange?.(next)
   }
 
-  const visibleBoardItems = useMemo(() => ({
-    [BOARD_MAIN]: boardItems[BOARD_MAIN].filter(matchesFilters),
-    [BOARD_SIDE]: boardItems[BOARD_SIDE].filter(matchesFilters),
-    [BOARD_MAYBE]: boardItems[BOARD_MAYBE].filter(matchesFilters),
-  }), [boardItems, rarityFilters, setFilters, metaByName])
-
-  function toggleValue(setter, value) {
-    setter(prev => prev.includes(value) ? prev.filter(item => item !== value) : [...prev, value])
-  }
-
-  const stats = useMemo(() => {
-    const count = b => boardItems[b].reduce((sum, c) => sum + c.quantity, 0)
+  function cloneParsed() {
     return {
-      main: count(BOARD_MAIN),
-      side: count(BOARD_SIDE),
-      maybe: count(BOARD_MAYBE),
+      commander: [...(parsed.commander || [])],
+      main: [...(parsed.main || [])],
+      side: [...(parsed.side || [])],
+      maybe: [...(parsed.maybe || [])],
     }
-  }, [boardItems])
-
-  function findBoardByItemId(id) {
-    if (!id) return null
-    const found = cards.find(c => c.id === id)
-    return found?.board || null
   }
 
-  function commit(nextCards) {
-    setCards(nextCards)
-    onDeckChange?.(serializeDecklist(nextCards))
+  function changeQty(entry, delta) {
+    const next = cloneParsed()
+    const list = next[entry.zone]
+    const idx = list.findIndex(c => keyOf(c.name) === keyOf(entry.name))
+    if (idx === -1) return
+    const qty = list[idx].qty + delta
+    if (qty <= 0) list.splice(idx, 1)
+    else list[idx] = { ...list[idx], qty }
+    commit(next)
   }
 
-  function handleDragStart(event) {
-    setActiveId(event.active.id)
+  function moveEntry(entry, toBoard) {
+    const target = toBoard === 'main' ? 'main' : toBoard
+    if (entry.zone === target || (entry.zone === 'commander' && toBoard === 'main')) return
+    const next = cloneParsed()
+    next[entry.zone] = next[entry.zone].filter(c => keyOf(c.name) !== keyOf(entry.name))
+    const existing = next[target].find(c => keyOf(c.name) === keyOf(entry.name))
+    if (existing) existing.qty += entry.qty
+    else next[target].push({ name: entry.name, qty: entry.qty })
+    commit(next)
   }
 
   function handleDragEnd(event) {
-    const { active, over } = event
-    setActiveId(null)
-    if (!over || !active) return
-
-    const activeIdLocal = active.id
-    const overId = over.id
-
-    const fromBoard = findBoardByItemId(activeIdLocal)
-    const overCard = cards.find(c => c.id === overId)
-    const fromOverData = over?.data?.current?.board
-    const toBoard = fromOverData || overCard?.board || fromBoard
-    if (!fromBoard || !toBoard) return
-
-    if (fromBoard === toBoard) {
-      const list = boardItems[fromBoard]
-      const oldIndex = list.findIndex(c => c.id === activeIdLocal)
-      const newIndex = list.findIndex(c => c.id === overId)
-      if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) return
-
-      const moved = arrayMove(list, oldIndex, newIndex)
-      const others = cards.filter(c => c.board !== fromBoard)
-      commit([...others, ...moved])
-      return
-    }
-
-    const movedCards = cards.map(c => {
-      if (c.id === activeIdLocal) return { ...c, board: toBoard }
-      return c
-    })
-
-    const targetList = movedCards.filter(c => c.board === toBoard)
-    const fromList = movedCards.filter(c => c.board === fromBoard)
-    const targetIndex = targetList.findIndex(c => c.id === overId)
-    const movedIndex = targetList.findIndex(c => c.id === activeIdLocal)
-
-    let targetReordered = targetList
-    if (targetIndex >= 0 && movedIndex >= 0) {
-      targetReordered = arrayMove(targetList, movedIndex, targetIndex)
-    }
-
-    const untouched = movedCards.filter(c => c.board !== fromBoard && c.board !== toBoard)
-    commit([...untouched, ...fromList, ...targetReordered])
+    setDragged(null)
+    const toBoard = event.over?.data?.current?.board
+    const entry = event.active?.data?.current?.entry
+    if (toBoard && entry) moveEntry(entry, toBoard)
   }
 
-  const activeCard = cards.find(c => c.id === activeId)
-  const activeMeta = activeCard?.meta || {}
-  const activeRarity = String(activeMeta.rarity || '').trim().toUpperCase()
-  const activeSetCode = String(activeMeta.set_code || '').trim().toUpperCase()
-  const activeRarityClass = badgeClassName(activeRarity)
+  const setPref = (key, value) => setPrefs(p => ({ ...p, [key]: value }))
+  const toggle = (setter, value) => setter(prev => (prev.includes(value) ? prev.filter(v => v !== value) : [...prev, value]))
+  const boardLabel = b => (b === 'main' ? m.builderMainboard : b === 'side' ? m.builderSideboard : m.builderMaybeboard)
+  const draggedInfo = dragged ? infoOf(dragged) : null
 
   return (
-    <div className="card">
-      <h2>🧩 {messages?.builderTitle || 'Visual Deck Builder'}</h2>
-      <p style={{ color: 'var(--muted)', marginTop: -8, marginBottom: 14, fontSize: '.88rem' }}>
-        {messages?.builderHint || 'Drag cards between Mainboard, Sideboard and Maybeboard. Changes sync in real time with deck text.'}
-      </p>
-
-      <div className="builder-stats-grid">
-        <div className="builder-stat"><strong>{stats.main}</strong><span>{boardTitle(BOARD_MAIN, messages)}</span></div>
-        <div className="builder-stat"><strong>{stats.side}</strong><span>{boardTitle(BOARD_SIDE, messages)}</span></div>
-        <div className="builder-stat"><strong>{stats.maybe}</strong><span>{boardTitle(BOARD_MAYBE, messages)}</span></div>
-      </div>
-
-      <div className="form-row-inline" style={{ gap: 8, marginBottom: 12 }}>
-        <div className="form-row" style={{ flex: 1, marginBottom: 0 }}>
-          <label>{messages?.builderFilterRarity || 'Rarity'}</label>
-          <div className="builder-chip-row">
-            <button type="button" className={`builder-chip${rarityFilters.length === 0 ? ' active' : ''}`} onClick={() => setRarityFilters([])}>{messages?.builderFilterAll || 'All'}</button>
-            {rarityOptions.map(v => (
-              <button
-                type="button"
-                key={v}
-                className={`builder-chip${rarityFilters.includes(v) ? ' active' : ''}`}
-                onClick={() => toggleValue(setRarityFilters, v)}
-              >
-                {v}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="form-row" style={{ flex: 1, marginBottom: 0 }}>
-          <label>{messages?.builderFilterSet || 'Edition (set)'}</label>
-          <div className="builder-chip-row builder-chip-row-scroll">
-            <button type="button" className={`builder-chip${setFilters.length === 0 ? ' active' : ''}`} onClick={() => setSetFilters([])}>{messages?.builderFilterAll || 'All'}</button>
-            {setOptions.map(v => (
-              <button
-                type="button"
-                key={v}
-                className={`builder-chip${setFilters.includes(v) ? ' active' : ''}`}
-                onClick={() => toggleValue(setSetFilters, v)}
-              >
-                {v.toUpperCase()}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-      {(metaLoading || metaError) && (
-        <div style={{ color: 'var(--muted)', fontSize: '.82rem', marginBottom: 10 }}>
-          {metaLoading ? (messages?.builderMetadataLoading || 'Loading card metadata...') : metaError}
-        </div>
-      )}
-
+    <div className="vb">
       <DndContext
         sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragStart={handleDragStart}
+        onDragStart={e => setDragged(e.active?.data?.current?.entry || null)}
+        onDragCancel={() => setDragged(null)}
         onDragEnd={handleDragEnd}
       >
-        <div className="builder-columns">
-          {BOARD_ORDER.map(board => {
-            const items = visibleBoardItems[board]
-            return (
-              <div key={board} className="builder-column" id={board}>
-                <div className="builder-column-header">
-                  <span>{boardTitle(board, messages)}</span>
-                  <span>{items.length}{(boardItems[board].length !== items.length) ? ` / ${boardItems[board].length}` : ''}</span>
-                </div>
-                <SortableContext items={items.map(i => i.id)} strategy={rectSortingStrategy}>
-                  <DroppableBoard board={board}>
-                    {items.length === 0 && (
-                      <div className="builder-empty">{messages?.builderEmptyColumn || 'Drop cards here'}</div>
-                    )}
-                    {items.map(item => (
-                      <SortableCard
-                        key={item.id}
-                        item={item}
-                        token={token}
-                        messages={messages}
-                      />
-                    ))}
-                  </DroppableBoard>
-                </SortableContext>
-              </div>
-            )
-          })}
+        <div className="vb-tabs" role="tablist" aria-label={m.wSection}>
+          {BOARDS.map(b => (
+            <BoardTab
+              key={b}
+              board={b}
+              label={boardLabel(b)}
+              count={counts[b]}
+              active={board === b}
+              onSelect={setBoard}
+              dragging={!!dragged}
+              hint={m.vbMoveHint}
+            />
+          ))}
+          {price.priced > 0 && <span className="vb-price">{m.vbTotalPrice?.(formatEur(price.total, locale))}</span>}
         </div>
 
-        <DragOverlay>
-          {activeCard ? (
-            <div className="builder-card builder-card-overlay">
-              <div className="builder-card-qty">{activeCard.quantity}x</div>
-              <div className="builder-card-name">{activeCard.name}</div>
-              {(activeRarity || activeSetCode) && (
-                <div className="builder-card-badges">
-                  {activeRarity && <span className={`builder-badge rarity-${activeRarityClass}`}>{activeRarity}</span>}
-                  {activeSetCode && <span className="builder-badge builder-badge-set">{activeSetCode}</span>}
+        <div className="vb-toolbar">
+          <div className="vb-field">
+            <span className="vb-label">{m.vbView}</span>
+            <div className="mw-seg" role="group" aria-label={m.vbView}>
+              {['stacks', 'grid'].map(v => (
+                <button key={v} type="button" className={prefs.view === v ? 'is-active' : ''} aria-pressed={prefs.view === v} onClick={() => setPref('view', v)}>
+                  {v === 'stacks' ? m.vbViewStacks : m.vbViewGrid}
+                </button>
+              ))}
+            </div>
+          </div>
+          <label className="vb-field">
+            <span className="vb-label">{m.vbGroupBy}</span>
+            <select value={prefs.groupBy} onChange={e => setPref('groupBy', e.target.value)}>
+              <option value="type">{m.vbGroupType}</option>
+              <option value="cost">{m.vbGroupCost}</option>
+              <option value="color">{m.vbGroupColor}</option>
+              <option value="none">{m.vbGroupNone}</option>
+            </select>
+          </label>
+          <label className="vb-field">
+            <span className="vb-label">{m.vbSortBy}</span>
+            <select value={prefs.sortBy} onChange={e => setPref('sortBy', e.target.value)}>
+              <option value="name">{m.vbSortName}</option>
+              <option value="cost">{m.vbSortCost}</option>
+              <option value="price">{m.vbSortPrice}</option>
+            </select>
+          </label>
+          <label className="vb-field vb-field--grow">
+            <span className="vb-label">{m.vbSearch}</span>
+            <input type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder={m.vbSearchPh} />
+          </label>
+        </div>
+
+        {(rarityOptions.length > 1 || setOptions.length > 1) && (
+          <details className="vb-filters">
+            <summary>{m.vbFilters}{(rarities.length || sets.length) ? ` · ${rarities.length + sets.length}` : ''}</summary>
+            {rarityOptions.length > 1 && (
+              <div className="mw-pills mw-pills--sm" role="group" aria-label={m.builderFilterRarity}>
+                <button type="button" className={`mw-pill${rarities.length === 0 ? ' is-active' : ''}`} onClick={() => setRarities([])}>{m.vbAllCards}</button>
+                {rarityOptions.map(r => (
+                  <button key={r} type="button" className={`mw-pill${rarities.includes(r) ? ' is-active' : ''}`} aria-pressed={rarities.includes(r)} onClick={() => toggle(setRarities, r)}>{r}</button>
+                ))}
+              </div>
+            )}
+            {setOptions.length > 1 && (
+              <div className="mw-pills mw-pills--sm vb-filters__sets" role="group" aria-label={m.builderFilterSet}>
+                <button type="button" className={`mw-pill${sets.length === 0 ? ' is-active' : ''}`} onClick={() => setSets([])}>{m.vbAllCards}</button>
+                {setOptions.map(s => (
+                  <button key={s} type="button" className={`mw-pill${sets.includes(s) ? ' is-active' : ''}`} aria-pressed={sets.includes(s)} onClick={() => toggle(setSets, s)}>{s.toUpperCase()}</button>
+                ))}
+              </div>
+            )}
+          </details>
+        )}
+
+        <p className="mw-muted mw-small vb-status" aria-live="polite">
+          {loading ? m.vbLoading : loadError || (notFound ? m.vbNotFound?.(notFound) : m.builderHint)}
+        </p>
+
+        {boardEntries.length === 0 ? (
+          <p className="mw-muted vb-empty">{m.vbEmptyBoard}</p>
+        ) : groups.length === 0 ? (
+          <p className="mw-muted vb-empty">{m.vbNoMatch}</p>
+        ) : (
+          <div className={prefs.view === 'grid' ? 'vb-grid-groups' : 'vb-stacks'}>
+            {groups.map(g => (
+              <section key={g.key} className="vb-group" aria-label={`${groupLabel(g.key, prefs.groupBy, m)} · ${g.count}`}>
+                <h3 className="vb-group__title">
+                  <span>{groupLabel(g.key, prefs.groupBy, m)}</span>
+                  <span className="vb-group__count">{g.count}</span>
+                </h3>
+                <div className={prefs.view === 'grid' ? 'vb-grid' : 'vb-stack'}>
+                  {g.entries.map(e => (
+                    <DraggableCard key={`${e.zone}|${e.name}`} entry={e} info={infoOf(e)} m={m} onQty={changeQty} />
+                  ))}
                 </div>
-              )}
+              </section>
+            ))}
+          </div>
+        )}
+
+        <DragOverlay>
+          {dragged ? (
+            <div className="vb-card vb-card--overlay">
+              <CardFace entry={dragged} info={draggedInfo} m={m} />
             </div>
           ) : null}
         </DragOverlay>

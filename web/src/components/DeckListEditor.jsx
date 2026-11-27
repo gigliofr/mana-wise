@@ -1,20 +1,11 @@
 // Lista e builder: cerca carte, modifica le quantità, salva o esporta.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { apiRequest } from '../lib/apiClient'
-import { parseDecklist, deckToText, mainText, sum, apiCardsFromParsed, isBasicLand } from '../lib/deck'
+import { parseDecklist, deckToText, sum, apiCardsFromParsed, apiMaybeboardFromParsed, isBasicLand } from '../lib/deck'
 import { ManaCost } from './ManaPips'
 import VisualDeckBuilder from './VisualDeckBuilder'
 
-const TYPE_ORDER = ['creature', 'planeswalker', 'instant', 'sorcery', 'artifact', 'enchantment', 'battle', 'land', 'other']
-
-function typeGroup(typeLine) {
-  const t = String(typeLine || '').toLowerCase()
-  if (!t) return 'other'
-  if (t.includes('land')) return 'land'
-  if (t.includes('creature')) return 'creature'
-  for (const k of TYPE_ORDER) if (t.includes(k)) return k
-  return 'other'
-}
+import { TYPE_ORDER, typeGroup } from '../lib/deckView'
 
 const metaCache = new Map()
 
@@ -34,7 +25,7 @@ async function scryfallSearch(query, signal) {
   }))
 }
 
-export default function DeckListEditor({ token, user, deck, messages: m, colors = [], onChange, onSaved, onReanalyze }) {
+export default function DeckListEditor({ token, user, deck, messages: m, locale = 'it', colors = [], onChange, onSaved, onReanalyze }) {
   const parsed = useMemo(() => parseDecklist(deck.text), [deck.text])
   const [section, setSection] = useState('main')
   const [query, setQuery] = useState('')
@@ -55,7 +46,7 @@ export default function DeckListEditor({ token, user, deck, messages: m, colors 
 
   // Tipi delle carte per raggruppare la lista (dal catalogo del server).
   useEffect(() => {
-    const names = [...parsed.commander, ...parsed.main, ...parsed.side].map(c => c.name).filter(n => !metaCache.has(n.toLowerCase()))
+    const names = [...parsed.commander, ...parsed.main, ...parsed.side, ...parsed.maybe].map(c => c.name).filter(n => !metaCache.has(n.toLowerCase()))
     if (!names.length || !token) {
       setMeta(Object.fromEntries(metaCache))
       return
@@ -109,7 +100,7 @@ export default function DeckListEditor({ token, user, deck, messages: m, colors 
   }
 
   function changeQty(target, name, delta) {
-    const next = { main: [...parsed.main], side: [...parsed.side], commander: [...parsed.commander] }
+    const next = { main: [...parsed.main], side: [...parsed.side], commander: [...parsed.commander], maybe: [...parsed.maybe] }
     const list = next[target]
     const idx = list.findIndex(c => c.name.toLowerCase() === name.toLowerCase())
     if (idx === -1) {
@@ -123,7 +114,7 @@ export default function DeckListEditor({ token, user, deck, messages: m, colors 
   }
 
   function addCard(name) {
-    const target = section === 'side' ? 'side' : 'main'
+    const target = section === 'side' || section === 'maybe' ? section : 'main'
     const current = parsed[target].find(c => c.name.toLowerCase() === name.toLowerCase())
     const limit = deck.format === 'commander' ? 1 : 4
     if (current && current.qty >= limit && !isBasicLand(name)) {
@@ -138,7 +129,7 @@ export default function DeckListEditor({ token, user, deck, messages: m, colors 
     setSaving(true)
     setStatus('')
     try {
-      const body = { name: deck.name, format: deck.format, cards: apiCardsFromParsed(parsed), is_public: false, note: 'builder' }
+      const body = { name: deck.name, format: deck.format, cards: apiCardsFromParsed(parsed), maybeboard: apiMaybeboardFromParsed(parsed), is_public: false, note: 'builder' }
       const { res, data } = deck.id
         ? await apiRequest(`/decks/${deck.id}`, { token, method: 'PUT', body })
         : await apiRequest('/decks', { token, method: 'POST', body })
@@ -153,7 +144,8 @@ export default function DeckListEditor({ token, user, deck, messages: m, colors 
   }
 
   async function exportArena() {
-    const text = deckToText(parsed)
+    // Arena non conosce le carte "forse": restano fuori dall'esportazione.
+    const text = deckToText({ ...parsed, maybe: [] })
     try {
       await navigator.clipboard.writeText(text)
       setStatus(m.wCopied)
@@ -162,7 +154,9 @@ export default function DeckListEditor({ token, user, deck, messages: m, colors 
     }
   }
 
-  const list = section === 'side' ? parsed.side : [...parsed.commander.map(c => ({ ...c, commander: true })), ...parsed.main]
+  const list = section === 'side' ? parsed.side
+    : section === 'maybe' ? parsed.maybe
+      : [...parsed.commander.map(c => ({ ...c, commander: true })), ...parsed.main]
   const groups = {}
   for (const c of list) {
     const g = c.commander ? 'commander' : typeGroup(meta[c.name.toLowerCase()]?.type_line)
@@ -171,9 +165,11 @@ export default function DeckListEditor({ token, user, deck, messages: m, colors 
   const groupOrder = ['commander', ...TYPE_ORDER].filter(g => groups[g]?.length)
   const mainCount = sum(parsed.main) + sum(parsed.commander)
   const sideCount = sum(parsed.side)
+  const maybeCount = sum(parsed.maybe)
+  const showVisual = visual && hasPro && !asText
 
   return (
-    <div className="mw-builder">
+    <div className={`mw-builder${showVisual ? ' mw-builder--visual' : ''}`}>
       <section className="mw-panel mw-search" aria-labelledby="mwSearchTitle">
         <h2 className="mw-panel__title" id="mwSearchTitle">{m.wAddCards}</h2>
         <label htmlFor="mwCardQuery" className="mw-sr">{m.wSearchCards}</label>
@@ -208,10 +204,13 @@ export default function DeckListEditor({ token, user, deck, messages: m, colors 
       <section className="mw-panel mw-list" aria-labelledby="mwListTitle">
         <div className="mw-panel__head">
           <h2 className="mw-panel__title" id="mwListTitle">{m.wListTitle(mainCount)}</h2>
-          <div className="mw-seg" role="tablist" aria-label={m.wSection}>
-            <button type="button" role="tab" aria-selected={section === 'main'} className={section === 'main' ? 'is-active' : ''} onClick={() => setSection('main')}>Main {mainCount}</button>
-            <button type="button" role="tab" aria-selected={section === 'side'} className={section === 'side' ? 'is-active' : ''} onClick={() => setSection('side')}>Sideboard {sideCount}</button>
-          </div>
+          {!showVisual && (
+            <div className="mw-seg" role="tablist" aria-label={m.wSection}>
+              <button type="button" role="tab" aria-selected={section === 'main'} className={section === 'main' ? 'is-active' : ''} onClick={() => setSection('main')}>{m.builderMainboard} {mainCount}</button>
+              <button type="button" role="tab" aria-selected={section === 'side'} className={section === 'side' ? 'is-active' : ''} onClick={() => setSection('side')}>{m.builderSideboard} {sideCount}</button>
+              <button type="button" role="tab" aria-selected={section === 'maybe'} className={section === 'maybe' ? 'is-active' : ''} onClick={() => setSection('maybe')}>{m.builderMaybeboard} {maybeCount}</button>
+            </div>
+          )}
         </div>
 
         {status && <p className="mw-status" role="status">{status}</p>}
@@ -225,18 +224,15 @@ export default function DeckListEditor({ token, user, deck, messages: m, colors 
               <button type="button" className="mw-btn mw-btn--ghost" onClick={() => { setDraftText(deck.text); setAsText(false) }}>{m.wCancel}</button>
             </div>
           </div>
-        ) : visual && hasPro ? (
+        ) : showVisual ? (
           <VisualDeckBuilder
-            token={token}
             messages={m}
-            decklist={mainText(parsed)}
-            onDeckChange={next => {
-              const p = parseDecklist(next)
-              onChange(deckToText({ main: p.main, side: parsed.side, commander: [] }))
-            }}
+            parsed={parsed}
+            locale={locale}
+            onChange={next => commit(next)}
           />
         ) : list.length === 0 ? (
-          <p className="mw-muted">{section === 'side' ? m.wEmptySide : m.wEmptyMain}</p>
+          <p className="mw-muted">{section === 'side' ? m.wEmptySide : section === 'maybe' ? m.vbEmptyBoard : m.wEmptyMain}</p>
         ) : (
           <div className="mw-groups">
             {groupOrder.map(g => (
@@ -245,11 +241,11 @@ export default function DeckListEditor({ token, user, deck, messages: m, colors 
                 <ul>
                   {groups[g].map(c => {
                     const info = meta[c.name.toLowerCase()]
-                    const target = c.commander ? 'commander' : (section === 'side' ? 'side' : 'main')
+                    const target = c.commander ? 'commander' : (section === 'side' || section === 'maybe' ? section : 'main')
                     return (
                       <li key={c.name}>
                         <span className="mw-group__qty">{c.qty}</span>
-                        <span className="mw-group__name">{c.name}</span>
+                        <span className="mw-group__name" title={info?.type_line || undefined}>{c.name}</span>
                         {info?.mana_cost ? <ManaCost cost={info.mana_cost} /> : null}
                         <span className="mw-group__btns">
                           <button type="button" className="mw-icon-btn mw-icon-btn--sm" onClick={() => changeQty(target, c.name, -1)} aria-label={m.wRemoveOne(c.name)}>−</button>

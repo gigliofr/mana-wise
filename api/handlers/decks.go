@@ -254,6 +254,7 @@ type saveDeckRequest struct {
 	Name        string            `json:"name"`
 	Format      string            `json:"format"`
 	Cards       []domain.DeckCard `json:"cards"`
+	Maybeboard  []domain.DeckCard `json:"maybeboard,omitempty"`
 	Description string            `json:"description,omitempty"`
 	Note        string            `json:"note,omitempty"`
 	IsPublic    bool              `json:"is_public"`
@@ -1765,7 +1766,8 @@ func (h *DeckHandler) Create(w http.ResponseWriter, r *http.Request) {
 		UserID:  userID,
 		Name:    req.Name,
 		Format:  req.Format,
-		Cards:   req.Cards,
+		Cards:      req.Cards,
+		Maybeboard: req.Maybeboard,
 		Version: 1,
 		History: []domain.DeckVersion{{
 			V:        1,
@@ -1845,6 +1847,9 @@ func (h *DeckHandler) Update(w http.ResponseWriter, r *http.Request) {
 	existing.Name = req.Name
 	existing.Format = req.Format
 	existing.Cards = req.Cards
+	if req.Maybeboard != nil {
+		existing.Maybeboard = req.Maybeboard
+	}
 	existing.Version = nextVersion
 	existing.History = append(existing.History, historyEntry)
 	existing.Description = req.Description

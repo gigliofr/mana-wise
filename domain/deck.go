@@ -37,6 +37,9 @@ type Deck struct {
 	Name        string     `bson:"name"      json:"name"`
 	Format      string     `bson:"format"    json:"format"`
 	Cards       []DeckCard `bson:"cards"   json:"cards"`
+	// Maybeboard holds cards being considered. They are kept apart from Cards
+	// so analysis, prices, legality and exports ignore them.
+	Maybeboard []DeckCard `bson:"maybeboard,omitempty" json:"maybeboard,omitempty"`
 	Version     int        `bson:"version,omitempty" json:"version,omitempty"`
 	History     []DeckVersion `bson:"history,omitempty" json:"history,omitempty"`
 	Description string     `bson:"description" json:"description"`
