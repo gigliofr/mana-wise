@@ -4,14 +4,18 @@ import Analyzer from './components/Analyzer'
 import MatchupSimulator from './components/MatchupSimulator'
 import SideboardCoach from './components/SideboardCoach'
 import MulliganAssistant from './components/MulliganAssistant'
-import DeckLibrary from './components/DeckLibrary'
-import VisualDeckBuilder from './components/VisualDeckBuilder'
+import MyDecks, { formatLabel } from './components/MyDecks'
+import DeckListEditor from './components/DeckListEditor'
+import { deckHealthScore, scoreTone } from './components/AnalysisDashboard'
+import { ColorDots } from './components/ManaPips'
 import PlansSupport from './components/PlansSupport'
 import NotificationsCenter from './components/NotificationsCenter'
 import AdminCommanderBrackets from './components/AdminCommanderBrackets'
 import LegalFooter from './components/LegalFooter'
 import { LegalPage } from './components/LegalPages'
 import { LOCALES, translations } from './i18n'
+import { workspaceMessages } from './i18nWorkspace'
+import { parseDecklist, sum, mainText, listToText, loadCurrentDeck, saveCurrentDeck, loadInsights, saveInsight } from './lib/deck'
 import { configureApiAuthSession } from './lib/apiClient'
 
 const TOKEN_KEY = 'manawise_token'
@@ -70,47 +74,25 @@ function buildSessionMetaFromToken(token, fallback = null) {
   return null
 }
 
-function formatDurationMinutes(totalMinutes, localeCode) {
-  const minutes = Math.max(0, Number(totalMinutes) || 0)
-  const hours = Math.floor(minutes / 60)
-  const rem = minutes % 60
-  if (localeCode === 'it') {
-    if (hours > 0 && rem > 0) return `${hours}h ${rem}m`
-    if (hours > 0) return `${hours}h`
-    return `${rem}m`
-  }
-  if (hours > 0 && rem > 0) return `${hours}h ${rem}m`
-  if (hours > 0) return `${hours}h`
-  return `${rem}m`
-}
-
 function App() {
   const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) || '')
   const [locale, setLocale] = useState(() => localStorage.getItem(LOCALE_KEY) || 'it')
   const [theme, setTheme] = useState(() => localStorage.getItem(THEME_KEY) || 'night')
   const [sessionMeta, setSessionMeta] = useState(() => safeReadJSON(localStorage.getItem(SESSION_META_KEY)))
-  const [clockNow, setClockNow] = useState(() => Date.now())
   const [user,  setUser]  = useState(() => {
     try { return JSON.parse(localStorage.getItem(USER_KEY) || 'null') } catch { return null }
   })
-  const messages = translations[locale] || translations.it
-  const [activeTool, setActiveTool] = useState('analyzer')
+  const messages = { ...(translations[locale] || translations.it), ...(workspaceMessages[locale] || workspaceMessages.it) }
   const [plansFocusKey, setPlansFocusKey] = useState(0)
-  const [deckWorkspace, setDeckWorkspace] = useState({
-    decklist: '',
-    format: 'standard',
-    deckId: '',
-    deckName: '',
-  })
+  const [currentDeck, setCurrentDeck] = useState(() => loadCurrentDeck())
+  const [view, setView] = useState(() => (loadCurrentDeck() ? 'deck' : 'home'))
+  const [tool, setTool] = useState(() => localStorage.getItem('manawise_tool') || 'analysis')
+  const [autoRun, setAutoRun] = useState(false)
+  const [insightsNonce, setInsightsNonce] = useState(0)
   const currentPath = window.location.pathname.toLowerCase()
   const isLegalPage = ['/privacy', '/cookie', '/contatti'].includes(currentPath)
   const hasActivePro = user?.plan === 'pro' && (!user?.pro_until || new Date(user.pro_until) > new Date())
   const isHiddenAdmin = String(user?.email || '').toLowerCase().includes('admin')
-
-  useEffect(() => {
-    const intervalId = window.setInterval(() => setClockNow(Date.now()), 60_000)
-    return () => window.clearInterval(intervalId)
-  }, [])
 
   function resolveSessionMeta(nextToken, maybeMeta) {
     return buildSessionMetaFromToken(nextToken, maybeMeta)
@@ -161,16 +143,6 @@ function App() {
     setUser(null)
     setSessionMeta(null)
   }
-
-  const sessionDurationMinutes = Number(sessionMeta?.durationMinutes || 0)
-  const sessionDurationText = sessionDurationMinutes > 0
-    ? formatDurationMinutes(sessionDurationMinutes, locale)
-    : ''
-  const expiresMs = sessionMeta?.expiresAt ? new Date(sessionMeta.expiresAt).getTime() : 0
-  const remainingMinutes = expiresMs > 0 ? Math.max(0, Math.ceil((expiresMs - clockNow) / 60000)) : 0
-  const sessionRemainingText = remainingMinutes > 0
-    ? formatDurationMinutes(remainingMinutes, locale)
-    : ''
 
   function handleLocaleChange(nextLocale) {
     localStorage.setItem(LOCALE_KEY, nextLocale)
@@ -264,177 +236,174 @@ function App() {
     )
   }
 
-  const tools = [
-    { key: 'analyzer', label: messages.navAnalyzer },
-    { key: 'builder', label: messages.navBuilder || 'Builder' },
+  const deckParsed = currentDeck ? parseDecklist(currentDeck.text) : null
+  const deckInsight = currentDeck?.id ? (loadInsights()[currentDeck.id] || {}) : (currentDeck?.insight || {})
+  const deckColors = deckInsight.colors || []
+
+  function openDeck(deck, opts = {}) {
+    const next = { ...deck }
+    setCurrentDeck(next)
+    saveCurrentDeck(next)
+    setView('deck')
+    selectTool(opts.tool || 'analysis')
+    setAutoRun(Boolean(opts.autoRun))
+    window.scrollTo(0, 0)
+  }
+
+  function updateDeck(patch) {
+    setCurrentDeck(prev => {
+      const next = { ...prev, ...patch }
+      saveCurrentDeck(next)
+      return next
+    })
+  }
+
+  function selectTool(key) {
+    setTool(key)
+    localStorage.setItem('manawise_tool', key)
+  }
+
+  function handleAnalyzed(result, fingerprint) {
+    setAutoRun(false)
+    const score = deckHealthScore(result)
+    const mana = result?.deterministic?.mana || {}
+    const colors = fingerprint?.color_identity?.length
+      ? fingerprint.color_identity
+      : Object.keys(mana.color_distribution || {}).filter(k => k !== 'C' && mana.color_distribution[k] > 0)
+    const tone = scoreTone(score)
+    const insight = { score, tone, colors, headline: messages[`wVerdict_${tone}`] }
+    if (currentDeck?.id) saveInsight(currentDeck.id, insight)
+    else updateDeck({ insight })
+    setInsightsNonce(n => n + 1)
+  }
+
+  const deckTools = [
+    { key: 'analysis', label: messages.navAnalyzer },
+    { key: 'list', label: messages.wNavList },
     { key: 'matchup', label: messages.navMatchup },
     { key: 'sideboard', label: messages.navSideboard },
     { key: 'mulligan', label: messages.navMulligan },
+  ]
+
+  const mainNav = [
+    { key: 'home', label: messages.wMyDecks },
     { key: 'notifications', label: messages.navNotifications || 'Notifiche' },
+    { key: 'plans', label: messages.navPlans },
     ...(isHiddenAdmin ? [{ key: 'admin', label: messages.navAdmin || 'Admin' }] : []),
   ]
+  const activeNav = view === 'deck' ? 'home' : view
+  const initial = String(user?.name || user?.email || '?').trim().charAt(0).toUpperCase()
 
   return (
     <>
-      <header>
-        <div className="container inner">
-          <div className="logo">🔮 Mana<span>Wise</span> AI</div>
-          <div className="header-actions">
-            <div className="locale-switch" aria-label="Language switcher">
-              {LOCALES.map(item => (
-                <button
-                  key={item.code}
-                  type="button"
-                  className={`locale-btn${locale === item.code ? ' active' : ''}`}
-                  onClick={() => handleLocaleChange(item.code)}
-                  title={item.label}
-                >
-                  <span>{item.flag}</span>
-                  <span>{item.label}</span>
-                </button>
-              ))}
-            </div>
-            <button type="button" className="btn-ghost" onClick={handleThemeToggle}>
-              {theme === 'night' ? '☀️ Giorno' : '🌙 Notte'}
-            </button>
-            <span style={{ fontSize: '.85rem', color: 'var(--muted)', alignSelf: 'center', display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-end', lineHeight: 1.2 }}>
-              <span>
-                {user?.name} · <strong style={{ color: user?.plan === 'pro' ? '#e5a22a' : 'var(--muted)' }}>
-                  {user?.plan?.toUpperCase()}
-                </strong>
-              </span>
-              {(sessionDurationText || sessionRemainingText) && (
-                <span style={{ fontSize: '.72rem', opacity: .9 }}>
-                  {messages.sessionDurationLabel?.(sessionDurationText || '--') || `Session ${sessionDurationText || '--'}`}
-                  {sessionRemainingText ? ` · ${messages.sessionRemainingLabel?.(sessionRemainingText) || `left ${sessionRemainingText}`}` : ''}
-                </span>
-              )}
-            </span>
-            <button
-              type="button"
-              className={`btn-ghost${activeTool === 'plans' ? ' header-tool-active' : ''}`}
-              onClick={() => setActiveTool('plans')}
-            >
-              {messages.navPlans}
-            </button>
-            <button className="btn-ghost" onClick={handleLogout}>{messages.signOut}</button>
-          </div>
-        </div>
-      </header>
-      <main>
-        <div className="container">
-          <DeckLibrary
-            token={token}
-            user={user}
-            messages={messages}
-            currentDecklist={deckWorkspace.decklist}
-            currentFormat={deckWorkspace.format}
-            onSelectDeck={(decklist, format, deck) => {
-              setDeckWorkspace(prev => ({
-                ...prev,
-                decklist,
-                format,
-                deckId: deck?.id || '',
-                deckName: deck?.name || '',
-              }))
-            }}
-          />
-
-          <div className="tool-links" aria-label={messages.toolLinksAria}>
-            {tools.map(tool => (
-              <button
-                key={tool.key}
-                type="button"
-                className={`tool-link${activeTool === tool.key ? ' active' : ''}`}
-                onClick={() => setActiveTool(tool.key)}
-              >
-                {tool.label}
+      <header className="mw-header">
+        <div className="mw-header__inner">
+          <button type="button" className="mw-logo" onClick={() => setView(currentDeck ? 'deck' : 'home')}>Mana<span>Wise</span></button>
+          <nav className="mw-nav" aria-label={messages.wMainNav}>
+            {mainNav.map(item => (
+              <button key={item.key} type="button" className={`mw-nav__link${activeNav === item.key ? ' is-active' : ''}`} aria-current={activeNav === item.key ? 'page' : undefined}
+                onClick={() => { setView(item.key); if (item.key === 'plans') setPlansFocusKey(k => k + 1) }}>
+                {item.label}
               </button>
             ))}
-          </div>
+          </nav>
+          <details className="mw-user">
+            <summary className="mw-user__btn">
+              <span className="mw-avatar" aria-hidden="true">{initial}</span>
+              <span className="mw-user__name">{user?.name}</span>
+              {hasActivePro && <span className="mw-pro">PRO</span>}
+            </summary>
+            <div className="mw-user__panel">
+              <p className="mw-muted mw-small">{user?.email}</p>
+              <div className="mw-seg" role="group" aria-label={messages.wLanguage}>
+                {LOCALES.map(item => (
+                  <button key={item.code} type="button" className={locale === item.code ? 'is-active' : ''} aria-pressed={locale === item.code} onClick={() => handleLocaleChange(item.code)}>{item.label}</button>
+                ))}
+              </div>
+              <button type="button" className="mw-user__item" onClick={handleThemeToggle}>{theme === 'night' ? messages.wThemeDay : messages.wThemeNight}</button>
+              <button type="button" className="mw-user__item" onClick={() => setView('plans')}>{messages.navPlans}{user?.plan ? ` · ${String(user.plan).toUpperCase()}` : ''}</button>
+              <button type="button" className="mw-user__item" onClick={handleLogout}>{messages.signOut}</button>
+            </div>
+          </details>
+        </div>
+      </header>
 
-          {activeTool === 'analyzer' && (
+      {view === 'deck' && currentDeck && (
+        <section className="mw-deckbar" aria-label={messages.wCurrentDeck}>
+          <div className="mw-deckbar__inner">
+            <div className="mw-deckbar__id">
+              <ColorDots colors={deckColors} label={messages.wColorsAria} size="lg" />
+              <div className="mw-deckbar__text">
+                <h1>{currentDeck.name}</h1>
+                <p className="mw-muted mw-small">
+                  {messages.wDeckMeta(formatLabel(currentDeck.format), sum(deckParsed.main) + sum(deckParsed.commander), sum(deckParsed.side))}
+                  {' · '}{currentDeck.dirty ? messages.wDirtyTag : (currentDeck.id ? messages.wSavedTag : messages.wUnsavedTag)}
+                </p>
+              </div>
+              <div className="mw-deckbar__actions">
+                <button type="button" className="mw-btn mw-btn--ghost mw-btn--sm" onClick={() => setView('home')}>{messages.wChangeDeck}</button>
+              </div>
+            </div>
+            <nav className="mw-tools" aria-label={messages.wToolsNav}>
+              {deckTools.map(t => (
+                <button key={t.key} type="button" className={`mw-tools__link${tool === t.key ? ' is-active' : ''}`} aria-current={tool === t.key ? 'page' : undefined} onClick={() => selectTool(t.key)}>{t.label}</button>
+              ))}
+            </nav>
+          </div>
+        </section>
+      )}
+
+      <main className="mw-main">
+        <div className="container mw-container">
+          {view === 'home' && (
+            <MyDecks key={insightsNonce} token={token} user={user} messages={messages} locale={locale} onOpenDeck={openDeck} />
+          )}
+
+          {view === 'deck' && currentDeck && tool === 'analysis' && (
             <Analyzer
               token={token}
               user={user}
               locale={locale}
               messages={messages}
-              decklist={deckWorkspace.decklist}
-              format={deckWorkspace.format}
-              onDeckChange={nextDecklist => setDeckWorkspace(prev => ({ ...prev, decklist: nextDecklist }))}
-              onFormatChange={nextFormat => setDeckWorkspace(prev => ({ ...prev, format: nextFormat }))}
-              onUpgradeRequest={() => {
-                setPlansFocusKey(prev => prev + 1)
-                setActiveTool('plans')
-              }}
+              decklist={currentDeck.text}
+              format={currentDeck.format}
+              deckName={currentDeck.name}
+              autoRun={autoRun}
+              onAnalyzed={handleAnalyzed}
+              onEditList={() => selectTool('list')}
+              onUpgradeRequest={() => { setPlansFocusKey(k => k + 1); setView('plans') }}
             />
           )}
-          {activeTool === 'builder' && (
-            hasActivePro ? (
-              <VisualDeckBuilder
-                token={token}
-                messages={messages}
-                decklist={deckWorkspace.decklist}
-                onDeckChange={nextDecklist => setDeckWorkspace(prev => ({ ...prev, decklist: nextDecklist }))}
-              />
-            ) : (
-              <div className="card">
-                <h2>{messages.builderProOnlyTitle || 'Builder Pro'}</h2>
-                <p style={{ color: 'var(--muted)' }}>
-                  {messages.builderProOnlyBody || 'Il Visual Deck Builder avanzato è disponibile nel piano Pro.'}
-                </p>
-                <button type="button" className="btn-primary" onClick={() => setActiveTool('plans')}>
-                  {messages.navPlans}
-                </button>
-              </div>
-            )
-          )}
-          {activeTool === 'matchup' && (
-            <MatchupSimulator
+          {view === 'deck' && currentDeck && tool === 'list' && (
+            <DeckListEditor
               token={token}
               user={user}
-              decklist={deckWorkspace.decklist}
-              format={deckWorkspace.format}
+              deck={currentDeck}
+              colors={deckColors}
               messages={messages}
+              onChange={text => updateDeck({ text, dirty: true })}
+              onSaved={id => updateDeck({ id, dirty: false })}
+              onReanalyze={() => { setAutoRun(true); selectTool('analysis') }}
             />
           )}
-          {activeTool === 'sideboard' && (
-            <SideboardCoach
-              token={token}
-              user={user}
-              decklist={deckWorkspace.decklist}
-              format={deckWorkspace.format}
-              messages={messages}
-            />
+          {view === 'deck' && currentDeck && tool === 'matchup' && (
+            <MatchupSimulator token={token} user={user} messages={messages} deckName={currentDeck.name}
+              decklist={mainText(deckParsed)} sideboard={listToText(deckParsed.side)} format={currentDeck.format} />
           )}
-          {activeTool === 'mulligan' && (
-            <MulliganAssistant
-              token={token}
-              user={user}
-              decklist={deckWorkspace.decklist}
-              format={deckWorkspace.format}
-              messages={messages}
-            />
+          {view === 'deck' && currentDeck && tool === 'sideboard' && (
+            <SideboardCoach token={token} user={user} messages={messages} deckName={currentDeck.name}
+              decklist={mainText(deckParsed)} sideboard={listToText(deckParsed.side)} format={currentDeck.format} />
           )}
-          {activeTool === 'notifications' && (
-            <NotificationsCenter
-              token={token}
-              locale={locale}
-              messages={messages}
-            />
+          {view === 'deck' && currentDeck && tool === 'mulligan' && (
+            <MulliganAssistant token={token} user={user} messages={messages} deckName={currentDeck.name}
+              decklist={mainText(deckParsed)} format={currentDeck.format} />
           )}
-          {activeTool === 'plans' && (
-            <PlansSupport
-              token={token}
-              user={user}
-              messages={messages}
-              onSessionUpdate={handleSessionUpdate}
-              focusProActivationKey={plansFocusKey}
-            />
+
+          {view === 'notifications' && <NotificationsCenter token={token} locale={locale} messages={messages} />}
+          {view === 'plans' && (
+            <PlansSupport token={token} user={user} messages={messages} onSessionUpdate={handleSessionUpdate} focusProActivationKey={plansFocusKey} />
           )}
-          {activeTool === 'admin' && isHiddenAdmin && (
-            <AdminCommanderBrackets token={token} user={user} messages={messages} />
-          )}
+          {view === 'admin' && isHiddenAdmin && <AdminCommanderBrackets token={token} user={user} messages={messages} />}
         </div>
       </main>
       <LegalFooter messages={messages} />

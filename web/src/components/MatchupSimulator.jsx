@@ -4,7 +4,7 @@ import { apiRequest, throwIfNotOK } from '../lib/apiClient'
 const ARCHETYPES = ['aggro', 'midrange', 'control', 'combo', 'ramp']
 const FORMATS = ['standard', 'pioneer', 'modern', 'legacy', 'vintage', 'commander', 'pauper']
 
-export default function MatchupSimulator({ token, user, decklist: decklistProp, format: formatProp, messages }) {
+export default function MatchupSimulator({ token, user, decklist: decklistProp, format: formatProp, messages, deckName, sideboard: sideboardProp }) {
   const [decklist, setDecklist]     = useState(decklistProp || '')
   const [savedDecks, setSavedDecks] = useState([])
   const [sideboard, setSideboard]   = useState('')
@@ -53,6 +53,10 @@ export default function MatchupSimulator({ token, user, decklist: decklistProp, 
     )
   }
 
+  useEffect(() => {
+    if (sideboardProp !== undefined) setSideboard(sideboardProp || '')
+  }, [sideboardProp])
+
   async function runSimulation(e) {
     e.preventDefault()
     setError('')
@@ -84,6 +88,9 @@ export default function MatchupSimulator({ token, user, decklist: decklistProp, 
       <h2>⚔️ {messages.matchupTitle}</h2>
 
       <form onSubmit={runSimulation}>
+        {deckName ? (
+          <p className="tool-deck-note">{messages.toolUsesDeck ? messages.toolUsesDeck(deckName) : deckName}</p>
+        ) : (<>
         <div className="form-row">
           <label>{messages.decklist}</label>
           <textarea
@@ -112,6 +119,7 @@ export default function MatchupSimulator({ token, user, decklist: decklistProp, 
             </select>
           </div>
         )}
+        </>)}
 
         <div className="form-row">
           <label>{messages.sideboardDecklist} <span style={{ color: 'var(--muted)', fontWeight: 400 }}>({messages.optional})</span></label>
@@ -124,12 +132,14 @@ export default function MatchupSimulator({ token, user, decklist: decklistProp, 
         </div>
 
         <div className="form-row-inline" style={{ gap: 16, flexWrap: 'wrap' }}>
+          {!deckName && (
           <div className="form-row" style={{ flex: '0 0 auto', minWidth: 140, marginBottom: 0 }}>
             <label>{messages.format}</label>
             <select value={format} onChange={e => setFormat(e.target.value)}>
               {FORMATS.map(f => <option key={f} value={f}>{f.charAt(0).toUpperCase() + f.slice(1)}</option>)}
             </select>
           </div>
+          )}
 
           <div style={{ flex: '1 1 auto' }}>
             <label style={{ display: 'block', marginBottom: 8, fontSize: '.88rem', fontWeight: 600 }}>{messages.opponents}</label>

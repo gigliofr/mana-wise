@@ -5,7 +5,7 @@ import { apiRequest, throwIfNotOK } from '../lib/apiClient'
 const ARCHETYPES = ['aggro', 'midrange', 'control', 'combo', 'ramp']
 const FORMATS = ['standard', 'pioneer', 'modern', 'legacy', 'vintage', 'commander', 'pauper']
 
-export default function SideboardCoach({ token, user, decklist: decklistProp, format: formatProp, messages }) {
+export default function SideboardCoach({ token, user, decklist: decklistProp, format: formatProp, messages, deckName, sideboard: sideboardProp }) {
   const [mainDecklist, setMainDecklist]   = useState(decklistProp || '')
   const [sideboard, setSideboard]         = useState('')
   const [opponent, setOpponent]           = useState('aggro')
@@ -53,6 +53,10 @@ export default function SideboardCoach({ token, user, decklist: decklistProp, fo
     }
   }, [token, user?.id])
 
+  useEffect(() => {
+    if (sideboardProp !== undefined) setSideboard(sideboardProp || '')
+  }, [sideboardProp])
+
   async function runPlan(e) {
     e.preventDefault()
     setError('')
@@ -83,6 +87,9 @@ export default function SideboardCoach({ token, user, decklist: decklistProp, fo
       <h2>🃏 {messages.sideboardTitle}</h2>
 
       <form onSubmit={runPlan}>
+        {deckName ? (
+          <p className="tool-deck-note">{messages.toolUsesDeck ? messages.toolUsesDeck(deckName) : deckName}</p>
+        ) : (<>
         <div className="form-row">
           <label>{messages.mainDecklist}</label>
           <textarea
@@ -115,6 +122,7 @@ export default function SideboardCoach({ token, user, decklist: decklistProp, fo
             </select>
           </div>
         )}
+        </>)}
 
 
         <div className="form-row">
@@ -129,12 +137,14 @@ export default function SideboardCoach({ token, user, decklist: decklistProp, fo
         </div>
 
         <div className="form-row-inline" style={{ gap: 16, flexWrap: 'wrap' }}>
+          {!deckName && (
           <div className="form-row" style={{ flex: '0 0 auto', minWidth: 140, marginBottom: 0 }}>
             <label>{messages.format}</label>
             <select value={format} onChange={e => setFormat(e.target.value)}>
               {FORMATS.map(f => <option key={f} value={f}>{f.charAt(0).toUpperCase() + f.slice(1)}</option>)}
             </select>
           </div>
+          )}
 
           <div className="form-row" style={{ flex: '0 0 auto', minWidth: 140, marginBottom: 0 }}>
             <label>{messages.opponentArchetype}</label>

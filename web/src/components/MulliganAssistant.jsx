@@ -4,7 +4,7 @@ import { apiRequest, throwIfNotOK } from '../lib/apiClient'
 const FORMATS = ['standard', 'pioneer', 'modern', 'legacy', 'vintage', 'commander', 'pauper']
 const ARCHETYPES = ['', 'aggro', 'midrange', 'control', 'combo', 'ramp']
 
-export default function MulliganAssistant({ token, user, decklist: decklistProp, format: formatProp, messages }) {
+export default function MulliganAssistant({ token, user, decklist: decklistProp, format: formatProp, messages, deckName }) {
   const [decklist, setDecklist] = useState(decklistProp || '')
   const [format, setFormat]     = useState(formatProp || 'standard')
   const [savedDecks, setSavedDecks] = useState([])
@@ -85,6 +85,9 @@ export default function MulliganAssistant({ token, user, decklist: decklistProp,
       <h2>🎴 {messages.mulliganTitle}</h2>
 
       <form onSubmit={runSimulation}>
+        {deckName ? (
+          <p className="tool-deck-note">{messages.toolUsesDeck ? messages.toolUsesDeck(deckName) : deckName}</p>
+        ) : (<>
         <div className="form-row">
           <label>{messages.decklist}</label>
           <textarea
@@ -119,14 +122,17 @@ export default function MulliganAssistant({ token, user, decklist: decklistProp,
             </select>
           </div>
         )}
+        </>)}
 
         <div className="form-row-inline" style={{ gap: 16, flexWrap: 'wrap' }}>
+          {!deckName && (
           <div className="form-row" style={{ flex: '0 0 auto', minWidth: 140, marginBottom: 0 }}>
             <label>{messages.format}</label>
             <select value={format} onChange={e => setFormat(e.target.value)}>
               {FORMATS.map(f => <option key={f} value={f}>{f.charAt(0).toUpperCase() + f.slice(1)}</option>)}
             </select>
           </div>
+          )}
 
           <div className="form-row" style={{ flex: '0 0 auto', minWidth: 140, marginBottom: 0 }}>
             <label>{messages.archetype} <span style={{ color: 'var(--muted)', fontWeight: 400 }}>({messages.optional})</span></label>
