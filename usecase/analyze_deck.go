@@ -303,7 +303,24 @@ func (uc *AnalyzeDeckUseCase) Execute(ctx context.Context, req AnalyzeDeckReques
 		)
 	}
 
-	// Build ordered card slice + quantity map for analysis.
+	// Commander lists exported without a "Commander" section (Moxfield puts the
+	// commander on the first line): if the first card can be a commander, use it.
+	if strings.EqualFold(req.Format, "commander") && len(commanderEntries) == 0 && len(mainEntries) > 0 {
+		first := mainEntries[0]
+		card, ok := entryCardMap[first.identityKey()]
+		if !ok {
+			card, ok = dbIndex[first.name]
+		}
+		if !ok {
+			card, ok = dbIndex[strings.ToLower(first.name)]
+		}
+		if ok && first.qty == 1 && CanBeCommander(card) {
+			first.isCommander = true
+			commanderEntries = append(commanderEntries, first)
+			mainEntries = mainEntries[1:]
+		}
+	}
+
 	// Build mainboard + commander card slice and quantity map for analysis.
 	mainCards := make([]*domain.Card, 0, len(mainEntries)+len(commanderEntries))
 	quantities := make(map[string]int)
@@ -582,7 +599,16 @@ func (e deckEntry) identityKey() string {
 	return "name#" + strings.ToLower(e.name)
 }
 
-var arenaSuffixRe = regexp.MustCompile(`(?i)^(.*?)\s*\(([a-z0-9]+)\)\s*([a-z0-9]+)$`)
+// Collector numbers can contain letters, dashes and symbols: "247p", "D25",
+// "M15-7" (The List), "123★".
+var arenaSuffixRe = regexp.MustCompile(`(?i)^(.*?)\s*\(([a-z0-9]+)\)\s*([a-z0-9][a-z0-9★†-]*)$`)
+
+// Foil/etched markers that Moxfield and other exporters append: "*F*", "*E*", "*Foil*".
+var foilMarkerRe = regexp.MustCompile(`(?i)\s*\*(?:f|e|foil|etched)\*\s*$`)
+
+// A single slash between the faces of a split/MDFC card ("Ready / Willing"),
+// which Scryfall names with a double slash ("Ready // Willing").
+var singleSlashFacesRe = regexp.MustCompile(`\s+/\s+`)
 var trailingDeckTagRe = regexp.MustCompile(`\s*\[[^\]]+\]\s*$`)
 var setOnlySuffixRe = regexp.MustCompile(`(?i)^(.*?)\s*\(([a-z0-9]{2,10})\)\s*$`)
 var commanderDeckTagRe = regexp.MustCompile(`(?i)\[[^\]]*commander[^\]]*\]`)
@@ -591,6 +617,7 @@ func stripTrailingDeckTags(raw string) string {
 	cleaned := strings.TrimSpace(raw)
 	for cleaned != "" {
 		next := strings.TrimSpace(trailingDeckTagRe.ReplaceAllString(cleaned, ""))
+		next = strings.TrimSpace(foilMarkerRe.ReplaceAllString(next, ""))
 		if next == cleaned {
 			break
 		}
@@ -610,14 +637,22 @@ func splitArenaCardDescriptor(raw string) (name, setCode, collectorNumber string
 	}
 	m := arenaSuffixRe.FindStringSubmatch(raw)
 	if len(m) == 4 {
-		name = strings.TrimSpace(m[1])
+		name = normalizeFaceSeparator(strings.TrimSpace(m[1]))
 		setCode = strings.ToLower(strings.TrimSpace(m[2]))
 		collectorNumber = strings.ToLower(strings.TrimSpace(m[3]))
 		if name != "" && setCode != "" && collectorNumber != "" {
 			return name, setCode, collectorNumber
 		}
 	}
-	return strings.TrimSpace(raw), "", ""
+	return normalizeFaceSeparator(strings.TrimSpace(raw)), "", ""
+}
+
+// normalizeFaceSeparator turns "Ready / Willing" into "Ready // Willing".
+func normalizeFaceSeparator(name string) string {
+	if strings.Contains(name, "//") {
+		return name
+	}
+	return singleSlashFacesRe.ReplaceAllString(name, " // ")
 }
 
 // parseDecklist converts a raw decklist string into entries.
@@ -660,9 +695,10 @@ func parseDecklist(raw string) ([]deckEntry, error) {
 			continue
 		}
 
-		// Strip inline comments "//..."
-		if idx := strings.Index(line, "//"); idx != -1 {
-			line = strings.TrimSpace(line[:idx])
+		// Skip comment lines. A "//" inside a line is a split card name
+		// ("Fire // Ice"), not a comment.
+		if strings.HasPrefix(line, "//") || strings.HasPrefix(line, "#") {
+			continue
 		}
 
 		parts := strings.Fields(line)
@@ -715,7 +751,7 @@ func sanitizeCardName(name string) string {
 			parts = parts[:len(parts)-2]
 		}
 	}
-	return strings.TrimSpace(strings.Join(parts, " "))
+	return normalizeFaceSeparator(strings.TrimSpace(strings.Join(parts, " ")))
 }
 
 func isAllDigits(s string) bool {
@@ -728,4 +764,17 @@ func isAllDigits(s string) bool {
 		}
 	}
 	return true
+}
+
+// CanBeCommander reports whether a card can lead a Commander deck: a
+// legendary creature, or a card whose text says it can be your commander.
+func CanBeCommander(c *domain.Card) bool {
+	if c == nil {
+		return false
+	}
+	typeLine := strings.ToLower(c.TypeLine)
+	if strings.Contains(typeLine, "legendary") && strings.Contains(typeLine, "creature") {
+		return true
+	}
+	return strings.Contains(strings.ToLower(c.OracleText), "can be your commander")
 }

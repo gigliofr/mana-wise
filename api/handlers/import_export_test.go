@@ -453,3 +453,38 @@ func (m *mockResolveCardUC) Resolve(ctx context.Context, name string) (*domain.C
 		Name: name,
 	}, nil
 }
+
+func TestNormalizeImportedCardName_MoxfieldSuffixes(t *testing.T) {
+	cases := map[string]string{
+		"Cloudshredder Sliver (SLD) 660 *F*":  "Cloudshredder Sliver",
+		"Constricting Sliver (PLST) M15-7":    "Constricting Sliver",
+		"Thrumming Hivepool (PEOE) 247p *F*":  "Thrumming Hivepool",
+		"Toxin Sliver (PSAL) D25":             "Toxin Sliver",
+		"Ready / Willing (DGM) 132":           "Ready // Willing",
+		"Sol Ring (C21) 263 [Ramp]":           "Sol Ring",
+		"Terra, Herald of Hope [Commander]":   "Terra, Herald of Hope",
+		"Fire // Ice":                         "Fire // Ice",
+	}
+	for in, want := range cases {
+		if got := normalizeImportedCardName(in); got != want {
+			t.Errorf("normalizeImportedCardName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestTextParser_CommanderSectionAndTags(t *testing.T) {
+	input := "Commander\n1 The First Sliver (J21) 691\n\nDeck\n1 Sol Ring (TDC) 106\n1 Sliver Overlord (SCG) 139 [Commander]"
+	entries, _, err := (&TextParser{}).Parse(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 3 {
+		t.Fatalf("expected 3 entries, got %d", len(entries))
+	}
+	if !entries[0].IsCommander || entries[1].IsCommander || !entries[2].IsCommander {
+		t.Fatalf("commander flags wrong: %+v", entries)
+	}
+	if entries[0].SetCode != "J21" {
+		t.Fatalf("set code not kept: %+v", entries[0])
+	}
+}

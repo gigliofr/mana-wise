@@ -15,10 +15,11 @@ type DecklistParser interface {
 
 // decklistEntry represents a parsed card entry before resolution.
 type decklistEntry struct {
-	CardName   string
-	Quantity   int
+	CardName    string
+	Quantity    int
 	IsSideboard bool
-	SetCode    string // Optional: expansion set code
+	IsCommander bool
+	SetCode     string // Optional: expansion set code
 }
 
 // ArenaParser parses Magic: The Gathering Arena export format.
@@ -26,7 +27,7 @@ type decklistEntry struct {
 type ArenaParser struct{}
 
 func (p *ArenaParser) Parse(input string) ([]decklistEntry, []string, error) {
-	return parseGenericFormat(input, `^(\d+)\s+(.+?)\s*(?:\(([A-Z0-9]+)\))?(?:\s+\d+)?$`, false)
+	return parseGenericFormat(input, `^(\d+)x?\s+(.+)$`, false)
 }
 
 // MTGOParser parses Magic Online export format.
@@ -34,7 +35,7 @@ func (p *ArenaParser) Parse(input string) ([]decklistEntry, []string, error) {
 type MTGOParser struct{}
 
 func (p *MTGOParser) Parse(input string) ([]decklistEntry, []string, error) {
-	return parseGenericFormat(input, `^(\d+)x?\s+(.+?)\s*(?:\(([A-Z0-9]+)\))?(?:\s+#\d+)?$`, false)
+	return parseGenericFormat(input, `^(\d+)x?\s+(.+)$`, false)
 }
 
 // TextParser parses simple text format (Moxfield / MTGGoldfish style).
@@ -66,6 +67,7 @@ func parseGenericFormat(input string, linePattern string, isSideboard bool) ([]d
 	lines := strings.Split(input, "\n")
 	// Track if we've entered sideboard section (for formats that separate main from sideboard)
 	enteringSideboard := false
+	enteringCommander := false
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
@@ -76,8 +78,15 @@ func parseGenericFormat(input string, linePattern string, isSideboard bool) ([]d
 		}
 
 		// Sideboard marker detection (generic format) - CHECK BEFORE PARSING
-		if strings.ToLower(line) == "sideboard:" || strings.ToLower(line) == "sb:" || strings.ToLower(line) == "sideboard" {
-			enteringSideboard = true
+		switch strings.ToLower(line) {
+		case "sideboard:", "sb:", "sideboard":
+			enteringSideboard, enteringCommander = true, false
+			continue
+		case "commander", "commander:":
+			enteringCommander, enteringSideboard = true, false
+			continue
+		case "deck", "deck:", "main", "mainboard", "mainboard:":
+			enteringCommander, enteringSideboard = false, false
 			continue
 		}
 
@@ -96,10 +105,12 @@ func parseGenericFormat(input string, linePattern string, isSideboard bool) ([]d
 				qty = parsedQty
 			}
 		}
-		cardName := normalizeImportedCardName(strings.TrimSpace(matches[2]))
+		rawName := strings.TrimSpace(matches[2])
+		isCommander := enteringCommander || importedCommanderTagRe.MatchString(rawName)
+		cardName := normalizeImportedCardName(rawName)
 		setCode := ""
-		if len(matches) > 3 && matches[3] != "" {
-			setCode = strings.TrimSpace(matches[3])
+		if m := importedSetCodeRe.FindStringSubmatch(rawName); len(m) == 2 {
+			setCode = strings.ToUpper(m[1])
 		}
 
 		if qty > 0 && cardName != "" {
@@ -107,6 +118,7 @@ func parseGenericFormat(input string, linePattern string, isSideboard bool) ([]d
 				CardName:    cardName,
 				Quantity:    qty,
 				IsSideboard: enteringSideboard || isSideboard,
+				IsCommander: isCommander,
 				SetCode:     setCode,
 			})
 		}
@@ -116,20 +128,32 @@ func parseGenericFormat(input string, linePattern string, isSideboard bool) ([]d
 }
 
 var importedDeckTagRe = regexp.MustCompile(`\s*\[[^\]]+\]\s*$`)
-var importedSetCollectorSuffixRe = regexp.MustCompile(`(?i)\s*\([a-z0-9]{2,10}\)\s*[a-z0-9]+$`)
-var importedSetOnlySuffixRe = regexp.MustCompile(`(?i)\s*\([a-z0-9]{2,10}\)\s*$`)
+var importedFoilMarkerRe = regexp.MustCompile(`(?i)\s*\*(?:f|e|foil|etched)\*\s*$`)
 
+// "(SET) 123", including collector numbers like "247p", "D25", "M15-7".
+var importedSetSuffixRe = regexp.MustCompile(`(?i)\s*\([a-z0-9]{2,10}\)(?:\s+[a-z0-9][a-z0-9★†-]*)?\s*$`)
+var importedSetCodeRe = regexp.MustCompile(`(?i)\(([a-z0-9]{2,10})\)`)
+var importedCommanderTagRe = regexp.MustCompile(`(?i)\[[^\]]*commander[^\]]*\]`)
+var importedSingleSlashRe = regexp.MustCompile(`\s+/\s+`)
+
+// normalizeImportedCardName removes tags ("[Commander]"), foil markers ("*F*")
+// and set/collector suffixes, in any order, and turns "Ready / Willing" into
+// the Scryfall name "Ready // Willing".
 func normalizeImportedCardName(raw string) string {
 	name := strings.TrimSpace(raw)
 	for name != "" {
-		next := strings.TrimSpace(importedDeckTagRe.ReplaceAllString(name, ""))
+		next := importedDeckTagRe.ReplaceAllString(name, "")
+		next = importedFoilMarkerRe.ReplaceAllString(next, "")
+		next = strings.TrimSpace(importedSetSuffixRe.ReplaceAllString(next, ""))
 		if next == name {
 			break
 		}
 		name = next
 	}
-	name = strings.TrimSpace(importedSetCollectorSuffixRe.ReplaceAllString(name, ""))
-	name = strings.TrimSpace(importedSetOnlySuffixRe.ReplaceAllString(name, ""))
+	name = strings.Join(strings.Fields(name), " ")
+	if !strings.Contains(name, "//") {
+		name = importedSingleSlashRe.ReplaceAllString(name, " // ")
+	}
 	return name
 }
 

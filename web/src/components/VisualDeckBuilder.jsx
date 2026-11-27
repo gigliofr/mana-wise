@@ -17,6 +17,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import CardHoverPreview from './CardHoverPreview'
 import { apiRequest, throwIfNotOK } from '../lib/apiClient'
+import { cleanCardName } from '../lib/deck'
 
 const BOARD_MAIN = 'main'
 const BOARD_SIDE = 'side'
@@ -66,7 +67,7 @@ function parseDecklist(decklist) {
 
     rows.push({
       quantity: Math.max(1, Number.parseInt(m[1], 10) || 1),
-      name: m[2].trim(),
+      name: cleanCardName(m[2]),
       board: activeBoard,
     })
   }
