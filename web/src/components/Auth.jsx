@@ -20,7 +20,7 @@ function getPasswordStrength(password) {
   return { checks, level, score }
 }
 
-export default function Auth({ onLogin, locale, messages, onLocaleChange }) {
+export default function Auth({ onLogin, locale, messages, onLocaleChange, notice = '' }) {
   const [mode, setMode] = useState(() => {
     const token = new URLSearchParams(window.location.search).get('token')
     return token ? 'reset' : 'login'
@@ -151,6 +151,7 @@ export default function Auth({ onLogin, locale, messages, onLocaleChange }) {
               {mode === 'reset' && messages.resetPasswordTitle}
             </h2>
 
+            {notice && !error && !success && mode === 'login' && <div className="banner banner-info" role="status">{notice}</div>}
             {error && <div className="banner banner-error">{error}</div>}
             {success && <div className="banner banner-info">{success}</div>}
 

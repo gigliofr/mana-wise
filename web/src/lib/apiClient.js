@@ -68,6 +68,13 @@ export async function apiRequest(path, options = {}) {
     && !path.startsWith('/auth/reset-password')
     && !path.startsWith('/auth/refresh')
 
+  if (!skipAuthRefresh && initialToken && refreshablePath && result.res.status === 401 && !initialRefreshToken) {
+    // Senza refresh token la sessione non si può rinnovare: meglio tornare
+    // all'accesso che lasciare l'utente davanti a errori "invalid token".
+    sessionHandlers.onUnauthorized?.('expired')
+    return result
+  }
+
   if (!skipAuthRefresh && initialToken && initialRefreshToken && refreshablePath && result.res.status === 401) {
     const refreshRes = await fetch(`${API_BASE}/auth/refresh`, {
       method: 'POST',
@@ -95,7 +102,7 @@ export async function apiRequest(path, options = {}) {
       }
       result = await performRequest(refreshData.token)
     } else {
-      sessionHandlers.onUnauthorized?.()
+      sessionHandlers.onUnauthorized?.('expired')
     }
   }
 
