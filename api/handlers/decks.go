@@ -1795,6 +1795,9 @@ func (h *DeckHandler) Create(w http.ResponseWriter, r *http.Request) {
 		"deck_version": deck.Version,
 	})
 
+	// L'header va impostato prima di WriteHeader: dopo verrebbe ignorato e il
+	// client riceverebbe text/plain, perdendo l'id del mazzo appena creato.
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	jsonOK(w, deck)
 }

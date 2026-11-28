@@ -348,3 +348,36 @@ describe('DeckLibrary', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/v1/decks/deck-fmt', expect.objectContaining({ method: 'PUT' }))
   })
 })
+
+describe('DeckLibrary search', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  it('cerca in tutta la libreria, non solo nella pagina corrente', async () => {
+    const mk = (id, name) => ({ id, user_id: 'user-1', name, format: 'commander', cards: [{ card_name: 'Forest', quantity: 30, is_sideboard: false }] })
+    const page1 = [mk('d1', 'Sisay'), mk('d2', 'Silver'), mk('d3', 'Chocobo')]
+    const all = [...page1, mk('d4', 'World Shaper')]
+    const fetchMock = vi.fn(async (url) => {
+      if (url === '/api/v1/decks?page=1&limit=3') return jsonResponse({ data: page1, total: 4, page: 1, limit: 3 })
+      if (url === '/api/v1/decks') return jsonResponse(all)
+      return jsonResponse({})
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<DeckLibrary token="t" user={{ id: 'user-1', plan: 'pro' }} messages={messages} currentDecklist="" currentFormat="commander" onSelectDeck={() => {}} />)
+    await screen.findAllByText('Sisay')
+    fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'world' } })
+
+    expect((await screen.findAllByText('World Shaper')).length).toBeGreaterThan(0)
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/decks', expect.anything())
+    expect(screen.queryByText('Sisay')).toBeNull()
+    expect(screen.getAllByText(/30 · commander/).length).toBeGreaterThan(0)
+  })
+})
+
+describe('countCopies', () => {
+  it('somma le copie invece delle righe', async () => {
+    const { countCopies } = await import('./DeckLibrary')
+    expect(countCopies([{ card_name: 'Plains', quantity: 14 }, { card_name: 'Sol Ring', quantity: 1 }, { card_name: 'X' }])).toBe(16)
+    expect(countCopies(null)).toBe(0)
+  })
+})

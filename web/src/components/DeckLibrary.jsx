@@ -5,6 +5,11 @@ import { cleanCardName } from '../lib/deck'
 
 const FORMATS = ['standard', 'pioneer', 'modern', 'legacy', 'vintage', 'commander', 'pauper']
 
+// countCopies somma le copie: "4 Plains" vale quattro carte, non una riga.
+export function countCopies(cards) {
+  return (Array.isArray(cards) ? cards : []).reduce((acc, c) => acc + (Number(c?.quantity ?? c?.qty) || 1), 0)
+}
+
 export default function DeckLibrary({
   token,
   user,
@@ -39,6 +44,9 @@ export default function DeckLibrary({
 
   const ITEMS_PER_PAGE = 3
   const paginatedDecks = decks
+  // Con una ricerca o il filtro "solo pinnati" si cerca in tutta la libreria,
+  // non solo nella pagina corrente.
+  const searching = deckSearch.trim() !== '' || showPinnedOnly
   const pinStorageKey = `manawise.deckPins.${String(user?.id || 'anon')}`
   const compactStorageKey = `manawise.deckCompactView.${String(user?.id || 'anon')}`
   const totalPages = useMemo(
@@ -85,7 +93,8 @@ export default function DeckLibrary({
       setError('')
       try {
         const requestPage = page + 1
-        const { res, data } = await apiRequest(`/decks?page=${requestPage}&limit=${ITEMS_PER_PAGE}`, { token })
+        const path = searching ? '/decks' : `/decks?page=${requestPage}&limit=${ITEMS_PER_PAGE}`
+        const { res, data } = await apiRequest(path, { token })
         throwIfNotOK(res, data, messages.deckLoadFailed)
         if (!cancelled) {
           const envelope = Array.isArray(data)
@@ -97,7 +106,7 @@ export default function DeckLibrary({
             : pageDecks
           const total = Number(envelope.total)
           setDecks(ownedDecks)
-          setTotalDecks(Number.isFinite(total) && total >= 0 ? total : ownedDecks.length)
+          if (!searching) setTotalDecks(Number.isFinite(total) && total >= 0 ? total : ownedDecks.length)
         }
       } catch (err) {
         if (!cancelled) setError(err.message)
@@ -109,7 +118,7 @@ export default function DeckLibrary({
     return () => {
       cancelled = true
     }
-  }, [token, messages.deckLoadFailed, page, reloadNonce, user?.id])
+  }, [token, messages.deckLoadFailed, page, reloadNonce, user?.id, searching])
 
   useEffect(() => {
     if (page > 0 && page >= totalPages) {
@@ -648,7 +657,7 @@ export default function DeckLibrary({
         )}
       </div>
 
-      {decks.length > 0 && (
+      {(decks.length > 0 || searching) && (
         <div className="decklib-search-row">
           <input
             type="search"
@@ -792,7 +801,7 @@ export default function DeckLibrary({
                           </span>
                         </span>
                       </span>
-                      <span className="decklib-tab-sub">{cards.length + commanderCards.length} · {deck.format}</span>
+                      <span className="decklib-tab-sub">{countCopies(cards) + countCopies(commanderCards)} · {deck.format}</span>
                     </button>
                   )
                 })}
@@ -844,7 +853,7 @@ export default function DeckLibrary({
                   <div className="decklib-item-top">
                     <div>
                       <div className="decklib-name">{activeDeck.name}</div>
-                      <div className="decklib-sub">{cards.length + commanderCards.length} {messages.cards || 'cards'} · {activeDeck.format}</div>
+                      <div className="decklib-sub">{countCopies(cards) + countCopies(commanderCards)} {messages.cards || 'cards'} · {activeDeck.format}</div>
                       {commanderCards.length > 0 && (
                         <div className="decklib-sub" style={{ marginTop: 4 }}>
                           Commander: {commanderCards.map(c => c.card_name || c.name).filter(Boolean).join(', ')}
@@ -983,7 +992,7 @@ export default function DeckLibrary({
               })()}
             </>
           )}
-          {totalPages > 1 && (
+          {totalPages > 1 && !searching && (
             <div style={{ marginTop: '12px', display: 'flex', gap: '6px', justifyContent: 'center', alignItems: 'center' }}>
               <button
                 type="button"

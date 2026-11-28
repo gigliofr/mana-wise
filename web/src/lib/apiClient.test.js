@@ -99,4 +99,32 @@ describe('apiClient', () => {
       body: undefined,
     })
   })
+
+  it('ends the session as expired on 401 when there is no refresh token', async () => {
+    const onUnauthorized = vi.fn()
+    configureApiAuthSession({ getToken: () => '', getRefreshToken: () => '', onUnauthorized })
+    const fetchMock = vi.fn().mockResolvedValue({
+      status: 401,
+      ok: false,
+      headers: { get: () => 'application/json' },
+      json: vi.fn().mockResolvedValue({ error: 'invalid or expired token' }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { res } = await apiRequest('/decks', { token: 'stale-token', method: 'POST', body: {} })
+
+    expect(res.status).toBe(401)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(onUnauthorized).toHaveBeenCalledWith('expired')
+  })
+
+  it('does not end the session for a 401 on the login endpoint', async () => {
+    const onUnauthorized = vi.fn()
+    configureApiAuthSession({ getToken: () => 'old', getRefreshToken: () => '', onUnauthorized })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ status: 401, ok: false, headers: { get: () => '' } }))
+
+    await apiRequest('/auth/login', { method: 'POST', body: {} })
+
+    expect(onUnauthorized).not.toHaveBeenCalled()
+  })
 })

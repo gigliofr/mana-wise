@@ -79,6 +79,7 @@ function App() {
   const [locale, setLocale] = useState(() => localStorage.getItem(LOCALE_KEY) || 'it')
   const [theme, setTheme] = useState(() => localStorage.getItem(THEME_KEY) || 'night')
   const [sessionMeta, setSessionMeta] = useState(() => safeReadJSON(localStorage.getItem(SESSION_META_KEY)))
+  const [sessionNotice, setSessionNotice] = useState('')
   const [user,  setUser]  = useState(() => {
     try { return JSON.parse(localStorage.getItem(USER_KEY) || 'null') } catch { return null }
   })
@@ -117,6 +118,7 @@ function App() {
   }
 
   function handleLogin(token, user, refreshToken = '', nextSessionMeta = null) {
+    setSessionNotice('')
     localStorage.setItem(TOKEN_KEY, token)
     if (refreshToken) {
       localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken)
@@ -134,7 +136,8 @@ function App() {
     setUser(user)
   }
 
-  function handleLogout() {
+  function handleLogout(reason) {
+    setSessionNotice(reason === 'expired' ? 'expired' : '')
     localStorage.removeItem(TOKEN_KEY)
     localStorage.removeItem(REFRESH_TOKEN_KEY)
     localStorage.removeItem(USER_KEY)
@@ -181,13 +184,7 @@ function App() {
           headers: { 'Authorization': `Bearer ${token}` },
         })
         if (res.status === 401 || res.status === 403) {
-          if (!cancelled) {
-            localStorage.removeItem(TOKEN_KEY)
-            localStorage.removeItem(REFRESH_TOKEN_KEY)
-            localStorage.removeItem(USER_KEY)
-            setToken('')
-            setUser(null)
-          }
+          if (!cancelled) handleLogout('expired')
           return
         }
         if (!res.ok) return
@@ -205,6 +202,25 @@ function App() {
       cancelled = true
     }
   }, [token])
+
+  // Se un'altra scheda esce o rinnova la sessione, questa si allinea invece di
+  // continuare a usare un token che non vale più.
+  useEffect(() => {
+    function onStorage(e) {
+      if (e.key !== TOKEN_KEY) return
+      if (!e.newValue) {
+        setToken('')
+        setUser(null)
+        setSessionMeta(null)
+        return
+      }
+      setToken(e.newValue)
+      setUser(safeReadJSON(localStorage.getItem(USER_KEY)))
+      setSessionMeta(safeReadJSON(localStorage.getItem(SESSION_META_KEY)))
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
 
   if (isLegalPage) {
     return (
@@ -230,7 +246,7 @@ function App() {
   if (!token) {
     return (
       <>
-        <Auth onLogin={handleLogin} locale={locale} messages={messages} onLocaleChange={handleLocaleChange} />
+        <Auth onLogin={handleLogin} locale={locale} messages={messages} onLocaleChange={handleLocaleChange} notice={sessionNotice === 'expired' ? messages.wSessionExpired : ''} />
         <LegalFooter messages={messages} />
       </>
     )
