@@ -139,6 +139,7 @@ func NewRouter(deps RouterDeps) http.Handler {
 			r.With(authRateMW).Post("/forgot-password", authH.ForgotPassword)
 			r.With(authRateMW).Post("/reset-password", authH.ResetPassword)
 			r.With(authRateMW).Post("/refresh", authH.Refresh)
+			r.With(authRateMW).Post("/logout", authH.Logout)
 			r.With(jwtMW).Get("/me", authH.Me)
 			r.With(jwtMW).Post("/plan", authH.UpdatePlan)
 		})

@@ -68,29 +68,26 @@ export async function apiRequest(path, options = {}) {
     && !path.startsWith('/auth/reset-password')
     && !path.startsWith('/auth/refresh')
 
-  if (!skipAuthRefresh && initialToken && refreshablePath && result.res.status === 401 && !initialRefreshToken) {
-    // Senza refresh token la sessione non si può rinnovare: meglio tornare
-    // all'accesso che lasciare l'utente davanti a errori "invalid token".
-    sessionHandlers.onUnauthorized?.('expired')
-    return result
-  }
-
-  if (!skipAuthRefresh && initialToken && initialRefreshToken && refreshablePath && result.res.status === 401) {
+  if (!skipAuthRefresh && initialToken && refreshablePath && result.res.status === 401) {
+    // Il refresh token sta in un cookie HttpOnly che il browser invia da solo e
+    // che JavaScript non può leggere. Un token rimasto in localStorage dalle
+    // versioni precedenti viene mandato un'ultima volta: il server lo sposta nel cookie.
     const refreshRes = await fetch(`${API_BASE}/auth/refresh`, {
       method: 'POST',
+      credentials: 'same-origin',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ refresh_token: initialRefreshToken }),
+      body: JSON.stringify(initialRefreshToken ? { refresh_token: initialRefreshToken } : {}),
     })
     const refreshData = await parseMaybeJSON(refreshRes)
 
-    if (refreshRes.ok && refreshData?.token && refreshData?.refresh_token) {
+    if (refreshRes.ok && refreshData?.token) {
       const hasSessionTTL = Number(refreshData?.session_ttl_minutes || 0) > 0
       if (hasSessionTTL) {
         sessionHandlers.onSessionUpdate?.(
           refreshData.token,
-          refreshData.refresh_token,
+          '',
           refreshData.user,
           {
             session_ttl_minutes: Number(refreshData.session_ttl_minutes),
@@ -98,7 +95,7 @@ export async function apiRequest(path, options = {}) {
           },
         )
       } else {
-        sessionHandlers.onSessionUpdate?.(refreshData.token, refreshData.refresh_token, refreshData.user)
+        sessionHandlers.onSessionUpdate?.(refreshData.token, '', refreshData.user)
       }
       result = await performRequest(refreshData.token)
     } else {
@@ -107,6 +104,11 @@ export async function apiRequest(path, options = {}) {
   }
 
   return result
+}
+
+// logoutSession cancella il cookie del refresh token sul server (best effort).
+export function logoutSession() {
+  return fetch(`${API_BASE}/auth/logout`, { method: 'POST', credentials: 'same-origin' }).catch(() => null)
 }
 
 export function throwIfNotOK(res, data, fallbackMessage = 'Request failed') {

@@ -16,7 +16,7 @@ import { LegalPage } from './components/LegalPages'
 import { LOCALES, translations } from './i18n'
 import { workspaceMessages } from './i18nWorkspace'
 import { parseDecklist, sum, mainText, listToText, loadCurrentDeck, saveCurrentDeck, loadInsights, saveInsight } from './lib/deck'
-import { configureApiAuthSession } from './lib/apiClient'
+import { configureApiAuthSession, logoutSession } from './lib/apiClient'
 
 const TOKEN_KEY = 'manawise_token'
 const REFRESH_TOKEN_KEY = 'manawise_refresh_token'
@@ -101,9 +101,9 @@ function App() {
 
   function handleSessionUpdate(nextToken, nextRefreshToken, nextUser, nextSessionMeta = null) {
     localStorage.setItem(TOKEN_KEY, nextToken)
-    if (nextRefreshToken) {
-      localStorage.setItem(REFRESH_TOKEN_KEY, nextRefreshToken)
-    }
+    // Il refresh token ora vive nel cookie HttpOnly impostato dal server:
+    // quello eventualmente rimasto in localStorage è stato appena migrato.
+    localStorage.removeItem(REFRESH_TOKEN_KEY)
     localStorage.setItem(USER_KEY, JSON.stringify(nextUser))
     const normalizedSession = resolveSessionMeta(nextToken, nextSessionMeta)
     if (normalizedSession) {
@@ -120,9 +120,7 @@ function App() {
   function handleLogin(token, user, refreshToken = '', nextSessionMeta = null) {
     setSessionNotice('')
     localStorage.setItem(TOKEN_KEY, token)
-    if (refreshToken) {
-      localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken)
-    }
+    localStorage.removeItem(REFRESH_TOKEN_KEY)
     localStorage.setItem(USER_KEY, JSON.stringify(user))
     const normalizedSession = resolveSessionMeta(token, nextSessionMeta)
     if (normalizedSession) {
@@ -138,6 +136,7 @@ function App() {
 
   function handleLogout(reason) {
     setSessionNotice(reason === 'expired' ? 'expired' : '')
+    logoutSession()
     localStorage.removeItem(TOKEN_KEY)
     localStorage.removeItem(REFRESH_TOKEN_KEY)
     localStorage.removeItem(USER_KEY)

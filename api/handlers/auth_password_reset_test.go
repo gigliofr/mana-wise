@@ -381,8 +381,11 @@ func TestRefresh_ReturnsNewTokenForAuthenticatedUser(t *testing.T) {
 	if strings.TrimSpace(payload.Token) == "" {
 		t.Fatalf("expected refreshed token in response")
 	}
-	if strings.TrimSpace(payload.RefreshToken) == "" {
-		t.Fatalf("expected refreshed refresh_token in response")
+	if payload.RefreshToken != "" {
+		t.Fatalf("the refresh token must not be in the JSON body anymore")
+	}
+	if c := refreshCookieFrom(rr); c == nil || c.Value == "" || !c.HttpOnly {
+		t.Fatalf("expected refreshed refresh token in an HttpOnly cookie, got %+v", c)
 	}
 	if payload.User == nil || payload.User.ID != "u-refresh" {
 		t.Fatalf("expected refreshed user payload")
@@ -426,8 +429,11 @@ func TestRefresh_WithRefreshTokenBody_ReturnsNewTokenPair(t *testing.T) {
 	if strings.TrimSpace(payload.Token) == "" {
 		t.Fatalf("expected refreshed access token in response")
 	}
-	if strings.TrimSpace(payload.RefreshToken) == "" {
-		t.Fatalf("expected refreshed refresh token in response")
+	if payload.RefreshToken != "" {
+		t.Fatalf("the refresh token must not be in the JSON body anymore")
+	}
+	if c := refreshCookieFrom(rr); c == nil || c.Value == "" || !c.HttpOnly {
+		t.Fatalf("expected refreshed refresh token in an HttpOnly cookie, got %+v", c)
 	}
 }
 

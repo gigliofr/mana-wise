@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gigliofr/gokit/authx/session"
 	"github.com/google/uuid"
 	"github.com/gigliofr/mana-wise/api/middleware"
 	"github.com/gigliofr/mana-wise/domain"
@@ -159,7 +160,7 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	}
 
 	user.Remaining = user.RemainingAnalyses(domain.CurrentBusinessDay())
-	resp, err := h.issueTokens(user)
+	resp, err := h.issueSession(w, r, user)
 	if err != nil {
 		WriteAPIErrorFromMsg(w, "could not generate token", http.StatusInternalServerError)
 		return
@@ -462,7 +463,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		_ = h.userRepo.Update(r.Context(), user)
 	}
 
-	resp, err := h.issueTokens(user)
+	resp, err := h.issueSession(w, r, user)
 	if err != nil {
 		WriteAPIErrorFromMsg(w, "could not generate token", http.StatusInternalServerError)
 		return
@@ -507,7 +508,7 @@ func (h *AuthHandler) UpdatePlan(w http.ResponseWriter, r *http.Request) {
 	if plan == domain.PlanPro {
 		if user.HasActivePro() {
 			user.Remaining = user.RemainingAnalyses(domain.CurrentBusinessDay())
-			resp, err := h.issueTokens(user)
+			resp, err := h.issueSession(w, r, user)
 			if err != nil {
 				WriteAPIErrorFromMsg(w, "could not generate token", http.StatusInternalServerError)
 				return
@@ -539,7 +540,7 @@ func (h *AuthHandler) UpdatePlan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	user.Remaining = user.RemainingAnalyses(domain.CurrentBusinessDay())
-	resp, err := h.issueTokens(user)
+	resp, err := h.issueSession(w, r, user)
 	if err != nil {
 		WriteAPIErrorFromMsg(w, "could not generate token", http.StatusInternalServerError)
 		return
@@ -590,9 +591,52 @@ func (h *AuthHandler) issueTokens(user *domain.User) (TokenResponse, error) {
 	return TokenResponse{Token: accessToken, RefreshToken: refreshToken, User: user}, nil
 }
 
+// refreshCookiePath limita l'invio del cookie del refresh token alle sole rotte di autenticazione.
+const refreshCookiePath = "/api/v1/auth"
+
+// refreshCookie restituisce il cookie HttpOnly del refresh token; Secure se la
+// richiesta arriva in HTTPS (direttamente o dietro proxy).
+func refreshCookie(r *http.Request) session.RefreshCookie {
+	return session.RefreshCookie{Path: refreshCookiePath, Secure: isHTTPSRequest(r)}
+}
+
+func isHTTPSRequest(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	if r.TLS != nil {
+		return true
+	}
+	return strings.EqualFold(firstHeaderValue(r.Header.Get("X-Forwarded-Proto")), "https")
+}
+
+// issueSession emette la coppia di token: il refresh token va solo nel cookie
+// HttpOnly (JavaScript non può leggerlo), l'access token nella risposta JSON.
+func (h *AuthHandler) issueSession(w http.ResponseWriter, r *http.Request, user *domain.User) (TokenResponse, error) {
+	resp, err := h.issueTokens(user)
+	if err != nil {
+		return resp, err
+	}
+	refreshCookie(r).Set(w, resp.RefreshToken, time.Duration(h.refreshTTLMinutes)*time.Minute)
+	resp.RefreshToken = ""
+	return resp, nil
+}
+
+// Logout handles POST /auth/logout: cancella il cookie del refresh token.
+func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	refreshCookie(r).Clear(w)
+	jsonOK(w, map[string]any{"status": "ok"})
+}
+
+// extractRefreshToken legge il refresh token dal cookie HttpOnly; per i client
+// che lo tengono ancora in localStorage (versioni precedenti) accetta anche
+// l'intestazione Authorization o il corpo JSON, e la risposta li porta sul cookie.
 func extractRefreshToken(r *http.Request) (token string, badRequest bool, err error) {
 	if r == nil {
 		return "", true, nil
+	}
+	if c := refreshCookie(r).Get(r); strings.TrimSpace(c) != "" {
+		return strings.TrimSpace(c), false, nil
 	}
 
 	authHeader := strings.TrimSpace(r.Header.Get("Authorization"))

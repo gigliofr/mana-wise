@@ -6,6 +6,8 @@ github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/gigliofr/gokit v0.2.0 h1:LldAXjypDiIg2c7nnPPsgpHr5qXOl0aCFCIorTozeAk=
 github.com/gigliofr/gokit v0.2.0/go.mod h1:Qzwk/DBVk41nkxY2IR4e7V48r2Qxl/eND+jAH5AS6rk=
+github.com/gigliofr/gokit v0.4.0 h1:/8SGyZQxGh+ek8db6eJRzv53X1XXkT3D3eIBptjQQR0=
+github.com/gigliofr/gokit v0.4.0/go.mod h1:z6n4h2506Nbyqja8n2U5JIBtxzjQoqiArdh6ThabrT4=
 github.com/go-chi/chi/v5 v5.1.0 h1:acVI1TYaD+hhedDJ3r54HyA6sExp3HfXq7QWEEY/xMw=
 github.com/go-chi/chi/v5 v5.1.0/go.mod h1:DslCQbL2OYiznFReuXYUmQ2hGd1aDpCnlMNITLSKoi8=
 github.com/golang-jwt/jwt/v5 v5.2.1 h1:OuVbFODueb089Lh128TAcimifWaLhJwVflnrgM17wHk=
