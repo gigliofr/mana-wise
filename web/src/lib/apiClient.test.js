@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { __resetApiClientAuthSessionForTests, apiRequest, configureApiAuthSession, throwIfNotOK } from './apiClient'
+import { __resetApiClientAuthSessionForTests, apiRequest, configureApiAuthSession, logoutSession, throwIfNotOK } from './apiClient'
 
 describe('apiClient', () => {
   afterEach(() => {
@@ -51,7 +51,7 @@ describe('apiClient', () => {
     expect(() => throwIfNotOK({ ok: false }, null, 'Fallback message')).toThrow('Fallback message')
   })
 
-  it('refreshes session and retries once on 401', async () => {
+  it('migrates a legacy localStorage refresh token on 401', async () => {
     const onSessionUpdate = vi.fn()
     configureApiAuthSession({
       getToken: () => 'expired-token',
@@ -71,7 +71,7 @@ describe('apiClient', () => {
         status: 200,
         ok: true,
         headers: { get: () => 'application/json' },
-        json: vi.fn().mockResolvedValue({ token: 'new-token', refresh_token: 'refresh-token-2', user: { id: 'u1' } }),
+        json: vi.fn().mockResolvedValue({ token: 'new-token', user: { id: 'u1' } }),
       })
       .mockResolvedValueOnce({
         status: 200,
@@ -85,9 +85,10 @@ describe('apiClient', () => {
 
     expect(res.ok).toBe(true)
     expect(data).toEqual({ ok: true })
-    expect(onSessionUpdate).toHaveBeenCalledWith('new-token', 'refresh-token-2', { id: 'u1' })
+    expect(onSessionUpdate).toHaveBeenCalledWith('new-token', '', { id: 'u1' })
     expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/v1/auth/refresh', {
       method: 'POST',
+      credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refresh_token: 'refresh-token-1' }),
     })
@@ -100,7 +101,28 @@ describe('apiClient', () => {
     })
   })
 
-  it('ends the session as expired on 401 when there is no refresh token', async () => {
+  it('refreshes through the HttpOnly cookie without sending any token', async () => {
+    const onSessionUpdate = vi.fn()
+    configureApiAuthSession({ getToken: () => 'expired-token', getRefreshToken: () => '', onSessionUpdate, onUnauthorized: vi.fn() })
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ status: 401, ok: false, headers: { get: () => 'application/json' }, json: vi.fn().mockResolvedValue({}) })
+      .mockResolvedValueOnce({ status: 200, ok: true, headers: { get: () => 'application/json' }, json: vi.fn().mockResolvedValue({ token: 't2', user: { id: 'u1' } }) })
+      .mockResolvedValueOnce({ status: 200, ok: true, headers: { get: () => 'application/json' }, json: vi.fn().mockResolvedValue({ ok: true }) })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { res } = await apiRequest('/decks')
+
+    expect(res.ok).toBe(true)
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/v1/auth/refresh', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    })
+    expect(onSessionUpdate).toHaveBeenCalledWith('t2', '', { id: 'u1' })
+  })
+
+  it('ends the session as expired when the refresh fails', async () => {
     const onUnauthorized = vi.fn()
     configureApiAuthSession({ getToken: () => '', getRefreshToken: () => '', onUnauthorized })
     const fetchMock = vi.fn().mockResolvedValue({
@@ -114,8 +136,16 @@ describe('apiClient', () => {
     const { res } = await apiRequest('/decks', { token: 'stale-token', method: 'POST', body: {} })
 
     expect(res.status).toBe(401)
-    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/v1/auth/refresh')
     expect(onUnauthorized).toHaveBeenCalledWith('expired')
+  })
+
+  it('logoutSession posts to the logout endpoint and never throws', async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new Error('offline'))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(logoutSession()).resolves.toBeNull()
+    expect(fetchMock).toHaveBeenCalledWith('/api/v1/auth/logout', { method: 'POST', credentials: 'same-origin' })
   })
 
   it('does not end the session for a 401 on the login endpoint', async () => {
