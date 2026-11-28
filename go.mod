@@ -4,7 +4,7 @@ go 1.22
 
 require (
 	github.com/bwmarrin/discordgo v0.29.0
-	github.com/gigliofr/gokit v0.2.0
+	github.com/gigliofr/gokit v0.4.0
 	github.com/go-chi/chi/v5 v5.1.0
 	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/google/uuid v1.6.0
